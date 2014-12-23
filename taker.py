@@ -209,6 +209,9 @@ class Taker(irclib.IRCClient):
     def on_leave(self, nick):
         self.db.execute('DELETE FROM orderbook WHERE counterparty=?;', (nick,))
 
+    def on_disconnect(self):
+        self.db.execute('DELETE FROM orderbook;')
+
 
 def main():
     from socket import gethostname
