@@ -104,7 +104,7 @@ class PatientSendPayment(maker.Maker, taker.Taker):
             self.msgchan.shutdown()
             return ([], [])
         available_balance = self.wallet.get_balance_by_mixdepth()[self.mixdepth]
-        if available_balance > self.amount:
+        if available_balance >= self.amount:
             order = {
                 'oid': 0,
                 'ordertype': 'absorder',
@@ -118,8 +118,7 @@ class PatientSendPayment(maker.Maker, taker.Taker):
             debug('not enough money left, have to wait until tx confirms')
             return ([0], [])
 
-    def on_tx_confirmed(self, cjorder, confirmations, txid, balance,
-                        added_utxos):
+    def on_tx_confirmed(self, cjorder, confirmations, txid, balance):
         if len(self.orderlist) == 0:
             order = {
                 'oid': 0,
