@@ -286,7 +286,7 @@ class Maker(CoinJoinerPeer):
             order = {
                 'oid': self.get_next_oid(),
                 'ordertype': 'absorder',
-                'minsize': 0,
+                'minsize': 12000,
                 'maxsize': addrvalue['value'],
                 'txfee': 10000,
                 'cjfee': 100000,
@@ -337,7 +337,7 @@ class Maker(CoinJoinerPeer):
                 neworder = {
                     'oid': self.get_next_oid(),
                     'ordertype': 'absorder',
-                    'minsize': 0,
+                    'minsize': 12000,
                     'maxsize': out['value'],
                     'txfee': 10000,
                     'cjfee': 100000,
@@ -348,7 +348,7 @@ class Maker(CoinJoinerPeer):
                 neworder = {
                     'oid': self.get_next_oid(),
                     'ordertype': 'absorder',
-                    'minsize': 0,
+                    'minsize': 12000,
                     'maxsize': out['value'],
                     'txfee': 10000,
                     'cjfee': 100000,
@@ -364,8 +364,9 @@ def main():
     import sys
     seed = sys.argv[1]  #btc.sha256('dont use brainwallets except for holding testnet coins')
 
+    common.load_program_config()
     wallet = Wallet(seed, max_mix_depth=5)
-    wallet.sync_wallet()
+    common.bc_interface.sync_wallet(wallet)
 
     from irc import IRCMessageChannel
     irc = IRCMessageChannel(nickname)
