@@ -410,6 +410,8 @@ class BitcoinCoreInterface(BlockchainInterface):
         sys.exit(0)
 
     def sync_addresses(self, wallet):
+        if isinstance(wallet, common.BitcoinCoreWallet):
+            return
         common.debug('requesting wallet history')
         wallet_name = self.get_wallet_name(wallet)
         addr_req_count = 50
@@ -475,6 +477,8 @@ class BitcoinCoreInterface(BlockchainInterface):
             return
 
     def sync_unspent(self, wallet):
+        if isinstance(wallet, common.BitcoinCoreWallet):
+            return
         st = time.time()
         wallet_name = self.get_wallet_name(wallet)
         wallet.unspent = {}
