@@ -7,6 +7,7 @@ import socket, threading, time, ssl, socks
 import base64, os, urllib2, re
 import enc_wrapper
 
+MIN_PROTOCOL_VERSION = 2
 MAX_PRIVMSG_LEN = 400
 COMMAND_PREFIX = '!'
 PING_INTERVAL = 180
@@ -96,7 +97,7 @@ class IRCMessageChannel(MessageChannel):
 
     #OrderbookWatch callback
     def request_orderbook(self):
-        self.__pubmsg(COMMAND_PREFIX + 'orderbook')
+        self.__pubmsg(COMMAND_PREFIX + 'orderbook v' + str(JM_VERSION))
 
     #Taker callbacks
     def fill_orders(self, nickoid_dict, cj_amount, taker_pubkey):
@@ -294,9 +295,17 @@ class IRCMessageChannel(MessageChannel):
                     debug("!cancel " + repr(e))
                     return
             elif chunks[0] == 'orderbook':
+                try:
+                    if chunks[1][0] != 'v' or int(chunks[1][
+                            1]) < MIN_PROTOCOL_VERSION:
+                        debug('ignored orderbook request')
+                        continue
+                except (IndexError, ValueError) as e:
+                    debug('ignored orderbook request: ' + repr(e))
                 if self.on_orderbook_requested:
                     self.on_orderbook_requested(nick)
             else:
+
                 #TODO this is for testing/debugging, should be removed, see taker.py
                 if hasattr(self, 'debug_on_pubmsg_cmd'):
                     self.debug_on_pubmsg_cmd(nick, chunks)
