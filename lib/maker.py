@@ -61,23 +61,24 @@ class CoinJoinOrder(object):
         # orders to find out which addresses you use
         self.maker.msgchan.send_pubkey(nick, self.kp.hex_pk())
 
-    def auth_counterparty(self, nick, pubkeys, btc_sig):
-        if len(pubkeys) > 1:
+    def auth_counterparty(self, nick, pubkeys_m, btc_sig):
+        if len(pubkeys_m) > 1:
             try:
-                M = int(pubkeys[-1])
+                M = int(pubkeys_m[-1])
             except ValueError as e:
                 debug("Failed to parse multisig keys, " + e)
                 return False
             if M not in range(1, 15):
                 debug("Invalid M for M of N multisig: " + str(M))
                 return False
-            if len(pubkeys) not in range(1, 15):
+            if len(pubkeys_m) not in range(2, 15):
                 debug("Invalid number of pubkeys for multisig: " + str(M))
                 return False
-        self.i_utxo_pubkeys = pubkeys
+        self.i_utxo_pubkeys = pubkeys_m
         pk_verified = False
         for i, p in enumerate(self.i_utxo_pubkeys):
-            if i > 0 and i == len(self.i_utxo_pubkeys) - 1: continue
+            if i > 0 and i == len(self.i_utxo_pubkeys) - 1:
+                continue  #it was the M parameter not a pubkey
             if btc.ecdsa_verify(self.taker_pk, btc_sig, p):
                 pk_verified = True
                 break
@@ -158,14 +159,17 @@ class CoinJoinOrder(object):
             return False, 'some utxos already spent or not confirmed yet'
         input_addresses = [u['address'] for u in input_utxo_data]
         if len(self.i_utxo_pubkeys) == 1:
-            if btc.pubtoaddr(self.i_utxo_pubkeys[0], get_addr_vbyte())\
-             not in input_addresses:
+            claimed_addr = btc.pubtoaddr(self.i_utxo_pubkeys[0],
+                                         get_addr_vbyte())
+            debug('auth\'ing with p2pk addr: ' + claimed_addr)
+            if claimed_addr not in input_addresses:
                 return False, "authenticating bitcoin address is not contained"
         else:
-            M = self.i_utxo_pubkeys[-1]
+            M = int(self.i_utxo_pubkeys[-1])
             N = len(self.i_utxo_pubkeys) - 1
             claimed_msig_addr = get_multisig_addr(self.i_utxo_pubkeys[:-1], M,
                                                   N)
+            debug('auth\'ing with multisig addr: ' + claimed_msig_addr)
             if claimed_msig_addr not in input_addresses:
                 return False, "authenticating bitcoin address is not contained"
 
@@ -240,10 +244,10 @@ class Maker(CoinJoinerPeer):
         finally:
             self.wallet_unspent_lock.release()
 
-    def on_seen_auth(self, nick, pubkeys, sig):
+    def on_seen_auth(self, nick, pubkeys_m, sig):
         if nick not in self.active_orders or self.active_orders[nick] == None:
             self.msgchan.send_error(nick, 'No open order from this nick')
-        self.active_orders[nick].auth_counterparty(nick, pubkeys, sig)
+        self.active_orders[nick].auth_counterparty(nick, pubkeys_m, sig)
         #TODO if auth_counterparty returns false, remove this order from active_orders
         # and send an error
 
