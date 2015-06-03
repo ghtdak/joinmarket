@@ -112,16 +112,14 @@ def get_multisig_addr(pubkeys, M, N):
 	on the order of the pubkeys! An attempt to sign off
 	a transaction must have the order of signatures correct.'''
     mscript = btc.mk_multisig_script(pubkeys, M, N).decode('hex')
-    return btc.script_to_address(mscript, get_magic_byte())
+    return btc.script_to_address(mscript, get_p2sh_vbyte())
 
 
-def get_magic_byte():
-    if get_addr_vbyte() == 0x00:
-        return 5
-    elif get_addr_vbyte() == 0x6f:
-        return 196
+def get_p2sh_vbyte():
+    if get_network() == 'testnet':
+        return 0xc4
     else:
-        raise Exception("Unrecognized network type")
+        return 0x05
 
 
 def get_addr_vbyte():
@@ -136,7 +134,7 @@ def validate_address(addr):
         ver = btc.get_version_byte(addr)
     except AssertionError:
         return False, 'Checksum wrong. Typo in address?'
-    if ver != get_addr_vbyte():
+    if ver != get_addr_vbyte() and ver != get_p2sh_vbyte():
         return False, 'Wrong address version. Testnet/mainnet confused?'
     return True, 'address validated'
 
