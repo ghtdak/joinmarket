@@ -210,8 +210,8 @@ class Wallet(AbstractWallet):
         super(Wallet, self).__init__()
         self.max_mix_depth = max_mix_depth
         self.gaplimit = gaplimit
-        seed = self.get_seed(seedarg)
-        master = btc.bip32_master_key(seed)
+        self.seed = self.get_seed(seedarg)
+        master = btc.bip32_master_key(self.seed)
         m_0 = btc.bip32_ckd(master, 0)
         mixing_depth_keys = [btc.bip32_ckd(m_0, c)
                              for c in range(max_mix_depth)]
@@ -254,11 +254,18 @@ class Wallet(AbstractWallet):
             sys.exit(0)
         if 'index_cache' in walletdata:
             self.index_cache = walletdata['index_cache']
-        password = getpass.getpass('Enter wallet decryption passphrase: ')
-        password_key = btc.bin_dbl_sha256(password)
-        decrypted_seed = slowaes.decryptData(password_key,
-                                             walletdata['encrypted_seed']
-                                             .decode('hex')).encode('hex')
+        decrypted = False
+        while not decrypted:
+            password = getpass.getpass('Enter wallet decryption passphrase: ')
+            password_key = btc.bin_dbl_sha256(password)
+            encrypted_seed = walletdata['encrypted_seed']
+            try:
+                decrypted_seed = slowaes.decryptData(
+                    password_key, encrypted_seed.decode('hex')).encode('hex')
+                decrypted = True
+            except ValueError:
+                print 'Incorrect password'
+                decrypted = False
         return decrypted_seed
 
     def update_cache_index(self):
@@ -409,7 +416,7 @@ def weighted_order_choose(orders, n, feekey):
 	unless M < orderbook size, then phi goes up to the last order
 	'''
     minfee = feekey(orders[0])
-    M = n
+    M = int(1.5 * n)
     if len(orders) > M:
         phi = feekey(orders[M]) - minfee
     else:
@@ -465,8 +472,8 @@ def choose_order(db, cj_amount, n, chooseOrdersBy):
     counterparties = set([o[0] for o in orders])
     if n > len(counterparties):
         debug(
-            'ERROR not enough liquidity in the orderbook n=%d suitable-counterparties=%d'
-            % (n, len(counterparties)))
+            'ERROR not enough liquidity in the orderbook n=%d suitable-counterparties=%d amount=%d totalorders=%d'
+            % (n, len(counterparties), cj_amount, len(orders)))
         return None, 0  #TODO handle not enough liquidity better, maybe an Exception
     orders = sorted(orders,
                     key=lambda k: k[2])  #sort from smallest to biggest cj fee
