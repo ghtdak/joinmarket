@@ -123,6 +123,7 @@ class CoinJoinTX(object):
                 {'address': self.my_change_addr,
                  'value': my_change_value})
         utxo_tx = [dict([('output', u)]) for u in sum(self.utxos.values(), [])]
+        random.shuffle(utxo_tx)
         random.shuffle(self.outputs)
         tx = btc.mktx(utxo_tx, self.outputs)
         debug('obtained tx\n' + pprint.pformat(btc.deserialize(tx)))
