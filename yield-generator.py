@@ -141,7 +141,7 @@ class YieldGenerator(Maker):
                 list(mix_balance.iteritems()),
                 key=lambda a: a[1],
                 reverse=True)
-            mixdepth = filtered_mix_balance[-1][0]
+            mixdepth = filtered_mix_balance[0][0]
         debug('filling order, mixdepth=' + str(mixdepth))
 
         #mixdepth is the chosen depth we'll be spending from
