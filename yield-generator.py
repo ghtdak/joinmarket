@@ -72,6 +72,7 @@ class YieldGenerator(Maker):
 
     def create_my_orders(self):
         mix_balance = self.wallet.get_balance_by_mixdepth()
+        debug('mix_balance = ' + str(mix_balance))
         nondust_mix_balance = dict([(m, b)
                                     for m, b in mix_balance.iteritems()
                                     if b > common.DUST_THRESHOLD])
@@ -84,10 +85,11 @@ class YieldGenerator(Maker):
             key=lambda a: a[1],
             reverse=True)
         minsize = int(
-            1.5 * txfee / float(cjfee[0])
+            1.5 * txfee / float(min(cjfee))
         )  #minimum size is such that you always net profit at least 50% of the miner fee
         filtered_mix_balance = [f for f in sorted_mix_balance if f[1] > minsize]
-        debug('minsize=' + str(minsize))
+        debug('minsize=' + str(minsize) + ' calc\'d with cjfee=' + str(min(
+            cjfee)))
         min_balances = filtered_mix_balance[1:] + [(-1, minsize)]
         mix_balance_min = [
             (mxb[0], mxb[1], mnb[1])
@@ -125,6 +127,7 @@ class YieldGenerator(Maker):
                  'txfee': txfee,
                  'cjfee': absorder_fee}
         orders = [order] + orders
+        debug('generated orders = \n' + pprint.pformat(orders))
         return orders
 
     def oid_to_order(self, cjorder, oid, amount):
