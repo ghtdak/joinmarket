@@ -20,9 +20,9 @@ joinmarket_alert = None
 
 config = SafeConfigParser()
 config_location = 'joinmarket.cfg'
+# FIXME: Add rpc_* options here in the future!
 required_options = {
-    'BLOCKCHAIN': ['blockchain_source', 'network', 'rpc_host', 'rpc_port',
-                   'rpc_user', 'rpc_password'],
+    'BLOCKCHAIN': ['blockchain_source', 'network'],
     'MESSAGING': ['host', 'channel', 'port']
 }
 
@@ -30,7 +30,7 @@ defaultconfig =\
 """
 [BLOCKCHAIN]
 blockchain_source = blockr 
-#options: blockr, json-rpc, regtest 
+#options: blockr, json-rpc, json-rpc-socket, regtest
 #before using json-rpc read https://github.com/chris-belcher/joinmarket/wiki/Running-JoinMarket-with-Bitcoin-Core-full-node 
 network = mainnet
 rpc_host = localhost
