@@ -223,8 +223,9 @@ class YieldGenerator(Maker):
                              for o in old_setdiff_new
                              if o['oid'] not in ann_oids]
 
-        if len([o for o in oldorders if o['ordertype'] == 'absorder']) == 0:
-            #if absorder was not in the oldorders, announce it
+        if len([o for o in self.orderlist if o['ordertype'] == 'absorder'
+               ]) == 0:
+            #if absorder was not in the previous orders, announce it
             absorders = [o for o in myorders if o['ordertype'] == 'absorder']
             if len(absorders) > 0:
                 ann_orders = [absorders[0]] + ann_orders
