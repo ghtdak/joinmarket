@@ -1,13 +1,13 @@
 import sys, os
 import getpass, json, datetime
 from optparse import OptionParser
-data_dir = os.path.dirname(os.path.realpath(__file__))
-sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
+#data_dir = os.path.dirname(os.path.realpath(__file__))
+#sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
 
 import bitcoin as btc
-from common import Wallet, load_program_config, get_p2pk_vbyte
-import common
-import old_mnemonic, slowaes
+from joinmarket.common import Wallet, load_program_config, get_p2pk_vbyte
+from joinmarket import common
+from joinmarket import old_mnemonic, slowaes
 
 #structure for cj market wallet
 # m/0/ root key

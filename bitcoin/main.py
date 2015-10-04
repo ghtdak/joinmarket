@@ -1,9 +1,6 @@
 #!/usr/bin/python
 import base64
-import binascii
-import hashlib
 import hmac
-import os
 import random
 import re
 import time

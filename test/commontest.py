@@ -1,14 +1,7 @@
-import sys
-import os, time
-data_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
-import subprocess
-import unittest
-import common
-from blockchaininterface import *
-import bitcoin as btc
+#data_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+#sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
+from joinmarket.blockchaininterface import *
 import binascii
-import pexpect
 import random
 '''Some helper functions for testing'''
 '''This code is intended to provide

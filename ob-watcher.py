@@ -1,6 +1,8 @@
-import BaseHTTPServer, SimpleHTTPServer, threading
+import BaseHTTPServer
+import SimpleHTTPServer
+import base64
+import time
 import urllib2
-import io, base64, time, sys, os
 #data_dir = os.path.dirname(os.path.realpath(__file__))
 #sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
 

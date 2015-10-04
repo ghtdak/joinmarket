@@ -1,11 +1,10 @@
 #! /usr/bin/env python
 
-from optparse import OptionParser
-import threading, pprint, sys, os
 #data_dir = os.path.dirname(os.path.realpath(__file__))
 #sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
 
 import time
+from optparse import OptionParser
 from joinmarket.common import *
 from joinmarket import common
 from joinmarket import taker as takermodule

@@ -1,8 +1,8 @@
-import sys, os
-data_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
+#data_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+#sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
 
-import common
+import sys
+from joinmarket import common
 
 try:
     import matplotlib.pyplot as plt

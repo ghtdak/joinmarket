@@ -1,14 +1,10 @@
-import sys
-import os, time
-data_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
-import subprocess
+
+#data_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+#sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
+
 import unittest
-import common
 import commontest
-from blockchaininterface import *
-import bitcoin as btc
-import binascii
+from joinmarket.blockchaininterface import *
 import pexpect
 
 
@@ -93,6 +89,7 @@ class TestWalletRecovery(unittest.TestCase):
         return True
 
 
+data_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 if __name__ == '__main__':
     os.chdir(data_dir)
     common.load_program_config()

@@ -468,7 +468,7 @@ class Taker(OrderbookWatch):
         with self.cjtx.timeout_thread_lock:
             self.cjtx.add_signature(nick, sig)
 
-
-if __name__ == "__main__":
-    main()
-    print('done')
+# todo: leftover code???
+# if __name__ == "__main__":
+#     main()
+#     print('done')

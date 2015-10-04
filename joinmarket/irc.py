@@ -1,13 +1,11 @@
 #
 import base64
-import random
 import socket
-import socks
 import ssl
-import threading
 import time
 
 import enc_wrapper
+import socks
 from common import *
 from message_channel import CJPeerError
 from message_channel import MessageChannel

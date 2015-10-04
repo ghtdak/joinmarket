@@ -1,6 +1,3 @@
-import hashlib
-import hmac
-
 from bitcoin.main import *
 
 

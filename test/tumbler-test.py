@@ -1,11 +1,7 @@
-import sys
-import os, time, random
-data_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
-import subprocess
+#data_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+#sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
 import unittest
-import common
-from blockchaininterface import *
+from joinmarket.blockchaininterface import *
 import bitcoin as btc
 import binascii
 import pexpect
@@ -74,7 +70,7 @@ class TumblerTests(unittest.TestCase):
     def run_tumble(self, amt):
         yigen_procs = []
         for i in range(6):
-            ygp = local_command(['python','yield-generator.py',\
+            ygp = local_command(['python','yield-generator.py',
                                  str(self.wallets[i]['seed'])], bg=True)
             time.sleep(2)  #give it a chance
             yigen_procs.append(ygp)
@@ -124,6 +120,7 @@ class TumblerTests(unittest.TestCase):
         self.failUnless(self.run_tumble(1))
 
 
+data_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 def main():
     os.chdir(data_dir)
     common.load_program_config()

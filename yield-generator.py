@@ -1,9 +1,9 @@
 #! /usr/bin/env python
 
-import time
 #data_dir = os.path.dirname(os.path.realpath(__file__))
 #sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
 
+import time
 from joinmarket.maker import *
 from joinmarket.irc import IRCMessageChannel, random_nick
 from joinmarket import common, blockchaininterface
