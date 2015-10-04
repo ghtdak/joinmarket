@@ -80,8 +80,10 @@ class Join2PTests(unittest.TestCase):
                                               common.get_p2pk_vbyte())
         try:
             for i in range(m):
-                sp_proc = local_command(['python','sendpayment.py','--yes','-N','1', self.wallets[1]['seed'],\
-                                                      str(amt), dest_address])
+                # todo: sp_proc never gets used
+                sp_proc = local_command(
+                    ['python','sendpayment.py','--yes','-N','1',
+                     self.wallets[1]['seed'],str(amt), dest_address])
         except subprocess.CalledProcessError, e:
             if yigen_proc:
                 yigen_proc.terminate()
@@ -124,21 +126,23 @@ class JoinNPTests(unittest.TestCase):
     def run_nparty_join(self):
         yigen_procs = []
         for i in range(self.n):
-            ygp = local_command(['python','yield-generator.py',\
+            ygp = local_command(['python','yield-generator.py',
                                  str(self.wallets[i]['seed'])], bg=True)
             time.sleep(2)  #give it a chance
             yigen_procs.append(ygp)
 
-        #A significant delay is needed to wait for the yield generators to sync
+        # A significant delay is needed to wait for the yield generators to sync
         time.sleep(60)
 
-        #run a single sendpayment call
-        amt = 100000000  #in satoshis
+        # run a single sendpayment call
+        amt = 100000000  # in satoshis
         dest_address = btc.privkey_to_address(os.urandom(32),
                                               common.get_p2pk_vbyte())
         try:
-            sp_proc = local_command(['python','sendpayment.py','--yes','-N', str(self.n),\
-                                     self.wallets[self.n]['seed'], str(amt), dest_address])
+            # todo: sp_proc never gets used
+            sp_proc = local_command(
+                ['python','sendpayment.py','--yes','-N', str(self.n),
+                 self.wallets[self.n]['seed'], str(amt), dest_address])
         except subprocess.CalledProcessError, e:
             for ygp in yigen_procs:
                 ygp.kill()
