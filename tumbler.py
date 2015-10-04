@@ -1,11 +1,13 @@
-import datetime, threading, binascii, sys, os, copy
-data_dir = os.path.dirname(os.path.realpath(__file__))
-sys.path.insert(0, os.path.join(data_dir, 'lib'))
 
-import taker as takermodule
-import common
-from common import *
-from irc import IRCMessageChannel, random_nick
+#data_dir = os.path.dirname(os.path.realpath(__file__))
+#sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
+
+import copy
+import time
+from joinmarket import taker as takermodule
+from joinmarket import common
+from joinmarket.common import *
+from joinmarket.irc import IRCMessageChannel, random_nick
 
 from optparse import OptionParser
 from pprint import pprint
@@ -108,11 +110,12 @@ class TumblerThread(threading.Thread):
                 self.ignored_makers))
             self.create_tx()
 
-    def tumbler_choose_orders(self,
-                              cj_amount,
-                              makercount,
-                              nonrespondants=[],
-                              active_nicks=[]):
+    def tumbler_choose_orders(self, cj_amount, makercount, nonrespondants=None,
+                              active_nicks=None):
+        if not active_nicks:
+            active_nicks = []
+        if not nonrespondants:
+            nonrespondants = []
         self.ignored_makers += nonrespondants
         while True:
             orders, total_cj_fee = choose_orders(

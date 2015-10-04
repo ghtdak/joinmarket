@@ -1,15 +1,14 @@
 #! /usr/bin/env python
 
 from optparse import OptionParser
-import threading, pprint, sys, os
-data_dir = os.path.dirname(os.path.realpath(__file__))
-sys.path.insert(0, os.path.join(data_dir, 'lib'))
+#data_dir = os.path.dirname(os.path.realpath(__file__))
+#sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
 
-from common import *
-import common
-import taker as takermodule
-from irc import IRCMessageChannel, random_nick
-import bitcoin as btc
+import time
+from joinmarket.common import *
+from joinmarket import common
+from joinmarket import taker as takermodule
+from joinmarket.irc import IRCMessageChannel, random_nick
 
 
 def check_high_fee(total_fee_pc):
@@ -65,6 +64,7 @@ class PaymentThread(threading.Thread):
                     100.0 * total_fee_pc))) + '%')
                 check_high_fee(total_fee_pc)
                 if raw_input('send with these orders? (y/n):')[0] != 'y':
+                    # todo: wrong arguments to finishcallback
                     self.finishcallback(None)
                     return
         else:
@@ -95,11 +95,12 @@ class PaymentThread(threading.Thread):
         debug('recreating the tx, ignored_makers=' + str(self.ignored_makers))
         self.create_tx()
 
-    def sendpayment_choose_orders(self,
-                                  cj_amount,
-                                  makercount,
-                                  nonrespondants=[],
-                                  active_nicks=[]):
+    def sendpayment_choose_orders(self, cj_amount, makercount,
+                                  nonrespondants=None, active_nicks=None):
+        if not active_nicks:
+            active_nicks = []
+        if not nonrespondants:
+            nonrespondants = []
         self.ignored_makers += nonrespondants
         orders, total_cj_fee = choose_orders(
             self.taker.db, cj_amount, makercount, self.taker.chooseOrdersFunc,

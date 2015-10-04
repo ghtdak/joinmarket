@@ -1,12 +1,16 @@
 #
-from common import *
-from message_channel import MessageChannel
-from message_channel import CJPeerError
+import base64
+import random
+import socket
+import socks
+import ssl
+import threading
+import time
 
-import string, random
-import socket, threading, time, ssl, socks
-import base64, os, re
 import enc_wrapper
+from common import *
+from message_channel import CJPeerError
+from message_channel import MessageChannel
 
 MAX_PRIVMSG_LEN = 400
 COMMAND_PREFIX = '!'
@@ -37,7 +41,7 @@ def random_nick(nick_len=9):
     # - generate different length nicks
     # - append two or more of these words together
     # - randomly combine phonetic sounds instead consonants, which may be two consecutive consonants
-    #  - e.g. th, dj, g, p, gr, ch, sh, kr, 
+    #  - e.g. th, dj, g, p, gr, ch, sh, kr,
     # - neutral network that generates nicks
 
 

@@ -1,11 +1,11 @@
 #! /usr/bin/env python
 
-from common import *
+import base64
+import sqlite3
+
 import common
 import enc_wrapper
-import bitcoin as btc
-
-import sqlite3, base64, threading, time, random, pprint
+from common import *
 
 
 class CoinJoinTX(object):
@@ -82,7 +82,7 @@ class CoinJoinTX(object):
 
     def auth_counterparty(self, nick, btc_sig, cj_pub):
         '''Validate the counterpartys claim to own the btc
-		address/pubkey that will be used for coinjoining 
+		address/pubkey that will be used for coinjoining
 		with an ecdsa verification.'''
         #crypto_boxes[nick][0] = maker_pubkey
         if not btc.ecdsa_verify(self.crypto_boxes[nick][0], btc_sig, cj_pub):

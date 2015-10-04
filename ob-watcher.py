@@ -1,13 +1,14 @@
 import BaseHTTPServer, SimpleHTTPServer, threading
 import urllib2
 import io, base64, time, sys, os
-data_dir = os.path.dirname(os.path.realpath(__file__))
-sys.path.insert(0, os.path.join(data_dir, 'lib'))
+#data_dir = os.path.dirname(os.path.realpath(__file__))
+#sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
 
-import taker
-from irc import IRCMessageChannel, random_nick
-from common import *
-import common
+from joinmarket import taker
+
+from joinmarket.irc import IRCMessageChannel, random_nick
+from joinmarket.common import *
+from joinmarket import common
 
 # ['counterparty', 'oid', 'ordertype', 'minsize', 'maxsize', 'txfee', 'cjfee']
 col = '  <th>{1}</th>\n'  # .format(field,label)
@@ -28,9 +29,10 @@ refresh_orderbook_form = '<form action="refreshorderbook" method="post"><input t
 def calc_depth_data(db, value):
     pass
 
-
+# todo: ordersizes ???
 def calc_order_size_data(db):
-    return ordersizes
+    pass
+    #return ordersizes
 
 
 def create_depth_chart(db, cj_amount):
@@ -285,9 +287,6 @@ class GUITaker(taker.OrderbookWatch):
 
 
 def main():
-    import bitcoin as btc
-    import common
-    import binascii, os
     from optparse import OptionParser
 
     common.nickname = random_nick()  #watcher' +binascii.hexlify(os.urandom(4))

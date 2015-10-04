@@ -1,11 +1,11 @@
 #! /usr/bin/env python
 
-from common import *
+import base64
+
 import common
-from taker import CoinJoinerPeer
-import bitcoin as btc
-import base64, pprint, threading
 import enc_wrapper
+from common import *
+from taker import CoinJoinerPeer
 
 
 class CoinJoinOrder(object):
@@ -67,7 +67,7 @@ class CoinJoinOrder(object):
         if not btc.ecdsa_verify(self.taker_pk, btc_sig, self.i_utxo_pubkey):
             print 'signature didnt match pubkey and message'
             return False
-        #authorisation of taker passed 
+        #authorisation of taker passed
         #(but input utxo pubkey is checked in verify_unsigned_tx).
         #Send auth request to taker
         #TODO the next 2 lines are a little inefficient.
@@ -162,7 +162,8 @@ class CoinJoinOrder(object):
             if addr == self.cj_addr:
                 times_seen_cj_addr += 1
                 if outs['value'] != self.cj_amount:
-                    return False, 'Wrong cj_amount. I expect ' + str(cj_amount)
+                    return (False, 'Wrong cj_amount. I expect ' +
+                            str(self.cj_amount))
             if addr == self.change_addr:
                 times_seen_change_addr += 1
                 if outs['value'] != expected_change_value:
@@ -240,6 +241,7 @@ class Maker(CoinJoinerPeer):
         txid = common.bc_interface.pushtx(txhex)
         debug('pushed tx ' + str(txid))
         if txid == None:
+            # todo: send_error doesn't exist
             self.send_error(nick, 'Unable to push tx')
 
     def on_welcome(self):

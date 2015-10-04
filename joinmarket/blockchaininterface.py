@@ -1,13 +1,20 @@
 #from joinmarket import *
-import unittest
-import json, threading, abc, pprint, time, random, sys, os, re
-import BaseHTTPServer, urllib
+import BaseHTTPServer
+import abc
+import json
+import os
+import pprint
+import random
+import re
+import sys
+import threading
+import time
+import urllib
 from decimal import Decimal
-import bitcoin as btc
 
+import bitcoin as btc
 import common
 import jsonrpc
-
 # This can be removed once CliJsonRpc is gone.
 import subprocess
 
@@ -176,7 +183,7 @@ class BlockrInterface(BlockchainInterface):
             req = addrs[i:i + inc]
             i += inc
 
-            #TODO send a pull request to pybitcointools 
+            #TODO send a pull request to pybitcointools
             # unspent() doesnt tell you which address, you get a bunch of utxos
             # but dont know which privkey to sign with
 
@@ -392,7 +399,7 @@ class NotifyRequestHeader(BaseHTTPServer.BaseHTTPRequestHandler):
                     unconfirmfun(txd, txid)
                     #TODO pass the total transfered amount value here somehow
                     #wallet_name = self.get_wallet_name()
-                    #amount = 
+                    #amount =
                     #bitcoin-cli move wallet_name "" amount
                     common.debug('ran unconfirmfun')
                 else:
@@ -606,7 +613,7 @@ class BitcoinCoreInterface(BlockchainInterface):
 
 
 #class for regtest chain access
-#running on local daemon. Only 
+#running on local daemon. Only
 #to be instantiated after network is up
 #with > 100 blocks.
 class RegtestBitcoinCoreInterface(BitcoinCoreInterface):

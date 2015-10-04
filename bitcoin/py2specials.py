@@ -1,7 +1,8 @@
-import sys, re
 import binascii
-import os
 import hashlib
+import os
+import re
+import sys
 
 if sys.version_info.major == 2:
     string_types = (str, unicode)

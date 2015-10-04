@@ -1,15 +1,14 @@
-from optparse import OptionParser
+import time
 from datetime import timedelta
-import threading, time, binascii, os, sys
-data_dir = os.path.dirname(os.path.realpath(__file__))
-sys.path.insert(0, os.path.join(data_dir, 'lib'))
+from optparse import OptionParser
+#data_dir = os.path.dirname(os.path.realpath(__file__))
+#sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
 
-from common import *
-import common
-import taker
-import maker
-from irc import IRCMessageChannel, random_nick
-import bitcoin as btc
+from joinmarket.common import *
+from joinmarket import common
+from joinmarket import taker
+from joinmarket import maker
+from joinmarket.irc import IRCMessageChannel, random_nick
 
 
 class TakerThread(threading.Thread):
@@ -121,7 +120,7 @@ class PatientSendPayment(maker.Maker, taker.Taker):
             debug('not enough money left, have to wait until tx confirms')
             return ([0], [])
 
-    def on_tx_confirmed(self, cjorder, confirmations, txid, balance):
+    def on_tx_confirmed(self, cjorder, confirmations, txid):
         if len(self.orderlist) == 0:
             order = {
                 'oid': 0,
@@ -217,7 +216,9 @@ def main():
     else:
         print 'not implemented yet'
         sys.exit(0)
-        wallet = BitcoinCoreWallet(fromaccount=wallet_name)
+
+    # todo: is this right?  code was shifted under above else
+    wallet = BitcoinCoreWallet(fromaccount=wallet_name)
     common.bc_interface.sync_wallet(wallet)
 
     available_balance = wallet.get_balance_by_mixdepth()[options.mixdepth]

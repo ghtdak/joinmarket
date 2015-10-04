@@ -2,13 +2,14 @@
 
 from optparse import OptionParser
 import threading, pprint, sys, os
-data_dir = os.path.dirname(os.path.realpath(__file__))
-sys.path.insert(0, os.path.join(data_dir, 'lib'))
+#data_dir = os.path.dirname(os.path.realpath(__file__))
+#sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
 
-from common import *
-import common
-import taker as takermodule
-from irc import IRCMessageChannel, random_nick
+import time
+from joinmarket.common import *
+from joinmarket import common
+from joinmarket import taker as takermodule
+from joinmarket.irc import IRCMessageChannel, random_nick
 import bitcoin as btc
 import sendpayment
 
@@ -244,7 +245,7 @@ def main():
         return
 
     chooseOrdersFunc = None
-    if options.pickorders and amount != 0:  #cant use for sweeping
+    if options.pickorders and cjamount != 0:  #cant use for sweeping
         chooseOrdersFunc = pick_order
     elif options.choosecheapest:
         chooseOrdersFunc = cheapest_order_choose

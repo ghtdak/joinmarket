@@ -1,7 +1,9 @@
 #!/usr/bin/python
-import json, re
+import json
 import random
+import re
 import sys
+
 try:
     from urllib.request import build_opener
 except:

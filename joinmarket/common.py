@@ -1,11 +1,19 @@
-import bitcoin as btc
-from decimal import Decimal, InvalidOperation
-from math import factorial, exp
-import sys, datetime, json, time, pprint, threading, getpass
+import datetime
+import getpass
+import io
+import json
+import os
+import pprint
 import random
-import blockchaininterface, slowaes
+import sys
+import threading
 from ConfigParser import SafeConfigParser, NoSectionError, NoOptionError
-import os, io, itertools
+from decimal import Decimal
+from math import exp
+
+import bitcoin as btc
+import blockchaininterface
+import slowaes
 
 JM_VERSION = 2
 nickname = ''
@@ -31,9 +39,9 @@ required_options = {
 defaultconfig =\
 """
 [BLOCKCHAIN]
-blockchain_source = blockr 
+blockchain_source = blockr
 #options: blockr, bitcoin-rpc, json-rpc, regtest
-#for instructions on bitcoin-rpc read https://github.com/chris-belcher/joinmarket/wiki/Running-JoinMarket-with-Bitcoin-Core-full-node 
+#for instructions on bitcoin-rpc read https://github.com/chris-belcher/joinmarket/wiki/Running-JoinMarket-with-Bitcoin-Core-full-node
 network = mainnet
 rpc_host = localhost
 rpc_port = 8332
@@ -117,7 +125,7 @@ def debug(msg):
 
 
             #Random functions - replacing some NumPy features
-            #NOTE THESE ARE NEITHER CRYPTOGRAPHICALLY SECURE 
+            #NOTE THESE ARE NEITHER CRYPTOGRAPHICALLY SECURE
             #NOR PERFORMANT NOR HIGH PRECISION!
             #Only for sampling purposes
 def rand_norm_array(mu, sigma, n):

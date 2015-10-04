@@ -1,6 +1,7 @@
-import sys, os
 import binascii
 import hashlib
+import os
+import sys
 
 if sys.version_info.major == 3:
     string_types = (str)

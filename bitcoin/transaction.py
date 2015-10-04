@@ -1,7 +1,9 @@
 #!/usr/bin/python
-import binascii, re, json, copy, sys
-from bitcoin.main import *
+import copy
 from _functools import reduce
+
+from bitcoin.main import *
+
 
 ### Hex to bin converter and vice versa for objects
 

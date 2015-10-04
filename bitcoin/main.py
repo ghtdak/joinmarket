@@ -1,16 +1,15 @@
 #!/usr/bin/python
-from .py2specials import *
-from .py3specials import *
+import base64
 import binascii
 import hashlib
-import re
-import sys
-import os
-import base64
-import time
-import random
 import hmac
+import os
+import random
+import re
+import time
+
 from bitcoin.ripemd import *
+from .py3specials import *
 
 # Elliptic curve parameters (secp256k1)
 

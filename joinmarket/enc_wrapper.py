@@ -1,15 +1,16 @@
 #A wrapper for public key
 #authenticated encryption
 #using Diffie Hellman key
-#exchange to set up a 
+#exchange to set up a
 #symmetric encryption.
 
+import binascii
+
 import libnacl.public
-import binascii, base64
 
 
 def init_keypair(fname=None):
-    '''Create a new encryption 
+    '''Create a new encryption
     keypair; stored in file fname
     if provided. The keypair object
     is returned.
@@ -21,11 +22,11 @@ def init_keypair(fname=None):
     return kp
 
 
-#the next two functions are useful 
+#the next two functions are useful
 #for exchaging pubkeys with counterparty
 def get_pubkey(kp, as_hex=False):
     '''Given a keypair object,
-    return its public key, 
+    return its public key,
     optionally in hex.'''
     return kp.hex_pk() if as_hex else kp.pk
 
@@ -44,7 +45,7 @@ def init_pubkey(hexpk, fname=None):
 def as_init_encryption(kp, c_pk):
     '''Given an initialised
     keypair kp and a counterparty
-    pubkey c_pk, create a Box 
+    pubkey c_pk, create a Box
     ready for encryption/decryption.
     '''
     return libnacl.public.Box(kp.sk, c_pk)
@@ -118,7 +119,7 @@ def test_keypair_setup():
 
     #now Alice and Bob can use their 'box'
     #constructs (both of which utilise the same
-    #shared secret) to perform encryption/decryption    
+    #shared secret) to perform encryption/decryption
     #to test the encryption functionality
     return (alice_box, bob_box)
 

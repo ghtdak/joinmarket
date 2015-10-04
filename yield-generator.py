@@ -1,16 +1,13 @@
 #! /usr/bin/env python
 
-import time, os, binascii, sys, datetime
-import pprint
-data_dir = os.path.dirname(os.path.realpath(__file__))
-sys.path.insert(0, os.path.join(data_dir, 'lib'))
+import time
+#data_dir = os.path.dirname(os.path.realpath(__file__))
+#sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
 
-from maker import *
-from irc import IRCMessageChannel, random_nick
-import bitcoin as btc
-import common, blockchaininterface
+from joinmarket.maker import *
+from joinmarket.irc import IRCMessageChannel, random_nick
+from joinmarket import common, blockchaininterface
 
-from socket import gethostname
 
 txfee = 1000
 cjfee = '0.002'  # 0.2% fee
@@ -19,16 +16,19 @@ nickserv_password = ''
 minsize = int(1.2 * txfee / float(cjfee))  #minimum size is such that you always net profit at least 20% of the miner fee
 mix_levels = 5
 
+"""
+is a maker for the purposes of generating a yield from held
+bitcoins without ruining privacy for the taker, the taker could easily check
+the history of the utxos this bot sends, so theres not much incentive
+to ruin the privacy for barely any more yield
+sell-side algorithm:
+add up the value of each utxo for each mixing depth,
+announce a relative-fee order of the highest balance
+spent from utxos that try to make the highest balance even higher
+so try to keep coins concentrated in one mixing depth
+"""
 
-#is a maker for the purposes of generating a yield from held
-# bitcoins without ruining privacy for the taker, the taker could easily check
-# the history of the utxos this bot sends, so theres not much incentive
-# to ruin the privacy for barely any more yield
-#sell-side algorithm:
-#add up the value of each utxo for each mixing depth,
-# announce a relative-fee order of the highest balance
-#spent from utxos that try to make the highest balance even higher
-# so try to keep coins concentrated in one mixing depth
+
 class YieldGenerator(Maker):
     statement_file = os.path.join('logs', 'yigen-statement.csv')
 
