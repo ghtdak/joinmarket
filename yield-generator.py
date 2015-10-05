@@ -1,13 +1,13 @@
 #! /usr/bin/env python
 
-#data_dir = os.path.dirname(os.path.realpath(__file__))
-#sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
-
+import datetime
+import os
 import time
-from joinmarket.maker import *
-from joinmarket.irc import IRCMessageChannel, random_nick
-from joinmarket import common, blockchaininterface
 
+from joinmarket import common, blockchaininterface
+from joinmarket.common import debug, calc_cj_fee, Wallet, debug_dump_object
+from joinmarket.irc import IRCMessageChannel, random_nick
+from joinmarket.maker import Maker
 
 txfee = 1000
 cjfee = '0.002'  # 0.2% fee

@@ -1,16 +1,19 @@
-
-#data_dir = os.path.dirname(os.path.realpath(__file__))
-#sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
+# data_dir = os.path.dirname(os.path.realpath(__file__))
+# sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
 
 import copy
+import sys
+import threading
 import time
-from joinmarket import taker as takermodule
-from joinmarket import common
-from joinmarket.common import *
-from joinmarket.irc import IRCMessageChannel, random_nick
-
 from optparse import OptionParser
 from pprint import pprint
+
+from joinmarket import common
+from joinmarket import taker as takermodule
+from joinmarket.common import rand_norm_array, rand_pow_array, rand_exp_array, \
+    debug, choose_orders, weighted_order_choose, choose_sweep_orders, \
+    validate_address, Wallet, debug_dump_object
+from joinmarket.irc import IRCMessageChannel, random_nick
 
 orderwaittime = 10
 
@@ -20,27 +23,27 @@ def lower_bounded_int(thelist, lowerbound):
 
 
 def generate_tumbler_tx(destaddrs, options):
-    #sends the coins up through a few mixing depths
-    #send to the destination addresses from different mixing depths
+    # sends the coins up through a few mixing depths
+    # send to the destination addresses from different mixing depths
 
-    #simple algo, move coins completely from one mixing depth to the next
+    # simple algo, move coins completely from one mixing depth to the next
     # until you get to the end, then send to destaddrs
 
-    #txcounts for going completely from one mixdepth to the next
+    # txcounts for going completely from one mixdepth to the next
     # follows a normal distribution
     txcounts = rand_norm_array(options.txcountparams[0],
                                options.txcountparams[1], options.mixdepthcount)
     txcounts = lower_bounded_int(txcounts, 1)
     tx_list = []
     for m, txcount in enumerate(txcounts):
-        #assume that the sizes of outputs will follow a power law
+        # assume that the sizes of outputs will follow a power law
         amount_fractions = rand_pow_array(options.amountpower, txcount)
         amount_fractions = [1.0 - x for x in amount_fractions]
         amount_fractions = [x / sum(amount_fractions) for x in amount_fractions]
-        #transaction times are uncorrelated
-        #time between events in a poisson process followed exp
+        # transaction times are uncorrelated
+        # time between events in a poisson process followed exp
         waits = rand_exp_array(options.timelambda, txcount)
-        #number of makers to use follows a normal distribution
+        # number of makers to use follows a normal distribution
         makercounts = rand_norm_array(options.makercountrange[0],
                                       options.makercountrange[1], txcount)
         makercounts = lower_bounded_int(makercounts, 2)
@@ -64,7 +67,7 @@ def generate_tumbler_tx(destaddrs, options):
                 tx['destination'] = external_dest_addrs[mix_offset]
                 break
         if mix_offset == 0:
-            #setting last mixdepth to send all to dest
+            # setting last mixdepth to send all to dest
             tx_list_remove = []
             for tx in tx_list:
                 if tx['srcmixdepth'] == srcmix:
@@ -76,10 +79,9 @@ def generate_tumbler_tx(destaddrs, options):
     return tx_list
 
 
-#thread which does the buy-side algorithm
+# thread which does the buy-side algorithm
 # chooses which coinjoins to initiate and when
 class TumblerThread(threading.Thread):
-
     def __init__(self, taker):
         threading.Thread.__init__(self)
         self.daemon = True
@@ -117,6 +119,8 @@ class TumblerThread(threading.Thread):
         if not nonrespondants:
             nonrespondants = []
         self.ignored_makers += nonrespondants
+        orders = None
+        total_cj_fee = None
         while True:
             orders, total_cj_fee = choose_orders(
                 self.taker.db, cj_amount, makercount, weighted_order_choose,
@@ -126,14 +130,14 @@ class TumblerThread(threading.Thread):
             debug('rel/abs average fee = ' + str(rel_cj_fee) + ' / ' + str(
                 abs_cj_fee))
 
-            if rel_cj_fee > self.taker.maxcjfee[0
-                                      ] and abs_cj_fee > self.taker.maxcjfee[1]:
+            if (rel_cj_fee > self.taker.maxcjfee[0] and
+                        abs_cj_fee > self.taker.maxcjfee[1]):
                 debug('cj fee higher than maxcjfee, waiting 60 seconds')
                 time.sleep(60)
                 continue
-            if orders == None:
-                debug(
-                    'waiting for liquidity 1min, hopefully more orders should come in')
+            if orders is None:
+                debug('waiting for liquidity 1min, '
+                      'hopefully more orders should come in')
                 time.sleep(60)
                 continue
             break
@@ -142,33 +146,32 @@ class TumblerThread(threading.Thread):
         return orders, total_cj_fee
 
     def create_tx(self):
-        utxos = None
         orders = None
         cj_amount = 0
         change_addr = None
         choose_orders_recover = None
         if self.sweep:
             debug('sweeping')
-            utxos = self.taker.wallet.get_utxos_by_mixdepth(
-            )[self.tx['srcmixdepth']]
+            utxos = self.taker.wallet.get_utxos_by_mixdepth()[
+                self.tx['srcmixdepth']]
             total_value = sum([addrval['value'] for addrval in utxos.values()])
             while True:
                 orders, cj_amount = choose_sweep_orders(
                     self.taker.db, total_value, self.taker.txfee,
                     self.tx['makercount'], weighted_order_choose,
                     self.ignored_makers)
-                if orders == None:
+                if orders is None:
                     debug(
                         'waiting for liquidity 1min, hopefully more orders should come in')
                     time.sleep(60)
                     continue
                 abs_cj_fee = 1.0 * (total_value - cj_amount
-                     ) / self.tx['makercount']
+                                    ) / self.tx['makercount']
                 rel_cj_fee = abs_cj_fee / cj_amount
                 debug('rel/abs average fee = ' + str(rel_cj_fee) + ' / ' + str(
                     abs_cj_fee))
                 if rel_cj_fee > self.taker.maxcjfee[
-                        0
+                    0
                 ] and abs_cj_fee > self.taker.maxcjfee[1]:
                     debug('cj fee higher than maxcjfee, waiting 60 seconds')
                     time.sleep(60)
@@ -238,7 +241,7 @@ class TumblerThread(threading.Thread):
         maker_count = sum([tx['makercount'] for tx in self.taker.tx_list])
         debug('uses ' + str(maker_count) + ' makers, at ' + str(
             relorder_fee * 100) + '% per maker, estimated total cost ' + str(
-                round((1 - (1 - relorder_fee) ** maker_count) * 100, 3)) + '%')
+            round((1 - (1 - relorder_fee) ** maker_count) * 100, 3)) + '%')
         debug('waiting for orders to arrive')
         time.sleep(orderwaittime)
         debug('starting')
@@ -247,9 +250,8 @@ class TumblerThread(threading.Thread):
         self.balance_by_mixdepth = {}
         for i, tx in enumerate(self.taker.tx_list):
             if tx['srcmixdepth'] not in self.balance_by_mixdepth:
-                self.balance_by_mixdepth[tx['srcmixdepth']
-                            ] = self.taker.wallet.get_balance_by_mixdepth(
-                            )[tx['srcmixdepth']]
+                self.balance_by_mixdepth[tx['srcmixdepth']] = \
+                self.taker.wallet.get_balance_by_mixdepth()[tx['srcmixdepth']]
             sweep = True
             for later_tx in self.taker.tx_list[i + 1:]:
                 if later_tx['srcmixdepth'] == tx['srcmixdepth']:
@@ -259,18 +261,17 @@ class TumblerThread(threading.Thread):
 
         debug('total finished')
         self.taker.msgchan.shutdown()
-        '''
-		crow = self.taker.db.execute('SELECT COUNT(DISTINCT counterparty) FROM orderbook;').fetchone()
-		counterparty_count = crow['COUNT(DISTINCT counterparty)']
-		if counterparty_count < self.taker.makercount:
-			print 'not enough counterparties to fill order, ending'
-			self.taker.msgchan.shutdown()
-			return
-		'''
+        """
+        crow = self.taker.db.execute('SELECT COUNT(DISTINCT counterparty) FROM orderbook;').fetchone()
+        counterparty_count = crow['COUNT(DISTINCT counterparty)']
+        if counterparty_count < self.taker.makercount:
+            print 'not enough counterparties to fill order, ending'
+            self.taker.msgchan.shutdown()
+            return
+        """
 
 
 class Tumbler(takermodule.Taker):
-
     def __init__(self, msgchan, wallet, tx_list, txfee, maxcjfee, mincjamount):
         takermodule.Taker.__init__(self, msgchan)
         self.wallet = wallet
@@ -317,8 +318,8 @@ def main():
         nargs=2,
         default=(0.01, 10000),
         help='maximum coinjoin fee and bitcoin value the tumbler is '
-        'willing to pay to a single market maker. Both values need to be exceeded, so if '
-        'the fee is 30% but only 500satoshi is paid the tx will go ahead. default=0.01, 10000 (1%, 10000satoshi)')
+             'willing to pay to a single market maker. Both values need to be exceeded, so if '
+             'the fee is 30% but only 500satoshi is paid the tx will go ahead. default=0.01, 10000 (1%, 10000satoshi)')
     parser.add_option(
         '-a',
         '--addrcount',
@@ -389,7 +390,7 @@ def main():
         default=100000,
         help='minimum coinjoin amount in transaction in satoshi, default 100k')
     (options, args) = parser.parse_args()
-    #TODO somehow implement a lower limit
+    # TODO somehow implement a lower limit
 
     if len(args) < 1:
         parser.error('Needs a wallet file')
@@ -446,19 +447,19 @@ def main():
     if ret[0] != 'y':
         return
 
-    #NOTE: possibly out of date documentation
-    #a couple of modes
-    #im-running-from-the-nsa, takes about 80 hours, costs a lot
-    #python tumbler.py -a 10 -N 10 5 -c 10 5 -l 50 -M 10 wallet_file 1xxx
+    # NOTE: possibly out of date documentation
+    # a couple of modes
+    # im-running-from-the-nsa, takes about 80 hours, costs a lot
+    # python tumbler.py -a 10 -N 10 5 -c 10 5 -l 50 -M 10 wallet_file 1xxx
     #
-    #quick and cheap, takes about 90 minutes
-    #python tumbler.py -N 2 1 -c 3 0.001 -l 10 -M 3 -a 1 wallet_file 1xxx
+    # quick and cheap, takes about 90 minutes
+    # python tumbler.py -N 2 1 -c 3 0.001 -l 10 -M 3 -a 1 wallet_file 1xxx
     #
-    #default, good enough for most, takes about 5 hours
-    #python tumbler.py wallet_file 1xxx
+    # default, good enough for most, takes about 5 hours
+    # python tumbler.py wallet_file 1xxx
     #
-    #for quick testing
-    #python tumbler.py -N 2 1 -c 3 0.001 -l 0.1 -M 3 -a 0 wallet_file 1xxx 1yyy
+    # for quick testing
+    # python tumbler.py -N 2 1 -c 3 0.001 -l 0.1 -M 3 -a 0 wallet_file 1xxx 1yyy
     wallet = Wallet(wallet_file,
                     max_mix_depth=options.mixdepthsrc + options.mixdepthcount)
     common.bc_interface.sync_wallet(wallet)
