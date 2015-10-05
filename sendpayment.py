@@ -1,12 +1,8 @@
 #! /usr/bin/env python
-import threading
-from optparse import OptionParser
-#data_dir = os.path.dirname(os.path.realpath(__file__))
-#sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
-
-import time
-#from joinmarket.common import *
 import sys
+import threading
+import time
+from optparse import OptionParser
 
 from joinmarket import common
 from joinmarket import taker as takermodule
@@ -48,9 +44,6 @@ class PaymentThread(threading.Thread):
             self.taker.msgchan.shutdown()
             return
 
-        utxos = None
-        orders = None
-        cjamount = 0
         change_addr = None
         choose_orders_recover = None
         if self.taker.amount == 0:
@@ -236,7 +229,6 @@ def main():
         print 'ERROR: Address invalid. ' + errormsg
         return
 
-    chooseOrdersFunc = None
     if options.pickorders and amount != 0:  #cant use for sweeping
         chooseOrdersFunc = pick_order
     elif options.choosecheapest:

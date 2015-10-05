@@ -1,10 +1,15 @@
 #! /usr/bin/env python
 
 import base64
+import pprint
+import sys
+import threading
 
-import common
 import enc_wrapper
-from common import *
+from bitcoin.main import ecdsa_verify, privtopub, ecdsa_sign, pubtoaddr, sha256
+from bitcoin.transaction import deserialize, sign, script_to_address
+from joinmarket.common import DUST_THRESHOLD, debug, bc_interface, \
+    get_p2pk_vbyte, calc_cj_fee, load_program_config, Wallet, debug_dump_object
 from taker import CoinJoinerPeer
 
 
@@ -14,14 +19,14 @@ class CoinJoinOrder(object):
         self.maker = maker
         self.oid = oid
         self.cj_amount = amount
-        if self.cj_amount <= common.DUST_THRESHOLD:
+        if self.cj_amount <= DUST_THRESHOLD:
             self.maker.msgchan.send_error(nick, 'amount below dust threshold')
         #the btc pubkey of the utxo that the taker plans to use as input
         self.taker_pk = taker_pk
         #create DH keypair on the fly for this Order object
         self.kp = enc_wrapper.init_keypair()
         #the encryption channel crypto box for this Order object
-        self.crypto_box = enc_wrapper.as_init_encryption(self.kp, \
+        self.crypto_box = enc_wrapper.as_init_encryption(self.kp,
                                 enc_wrapper.init_pubkey(taker_pk))
 
         order_s = [o for o in maker.orderlist if o['oid'] == oid]
@@ -45,7 +50,7 @@ class CoinJoinOrder(object):
         import pprint
         debug('maker utxos = ' + pprint.pformat(self.utxos))
         utxo_list = self.utxos.keys()
-        utxo_data = common.bc_interface.query_utxo_set(utxo_list)
+        utxo_data = bc_interface.query_utxo_set(utxo_list)
         if None in utxo_data:
             debug('wrongly using an already spent utxo. utxo_data = ' +
                   pprint.pformat(utxo_data))
@@ -64,7 +69,7 @@ class CoinJoinOrder(object):
     def auth_counterparty(self, nick, i_utxo_pubkey, btc_sig):
         self.i_utxo_pubkey = i_utxo_pubkey
 
-        if not btc.ecdsa_verify(self.taker_pk, btc_sig, self.i_utxo_pubkey):
+        if not ecdsa_verify(self.taker_pk, btc_sig, self.i_utxo_pubkey):
             print 'signature didnt match pubkey and message'
             return False
         #authorisation of taker passed
@@ -72,15 +77,15 @@ class CoinJoinOrder(object):
         #Send auth request to taker
         #TODO the next 2 lines are a little inefficient.
         btc_key = self.maker.wallet.get_key_from_addr(self.cj_addr)
-        btc_pub = btc.privtopub(btc_key)
-        btc_sig = btc.ecdsa_sign(self.kp.hex_pk(), btc_key)
+        btc_pub = privtopub(btc_key)
+        btc_sig = ecdsa_sign(self.kp.hex_pk(), btc_key)
         self.maker.msgchan.send_ioauth(nick, self.utxos.keys(), btc_pub,
                                        self.change_addr, btc_sig)
         return True
 
     def recv_tx(self, nick, txhex):
         try:
-            self.tx = btc.deserialize(txhex)
+            self.tx = deserialize(txhex)
         except IndexError as e:
             self.maker.msgchan.send_error(nick, 'malformed txhex. ' + repr(e))
         debug('obtained tx\n' + pprint.pformat(self.tx))
@@ -96,13 +101,13 @@ class CoinJoinOrder(object):
             if utxo not in self.utxos:
                 continue
             addr = self.utxos[utxo]['address']
-            txs = btc.sign(txhex, index,
+            txs = sign(txhex, index,
                            self.maker.wallet.get_key_from_addr(addr))
-            sigs.append(base64.b64encode(btc.deserialize(
+            sigs.append(base64.b64encode(deserialize(
                 txs)['ins'][index]['script'].decode('hex')))
         #len(sigs) > 0 guarenteed since i did verify_unsigned_tx()
 
-        common.bc_interface.add_tx_notify(self.tx, self.unconfirm_callback,
+        bc_interface.add_tx_notify(self.tx, self.unconfirm_callback,
                                           self.confirm_callback, self.cj_addr)
         debug('sending sigs ' + str(sigs))
         self.maker.msgchan.send_sigs(nick, sigs)
@@ -123,7 +128,7 @@ class CoinJoinOrder(object):
     def confirm_callback(self, txd, txid, confirmations):
         self.maker.wallet_unspent_lock.acquire()
         try:
-            common.bc_interface.sync_unspent(self.maker.wallet)
+            bc_interface.sync_unspent(self.maker.wallet)
         finally:
             self.maker.wallet_unspent_lock.release()
         debug('tx in a block')
@@ -136,11 +141,11 @@ class CoinJoinOrder(object):
         tx_utxo_set = set([ins['outpoint']['hash'] + ':' \
                            + str(ins['outpoint']['index']) for ins in txd['ins']])
         #complete authentication: check the tx input uses the authing pubkey
-        input_utxo_data = common.bc_interface.query_utxo_set(list(tx_utxo_set))
+        input_utxo_data = bc_interface.query_utxo_set(list(tx_utxo_set))
         if None in input_utxo_data:
             return False, 'some utxos already spent or not confirmed yet'
         input_addresses = [u['address'] for u in input_utxo_data]
-        if btc.pubtoaddr(self.i_utxo_pubkey, get_p2pk_vbyte())\
+        if pubtoaddr(self.i_utxo_pubkey, get_p2pk_vbyte())\
          not in input_addresses:
             return False, "authenticating bitcoin address is not contained"
         my_utxo_set = set(self.utxos.keys())
@@ -158,7 +163,7 @@ class CoinJoinOrder(object):
         times_seen_cj_addr = 0
         times_seen_change_addr = 0
         for outs in txd['outs']:
-            addr = btc.script_to_address(outs['script'], get_p2pk_vbyte())
+            addr = script_to_address(outs['script'], get_p2pk_vbyte())
             if addr == self.cj_addr:
                 times_seen_cj_addr += 1
                 if outs['value'] != self.cj_amount:
@@ -238,7 +243,7 @@ class Maker(CoinJoinerPeer):
 
     def on_push_tx(self, nick, txhex):
         debug('received txhex from ' + nick + ' to push\n' + txhex)
-        txid = common.bc_interface.pushtx(txhex)
+        txid = bc_interface.pushtx(txhex)
         debug('pushed tx ' + str(txid))
         if txid == None:
             # todo: send_error doesn't exist
@@ -344,7 +349,7 @@ class Maker(CoinJoinerPeer):
     def on_tx_confirmed(self, cjorder, confirmations, txid):
         to_announce = []
         for i, out in enumerate(cjorder.tx['outs']):
-            addr = btc.script_to_address(out['script'], get_p2pk_vbyte())
+            addr = script_to_address(out['script'], get_p2pk_vbyte())
             if addr == cjorder.change_addr:
                 neworder = {
                     'oid': self.get_next_oid(),
@@ -372,13 +377,13 @@ class Maker(CoinJoinerPeer):
 
 def main():
     from socket import gethostname
-    nickname = 'cj-maker-' + btc.sha256(gethostname())[:6]
+    nickname = 'cj-maker-' + sha256(gethostname())[:6]
     import sys
     seed = sys.argv[1]  #btc.sha256('dont use brainwallets except for holding testnet coins')
 
-    common.load_program_config()
+    load_program_config()
     wallet = Wallet(seed, max_mix_depth=5)
-    common.bc_interface.sync_wallet(wallet)
+    bc_interface.sync_wallet(wallet)
 
     from irc import IRCMessageChannel
     irc = IRCMessageChannel(nickname)

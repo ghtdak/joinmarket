@@ -1,12 +1,16 @@
 import BaseHTTPServer
 import SimpleHTTPServer
 import base64
+import io
+import threading
 import time
 import urllib2
+import json
+from decimal import Decimal
 
 from joinmarket import common
 from joinmarket import taker
-from joinmarket.common import *
+from joinmarket.common import calc_cj_fee
 from joinmarket.irc import IRCMessageChannel, random_nick
 
 # ['counterparty', 'oid', 'ordertype', 'minsize', 'maxsize', 'txfee', 'cjfee']

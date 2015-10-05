@@ -1,18 +1,17 @@
 #! /usr/bin/env python
+import sys
 import threading
 import time
 from optparse import OptionParser
-#from joinmarket.common import *
-import sys
 
+import bitcoin as btc
+import sendpayment
 from joinmarket import common
 from joinmarket import taker as takermodule
 from joinmarket.common import choose_sweep_orders, debug, choose_orders, \
     validate_address, pick_order, cheapest_order_choose, weighted_order_choose, \
     debug_dump_object
 from joinmarket.irc import IRCMessageChannel, random_nick
-import bitcoin as btc
-import sendpayment
 
 
 #thread which does the buy-side algorithm
@@ -36,8 +35,6 @@ class PaymentThread(threading.Thread):
             return
 
         utxos = self.taker.utxo_data
-        orders = None
-        cjamount = 0
         change_addr = None
         choose_orders_recover = None
         if self.taker.cjamount == 0:
