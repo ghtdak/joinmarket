@@ -92,11 +92,10 @@ class PaymentThread(threading.Thread):
         debug('recreating the tx, ignored_makers=' + str(self.ignored_makers))
         self.create_tx()
 
-    def sendpayment_choose_orders(self,
-                                  cj_amount,
-                                  makercount,
-                                  nonrespondants=[],
-                                  active_nicks=[]):
+    def sendpayment_choose_orders(self, cj_amount, makercount,
+                                  nonrespondants=[], active_nicks=None):
+        if not active_nicks:
+            active_nicks = []
         self.ignored_makers += nonrespondants
         orders, total_cj_fee = choose_orders(
             self.taker.db, cj_amount, makercount, self.taker.chooseOrdersFunc,

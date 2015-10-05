@@ -194,7 +194,9 @@ def validate_address(addr):
     return True, 'address validated'
 
 
-def debug_dump_object(obj, skip_fields=[]):
+def debug_dump_object(obj, skip_fields=None):
+    if not skip_fields:
+        skip_fields = []
     debug('Class debug dump, name:' + obj.__class__.__name__)
     for k, v in obj.__dict__.iteritems():
         if k in skip_fields:
@@ -581,7 +583,9 @@ def pick_order(orders, n, feekey):
         pickedOrderIndex = -1
 
 
-def choose_orders(db, cj_amount, n, chooseOrdersBy, ignored_makers=[]):
+def choose_orders(db, cj_amount, n, chooseOrdersBy, ignored_makers=None):
+    if not ignored_makers:
+        ignored_makers = []
     sqlorders = db.execute('SELECT * FROM orderbook;').fetchall()
     orders = [(o['counterparty'], o['oid'], calc_cj_fee(
         o['ordertype'], o['cjfee'], cj_amount), o['txfee']) for o in sqlorders
@@ -608,12 +612,8 @@ def choose_orders(db, cj_amount, n, chooseOrdersBy, ignored_makers=[]):
     return dict(chosen_orders), total_cj_fee
 
 
-def choose_sweep_orders(db,
-                        total_input_value,
-                        my_tx_fee,
-                        n,
-                        chooseOrdersBy,
-                        ignored_makers=[]):
+def choose_sweep_orders(db, total_input_value, my_tx_fee, n, chooseOrdersBy,
+                        ignored_makers=None):
     '''
 	choose an order given that we want to be left with no change
 	i.e. sweep an entire group of utxos
@@ -624,6 +624,8 @@ def choose_sweep_orders(db,
 	=> 0 = totalin - mytxfee - sum(absfee) - cjamount*(1 + sum(relfee))
 	=> cjamount = (totalin - mytxfee - sum(absfee)) / (1 + sum(relfee))
 	'''
+    if not ignored_makers:
+        ignored_makers = []
 
     def calc_zero_change_cj_amount(ordercombo):
         sumabsfee = 0

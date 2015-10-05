@@ -5,7 +5,7 @@
 #symmetric encryption.
 
 import binascii
-
+import base64, string, random
 import libnacl.public
 
 
@@ -130,7 +130,6 @@ if __name__ == "__main__":
     test_case("short ascii", alice_box, bob_box, "Attack at dawn",
               "Not tonight Josephine!", 5)
 
-    import base64, string, random
     alice_box, bob_box = test_keypair_setup()
     longb641 = base64.b64encode(''.join(random.choice(string.ascii_letters) for
                                         x in range(5000)))

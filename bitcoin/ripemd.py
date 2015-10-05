@@ -182,7 +182,8 @@ def RMD160Transform(state, block):  #uint32 state[5], uchar block[64]
         else:
             x = struct.unpack('<16L', bytes(block[0:64]))
     else:
-        raise "Error!!"
+        raise ValueError("Error!!")
+
     a = state[0]
     b = state[1]
     c = state[2]
