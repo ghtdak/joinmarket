@@ -1,11 +1,20 @@
 #! /usr/bin/env python
 
 import base64
+import pprint
+import random
 import sqlite3
+import threading
 
-import common
+import sys
+from decimal import Decimal, InvalidOperation
+
 import enc_wrapper
-from common import *
+from bitcoin.main import privtopub, ecdsa_sign, ecdsa_verify, pubtoaddr
+from bitcoin.transaction import mktx, deserialize, serialize, verify_tx_input, \
+    deserialize_script, sign, txhash
+from joinmarket.common import debug, bc_interface, calc_cj_fee, get_p2pk_vbyte, \
+    maker_timeout_sec, JM_VERSION
 
 
 class CoinJoinTX(object):
@@ -68,16 +77,17 @@ class CoinJoinTX(object):
         if nick not in self.active_orders.keys():
             debug("Counterparty not part of this transaction. Ignoring")
             return
-        self.crypto_boxes[nick] = [maker_pk, enc_wrapper.as_init_encryption(\
-                                self.kp, enc_wrapper.init_pubkey(maker_pk))]
+        self.crypto_boxes[nick] = [
+            maker_pk, enc_wrapper.as_init_encryption(
+                self.kp, enc_wrapper.init_pubkey(maker_pk))]
         #send authorisation request
         if self.auth_addr:
             my_btc_addr = self.auth_addr
         else:
             my_btc_addr = self.input_utxos.itervalues().next()['address']
         my_btc_priv = self.wallet.get_key_from_addr(my_btc_addr)
-        my_btc_pub = btc.privtopub(my_btc_priv)
-        my_btc_sig = btc.ecdsa_sign(self.kp.hex_pk(), my_btc_priv)
+        my_btc_pub = privtopub(my_btc_priv)
+        my_btc_sig = ecdsa_sign(self.kp.hex_pk(), my_btc_priv)
         self.msgchan.send_auth(nick, my_btc_pub, my_btc_sig)
 
     def auth_counterparty(self, nick, btc_sig, cj_pub):
@@ -85,7 +95,7 @@ class CoinJoinTX(object):
 		address/pubkey that will be used for coinjoining
 		with an ecdsa verification.'''
         #crypto_boxes[nick][0] = maker_pubkey
-        if not btc.ecdsa_verify(self.crypto_boxes[nick][0], btc_sig, cj_pub):
+        if not ecdsa_verify(self.crypto_boxes[nick][0], btc_sig, cj_pub):
             debug('signature didnt match pubkey and message')
             return False
         return True
@@ -99,9 +109,9 @@ class CoinJoinTX(object):
         order = self.db.execute('SELECT ordertype, txfee, cjfee FROM '
                                 'orderbook WHERE oid=? AND counterparty=?',
                                 (self.active_orders[nick], nick)).fetchone()
-        utxo_data = common.bc_interface.query_utxo_set(self.utxos[nick])
+        utxo_data = bc_interface.query_utxo_set(self.utxos[nick])
         if None in utxo_data:
-            common.debug(
+            debug(
                 'ERROR outputs unconfirmed or already spent. utxo_data=' +
                 pprint.pformat(utxo_data))
             #when internal reviewing of makers is created, add it here to immediately quit
@@ -116,7 +126,7 @@ class CoinJoinTX(object):
         debug(
             'fee breakdown for %s totalin=%d cjamount=%d txfee=%d realcjfee=%d'
             % (nick, total_input, self.cj_amount, order['txfee'], real_cjfee))
-        cj_addr = btc.pubtoaddr(cj_pub, get_p2pk_vbyte())
+        cj_addr = pubtoaddr(cj_pub, get_p2pk_vbyte())
         self.outputs.append({'address': cj_addr, 'value': self.cj_amount})
         self.cjfee_total += real_cjfee
         self.nonrespondants.remove(nick)
@@ -152,11 +162,11 @@ class CoinJoinTX(object):
         utxo_tx = [dict([('output', u)]) for u in sum(self.utxos.values(), [])]
         random.shuffle(utxo_tx)
         random.shuffle(self.outputs)
-        tx = btc.mktx(utxo_tx, self.outputs)
-        debug('obtained tx\n' + pprint.pformat(btc.deserialize(tx)))
+        tx = mktx(utxo_tx, self.outputs)
+        debug('obtained tx\n' + pprint.pformat(deserialize(tx)))
         self.msgchan.send_tx(self.active_orders.keys(), tx)
 
-        self.latest_tx = btc.deserialize(tx)
+        self.latest_tx = deserialize(tx)
         for index, ins in enumerate(self.latest_tx['ins']):
             utxo = ins['outpoint']['hash'] + ':' + str(ins['outpoint']['index'])
             if utxo not in self.input_utxos.keys():
@@ -171,7 +181,7 @@ class CoinJoinTX(object):
             return
         sig = base64.b64decode(sigb64).encode('hex')
         inserted_sig = False
-        txhex = btc.serialize(self.latest_tx)
+        txhex = serialize(self.latest_tx)
 
         #batch retrieval of utxo data
         utxo = {}
@@ -184,14 +194,14 @@ class CoinJoinTX(object):
                 continue
             utxo[ctr] = [index, utxo_for_checking]
             ctr += 1
-        utxo_data = common.bc_interface.query_utxo_set([x[1] for x in
+        utxo_data = bc_interface.query_utxo_set([x[1] for x in
                                                         utxo.values()])
         #insert signatures
         for i, u in utxo.iteritems():
             if utxo_data[i] == None:
                 continue
-            sig_good = btc.verify_tx_input(txhex, u[0], utxo_data[i]['script'],
-                                           *btc.deserialize_script(sig))
+            sig_good = verify_tx_input(txhex, u[0], utxo_data[i]['script'],
+                                           *deserialize_script(sig))
             if sig_good:
                 debug('found good sig at index=%d' % (u[0]))
                 self.latest_tx['ins'][u[0]]['script'] = sig
@@ -229,23 +239,23 @@ class CoinJoinTX(object):
 
     def self_sign(self):
         #now sign it ourselves
-        tx = btc.serialize(self.latest_tx)
+        tx = serialize(self.latest_tx)
         for index, ins in enumerate(self.latest_tx['ins']):
             utxo = ins['outpoint']['hash'] + ':' + str(ins['outpoint']['index'])
             if utxo not in self.input_utxos.keys():
                 continue
             addr = self.input_utxos[utxo]['address']
-            tx = btc.sign(tx, index, self.wallet.get_key_from_addr(addr))
-        self.latest_tx = btc.deserialize(tx)
+            tx = sign(tx, index, self.wallet.get_key_from_addr(addr))
+        self.latest_tx = deserialize(tx)
 
     def push(self, txd):
-        tx = btc.serialize(txd)
+        tx = serialize(txd)
         debug('\n' + tx)
-        debug('txid = ' + btc.txhash(tx))
+        debug('txid = ' + txhash(tx))
         #TODO send to a random maker or push myself
         #TODO need to check whether the other party sent it
         #self.msgchan.push_tx(self.active_orders.keys()[0], txhex)
-        self.txid = common.bc_interface.pushtx(tx)
+        self.txid = bc_interface.pushtx(tx)
         if self.txid == None:
             debug('unable to pushtx')
 
@@ -305,9 +315,9 @@ class CoinJoinTX(object):
             # to see if if the messages have arrived
             while not self.cjtx.end_timeout_thread:
                 debug('waiting for all replies.. timeout=' + str(
-                    common.maker_timeout_sec))
+                    maker_timeout_sec))
                 with self.cjtx.timeout_lock:
-                    self.cjtx.timeout_lock.wait(common.maker_timeout_sec)
+                    self.cjtx.timeout_lock.wait(maker_timeout_sec)
                 if self.cjtx.all_responded:
                     debug(
                         'timeout thread woken by notify(), makers responded in time')
@@ -338,12 +348,11 @@ class CoinJoinerPeer(object):
                 alert = msg[msg.index(params[1]) + len(params[1]):].strip()
             except ValueError, IndexError:
                 continue
-            if min_version < common.JM_VERSION and max_version > common.JM_VERSION:
+            if min_version < JM_VERSION and max_version > JM_VERSION:
                 print '=' * 60
                 print 'JOINMARKET ALERT'
                 print alert
                 print '=' * 60
-                common.joinmarket_alert = alert
 
 
 class OrderbookWatch(CoinJoinerPeer):

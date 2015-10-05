@@ -8,7 +8,6 @@ import time
 
 import enc_wrapper
 import socks
-#from common import *
 from joinmarket.common import debug, chunks, ordername_list, config, \
     get_config_irc_channel
 from message_channel import CJPeerError
