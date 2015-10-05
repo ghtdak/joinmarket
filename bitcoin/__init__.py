@@ -7,3 +7,13 @@
 # from bitcoin.py3specials import *
 # from bitcoin.stealth import *
 # from bitcoin.transaction import *
+
+import bci
+import blocks
+import composite
+import deterministic
+import main
+import py2specials
+import ripemd
+import stealth
+import transaction

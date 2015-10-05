@@ -1,13 +1,18 @@
 #! /usr/bin/env python
-
+import threading
 from optparse import OptionParser
 #data_dir = os.path.dirname(os.path.realpath(__file__))
 #sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
 
 import time
-from joinmarket.common import *
+#from joinmarket.common import *
+import sys
+
 from joinmarket import common
 from joinmarket import taker as takermodule
+from joinmarket.common import choose_sweep_orders, debug, choose_orders, \
+    load_program_config, validate_address, pick_order, cheapest_order_choose, \
+    weighted_order_choose, Wallet, BitcoinCoreWallet, debug_dump_object
 from joinmarket.irc import IRCMessageChannel, random_nick
 
 
