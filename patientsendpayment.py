@@ -1,13 +1,11 @@
 import time
 from datetime import timedelta
 from optparse import OptionParser
-#data_dir = os.path.dirname(os.path.realpath(__file__))
-#sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
 
-from joinmarket.common import *
 from joinmarket import common
-from joinmarket import taker
 from joinmarket import maker
+from joinmarket import taker
+from joinmarket.common import *
 from joinmarket.irc import IRCMessageChannel, random_nick
 
 

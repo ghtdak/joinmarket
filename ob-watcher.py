@@ -3,14 +3,11 @@ import SimpleHTTPServer
 import base64
 import time
 import urllib2
-#data_dir = os.path.dirname(os.path.realpath(__file__))
-#sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
 
-from joinmarket import taker
-
-from joinmarket.irc import IRCMessageChannel, random_nick
-from joinmarket.common import *
 from joinmarket import common
+from joinmarket import taker
+from joinmarket.common import *
+from joinmarket.irc import IRCMessageChannel, random_nick
 
 # ['counterparty', 'oid', 'ordertype', 'minsize', 'maxsize', 'txfee', 'cjfee']
 col = '  <th>{1}</th>\n'  # .format(field,label)

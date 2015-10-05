@@ -1,13 +1,15 @@
 #! /usr/bin/env python
-
-#data_dir = os.path.dirname(os.path.realpath(__file__))
-#sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
-
+import threading
 import time
 from optparse import OptionParser
-from joinmarket.common import *
+#from joinmarket.common import *
+import sys
+
 from joinmarket import common
 from joinmarket import taker as takermodule
+from joinmarket.common import choose_sweep_orders, debug, choose_orders, \
+    validate_address, pick_order, cheapest_order_choose, weighted_order_choose, \
+    debug_dump_object
 from joinmarket.irc import IRCMessageChannel, random_nick
 import bitcoin as btc
 import sendpayment
@@ -52,6 +54,7 @@ class PaymentThread(threading.Thread):
                     100.0 * total_fee_pc))) + '%')
                 sendpayment.check_high_fee(total_fee_pc)
                 if raw_input('send with these orders? (y/n):')[0] != 'y':
+                    # todo: incorrect arguments to finishcallback
                     self.finishcallback(None)
                     return
         else:
