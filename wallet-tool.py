@@ -1,14 +1,15 @@
-import datetime
+from datetime import datetime
 import getpass
 import json
 import os
 import sys
 from optparse import OptionParser
 
-import bitcoin
-from joinmarket import common
+from bitcoin.main import encode_privkey, sha256, bin_dbl_sha256
 from joinmarket import old_mnemonic, slowaes
-from joinmarket.common import Wallet, load_program_config, get_p2pk_vbyte
+from joinmarket.common import Wallet, load_program_config, get_p2pk_vbyte, \
+    get_network, bc_interface
+
 
 #structure for cj market wallet
 # m/0/ root key
@@ -56,8 +57,6 @@ def main():
     if len(args) < 1:
         parser.error('Needs a wallet file or method')
         sys.exit(0)
-    load_program_config()
-
     if args[0] in noseed_methods:
         method = args[0]
     else:
@@ -65,7 +64,7 @@ def main():
         method = ('display' if len(args) == 1 else args[1].lower())
         wallet = Wallet(seed, options.maxmixdepth, options.gaplimit)
         if method != 'showseed':
-            common.bc_interface.sync_wallet(wallet)
+            bc_interface.sync_wallet(wallet)
 
     if method == 'display' or method == 'displayall':
         total_balance = 0
@@ -85,7 +84,7 @@ def main():
                             balance += addrvalue['value']
                     balance_depth += balance
                     used = ('used' if k < wallet.index[m][forchange] else ' new')
-                    privkey = bitcoin.main.encode_privkey(
+                    privkey = encode_privkey(
                         wallet.get_key(m, forchange, k), 'wif_compressed',
                         get_p2pk_vbyte()) if options.showprivkey else ''
                     if method == 'displayall' or balance > 0 or (
@@ -110,7 +109,7 @@ def main():
         print 'total balance = %.8fbtc' % (total_balance / 1e8)
     elif method == 'generate' or method == 'recover':
         if method == 'generate':
-            seed = bitcoin.main.sha256(os.urandom(64))[:32]
+            seed = sha256(os.urandom(64))[:32]
             words = old_mnemonic.mn_encode(seed)
             print 'Write down this wallet recovery seed\n\n' + ' '.join(
                 words) + '\n'
@@ -127,14 +126,14 @@ def main():
         if password != password2:
             print 'ERROR. Passwords did not match'
             sys.exit(0)
-        password_key = bitcoin.main.bin_dbl_sha256(password)
+        password_key = bin_dbl_sha256(password)
         encrypted_seed = slowaes.encryptData(password_key, seed.decode('hex'))
-        timestamp = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+        timestamp = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
         walletfile = json.dumps({
             'creator': 'joinmarket project',
             'creation_time': timestamp,
             'encrypted_seed': encrypted_seed.encode('hex'),
-            'network': common.get_network()
+            'network': get_network()
         })
         walletname = raw_input('Input wallet file name (default: wallet.json): ')
         if len(walletname) == 0:

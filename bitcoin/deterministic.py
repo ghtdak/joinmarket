@@ -1,7 +1,13 @@
-from bitcoin.main import *
+import binascii
+import hashlib
+import hmac
 
-
-# Electrum wallets
+from bitcoin.main import slowsha, privkey_to_pubkey, dbl_sha256, add_privkeys, \
+    encode_pubkey, bin_dbl_sha256, add_pubkeys, privtopub, pubkey_to_address, \
+    subtract_privkeys, bin_hash160, compress, hash_to_int
+from bitcoin.py2specials import from_int_representation_to_bytes, encode, \
+    from_int_to_byte, changebase, from_byte_to_int, decode, from_string_to_bytes, \
+    safe_hexlify
 
 
 def electrum_stretch(seed):

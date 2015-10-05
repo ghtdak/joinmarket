@@ -1,11 +1,23 @@
 #!/usr/bin/python
 import copy
+import re
 from _functools import reduce
 
-from bitcoin.main import *
+# from bitcoin.main import *
 
 
 ### Hex to bin converter and vice versa for objects
+import binascii
+
+# todo: importing N from main is kinda crazy dangerous
+from bitcoin.main import num_to_var_int, N, dbl_sha256, bin_dbl_sha256, \
+    ecdsa_raw_sign, ecdsa_raw_verify, ecdsa_raw_recover, encode_pubkey, \
+    b58check_to_hex, hex_to_b58check, hash160, privkey_to_pubkey, \
+    pubkey_to_address
+from bitcoin.py2specials import get_code_string, string_types, int_types, \
+    string_or_bytes_types, safe_hexlify, decode, from_byte_to_int, encode, \
+    changebase, from_string_to_bytes, bin_to_b58check, from_int_to_byte
+from bitcoin.ripemd import is_python2
 
 
 def json_is_base(obj, base):

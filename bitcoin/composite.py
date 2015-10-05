@@ -1,10 +1,20 @@
-from bitcoin.bci import *
-from bitcoin.blocks import *
-from bitcoin.deterministic import *
-from bitcoin.transaction import *
+# from bitcoin.bci import *
+# from bitcoin.blocks import *
+# from bitcoin.deterministic import *
+# from bitcoin.transaction import *
 
 
 # Takes privkey, address, value (satoshis), fee (satoshis)
+from bitcoin.bci import unspent, pushtx, fetchtx, get_block_height, \
+    get_block_header_data, get_txs_in_block
+from bitcoin.blocks import mk_merkle_proof
+from bitcoin.deterministic import bip32_descend
+from bitcoin.main import privtoaddr, privtopub
+from bitcoin.transaction import select, mksend, signall, mk_multisig_script, \
+    scriptaddr, deserialize, deserialize_script, serialize_script, serialize, \
+    multisign, script_to_address
+
+
 def send(frm, to, value, fee=10000):
     return sendmultitx(frm, to + ":" + str(value), fee)
 

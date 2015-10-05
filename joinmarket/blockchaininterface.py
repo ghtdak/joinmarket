@@ -12,11 +12,15 @@ import time
 import urllib
 from decimal import Decimal
 
-import bitcoin as btc
+#import bitcoin as btc
 import common
 import jsonrpc
 # This can be removed once CliJsonRpc is gone.
 import subprocess
+
+from bitcoin.bci import make_request, blockr_pushtx
+from bitcoin.main import dbl_sha256
+from bitcoin.transaction import script_to_address, deserialize
 
 
 class CliJsonRpc(object):
@@ -146,7 +150,7 @@ class BlockrInterface(BlockchainInterface):
                     # because this surely should be possible with a function from it
                     blockr_url = 'http://' + self.blockr_domain + '.blockr.io/api/v1/address/txs/'
                     #print 'downloading, lastusedaddr = ' + last_used_addr + ' unusedaddrcount= ' + str(unused_addr_count)
-                    res = btc.make_request(blockr_url + ','.join(addrs))
+                    res = make_request(blockr_url + ','.join(addrs))
                     data = json.loads(res)['data']
                     for dat in data:
                         #if forchange == 0:
@@ -188,7 +192,7 @@ class BlockrInterface(BlockchainInterface):
             # but dont know which privkey to sign with
 
             blockr_url = 'http://' + self.blockr_domain + '.blockr.io/api/v1/address/unspent/'
-            res = btc.make_request(blockr_url + ','.join(req))
+            res = make_request(blockr_url + ','.join(req))
             data = json.loads(res)['data']
             if 'unspent' in data:
                 data = [data]
@@ -221,7 +225,7 @@ class BlockrInterface(BlockchainInterface):
                 self.confirmfun = confirmfun
                 self.tx_output_set = set([(sv['script'], sv['value']) for sv in
                                           txd['outs']])
-                self.output_addresses = [btc.script_to_address(
+                self.output_addresses = [script_to_address(
                     scrval[0], common.get_p2pk_vbyte())
                                          for scrval in self.tx_output_set]
                 common.debug('txoutset=' + pprint.pformat(self.tx_output_set))
@@ -238,7 +242,7 @@ class BlockrInterface(BlockchainInterface):
                         return
                     blockr_url = 'http://' + self.blockr_domain + '.blockr.io/api/v1/address/unspent/'
                     random.shuffle(self.output_addresses)  #seriously weird bug with blockr.io
-                    data = json.loads(btc.make_request(blockr_url + ','.join(
+                    data = json.loads(make_request(blockr_url + ','.join(
                         self.output_addresses) + '?unconfirmed=1'))['data']
                     shared_txid = None
                     for unspent_list in data:
@@ -253,21 +257,21 @@ class BlockrInterface(BlockchainInterface):
                         continue
                     time.sleep(2)  #here for some race condition bullshit with blockr.io
                     blockr_url = 'http://' + self.blockr_domain + '.blockr.io/api/v1/tx/raw/'
-                    data = json.loads(btc.make_request(blockr_url + ','.join(
+                    data = json.loads(make_request(blockr_url + ','.join(
                         shared_txid)))['data']
                     if not isinstance(data, list):
                         data = [data]
                     for txinfo in data:
                         txhex = str(txinfo['tx']['hex'])
                         outs = set([(sv['script'], sv['value']) for sv in
-                                    btc.deserialize(txhex)['outs']])
+                                    deserialize(txhex)['outs']])
                         common.debug('unconfirm query outs = ' + str(outs))
                         if outs == self.tx_output_set:
                             unconfirmed_txid = txinfo['tx']['txid']
                             unconfirmed_txhex = str(txinfo['tx']['hex'])
                             break
 
-                self.unconfirmfun(btc.deserialize(unconfirmed_txhex),
+                self.unconfirmfun(deserialize(unconfirmed_txhex),
                                   unconfirmed_txid)
 
                 st = int(time.time())
@@ -279,7 +283,7 @@ class BlockrInterface(BlockchainInterface):
                         common.debug('checking for confirmed tx timed out')
                         return
                     blockr_url = 'http://' + self.blockr_domain + '.blockr.io/api/v1/address/txs/'
-                    data = json.loads(btc.make_request(blockr_url + ','.join(
+                    data = json.loads(make_request(blockr_url + ','.join(
                         self.output_addresses)))['data']
                     shared_txid = None
                     for addrtxs in data:
@@ -293,27 +297,27 @@ class BlockrInterface(BlockchainInterface):
                     if len(shared_txid) == 0:
                         continue
                     blockr_url = 'http://' + self.blockr_domain + '.blockr.io/api/v1/tx/raw/'
-                    data = json.loads(btc.make_request(blockr_url + ','.join(
+                    data = json.loads(make_request(blockr_url + ','.join(
                         shared_txid)))['data']
                     if not isinstance(data, list):
                         data = [data]
                     for txinfo in data:
                         txhex = str(txinfo['tx']['hex'])
                         outs = set([(sv['script'], sv['value']) for sv in
-                                    btc.deserialize(txhex)['outs']])
+                                    deserialize(txhex)['outs']])
                         common.debug('confirm query outs = ' + str(outs))
                         if outs == self.tx_output_set:
                             confirmed_txid = txinfo['tx']['txid']
                             confirmed_txhex = str(txinfo['tx']['hex'])
                             break
-                self.confirmfun(btc.deserialize(confirmed_txhex),
+                self.confirmfun(deserialize(confirmed_txhex),
                                 confirmed_txid, 1)
 
         NotifyThread(self.blockr_domain, txd, unconfirmfun, confirmfun).start()
 
     def pushtx(self, txhex):
         try:
-            json_str = btc.blockr_pushtx(txhex, self.network)
+            json_str = blockr_pushtx(txhex, self.network)
         except Exception:
             common.debug('failed blockr.io pushtx')
             return None
@@ -336,7 +340,7 @@ class BlockrInterface(BlockchainInterface):
         data = []
         for ids in txids:
             blockr_url = 'http://' + self.blockr_domain + '.blockr.io/api/v1/tx/info/'
-            blockr_data = json.loads(btc.make_request(blockr_url + ','.join(
+            blockr_data = json.loads(make_request(blockr_url + ','.join(
                 ids)))['data']
             if not isinstance(blockr_data, list):
                 blockr_data = [blockr_data]
@@ -376,7 +380,7 @@ class NotifyRequestHeader(BaseHTTPServer.BaseHTTPRequestHandler):
             if not re.match('^[0-9a-fA-F]*$', tx):
                 common.debug('not a txhex')
                 return
-            txd = btc.deserialize(tx)
+            txd = deserialize(tx)
             tx_output_set = set([(sv['script'], sv['value']) for sv in
                                  txd['outs']])
 
@@ -469,7 +473,7 @@ class BitcoinCoreInterface(BlockchainInterface):
         self.txnotify_fun = []
 
     def get_wallet_name(self, wallet):
-        return 'joinmarket-wallet-' + btc.dbl_sha256(wallet.keys[0][0])[:6]
+        return 'joinmarket-wallet-' + dbl_sha256(wallet.keys[0][0])[:6]
 
     def rpc(self, method, args):
         if method != 'importaddress':
@@ -582,7 +586,7 @@ class BitcoinCoreInterface(BlockchainInterface):
             self.notifythread.start()
         one_addr_imported = False
         for outs in txd['outs']:
-            addr = btc.script_to_address(outs['script'],
+            addr = script_to_address(outs['script'],
                                          common.get_p2pk_vbyte())
             if self.rpc('getaccount', [addr]) != '':
                 one_addr_imported = True

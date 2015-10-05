@@ -1,14 +1,26 @@
 #!/usr/bin/python
 import base64
+import hashlib
 import hmac
+import os
 import random
 import re
 import time
 
-from bitcoin.ripemd import *
-from .py3specials import *
+import binascii
+
+#from bitcoin.ripemd import *
+
+# from .py3specials import encode, from_int_to_byte, decode, from_byte_to_int, \
+#     safe_from_hex, int_types, bin_to_b58check, safe_hexlify, bytes_to_hex_string, \
+#     from_string_to_bytes, random_string, changebase
+
+from .py2specials import encode, from_int_to_byte, decode, from_byte_to_int, \
+    safe_from_hex, int_types, bin_to_b58check, safe_hexlify, bytes_to_hex_string, \
+    from_string_to_bytes, random_string, changebase
 
 # Elliptic curve parameters (secp256k1)
+from bitcoin.ripemd import is_python2, RIPEMD160
 
 P = 2 ** 256 - 2 ** 32 - 977
 N = 115792089237316195423570985008687907852837564279074904382605163141518161494337
@@ -153,7 +165,6 @@ def to_jordan(p):
 
 
 def from_jordan(p):
-    return (p[0][0] * inv(p[0][1], P) % P, p[1][0] * inv(p[1][1], P) % P)
     return (p[0][0] * inv(p[0][1], P) % P, p[1][0] * inv(p[1][1], P) % P)
 
 

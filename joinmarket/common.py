@@ -11,14 +11,23 @@ from ConfigParser import SafeConfigParser, NoSectionError, NoOptionError
 from decimal import Decimal
 from math import exp
 
-import bitcoin as btc
+#import bitcoin as btc
 import blockchaininterface
 import slowaes
+from bitcoin.deterministic import bip32_master_key, bip32_ckd, bip32_extract_key
+from bitcoin.main import get_version_byte, bin_dbl_sha256, privtoaddr
+from bitcoin.transaction import select, script_to_address
 
 JM_VERSION = 2
 nickname = ''
 DUST_THRESHOLD = 546
+global_bc_interface = None
+
 bc_interface = None
+
+def get_bc_interface():
+    return global_bc_interface
+
 ordername_list = ["absorder", "relorder"]
 maker_timeout_sec = 30
 
@@ -68,8 +77,11 @@ maker_timeout_sec = 30
 merge_algorithm = default
 """
 
-
 def load_program_config():
+    print "no longer necessary to call load_program_config()"
+    pass
+
+def _load_program_config():
     loadedFiles = config.read([config_location])
     #Create default config file if not found
     if len(loadedFiles) != 1:
@@ -96,8 +108,9 @@ def load_program_config():
         debug('maker_timeout_sec not found in .cfg file, using default value')
 
     #configure the interface to the blockchain on startup
-    global bc_interface
-    bc_interface = blockchaininterface.get_blockchain_interface_instance(config)
+    global global_bc_interface
+    global_bc_interface = blockchaininterface.get_blockchain_interface_instance(config)
+    return global_bc_interface
 
 
 def get_config_irc_channel():
@@ -186,7 +199,7 @@ def get_p2pk_vbyte():
 
 def validate_address(addr):
     try:
-        ver = btc.get_version_byte(addr)
+        ver = get_version_byte(addr)
     except AssertionError:
         return False, 'Checksum wrong. Typo in address?'
     if ver != get_p2pk_vbyte() and ver != get_p2sh_vbyte():
@@ -269,7 +282,7 @@ class AbstractWallet(object):
 	'''
 
     def __init__(self):
-        self.utxo_selector = btc.select  # default fallback: upstream
+        self.utxo_selector = select  # default fallback: upstream
         try:
             if config.get("POLICY", "merge_algorithm") == "gradual":
                 self.utxo_selector = select_gradual
@@ -314,6 +327,7 @@ class AbstractWallet(object):
 
     def get_balance_by_mixdepth(self):
         mix_balance = {}
+        # todo: max_mix_depth unknown
         for m in range(self.max_mix_depth):
             mix_balance[m] = 0
         for mixdepth, utxos in self.get_utxos_by_mixdepth().iteritems():
@@ -329,11 +343,11 @@ class Wallet(AbstractWallet):
         self.max_mix_depth = max_mix_depth
         self.gaplimit = gaplimit
         self.seed = self.get_seed(seedarg)
-        master = btc.bip32_master_key(self.seed)
-        m_0 = btc.bip32_ckd(master, 0)
-        mixing_depth_keys = [btc.bip32_ckd(m_0, c) for c in range(max_mix_depth)
+        master = bip32_master_key(self.seed)
+        m_0 = bip32_ckd(master, 0)
+        mixing_depth_keys = [bip32_ckd(m_0, c) for c in range(max_mix_depth)
                       ]
-        self.keys = [(btc.bip32_ckd(m, 0), btc.bip32_ckd(m, 1))
+        self.keys = [(bip32_ckd(m, 0), bip32_ckd(m, 1))
                      for m in mixing_depth_keys]
 
         #self.index = [[0, 0]]*max_mix_depth
@@ -375,7 +389,7 @@ class Wallet(AbstractWallet):
         decrypted = False
         while not decrypted:
             password = getpass.getpass('Enter wallet decryption passphrase: ')
-            password_key = btc.bin_dbl_sha256(password)
+            password_key = bin_dbl_sha256(password)
             encrypted_seed = walletdata['encrypted_seed']
             try:
                 decrypted_seed = slowaes.decryptData(
@@ -407,11 +421,11 @@ class Wallet(AbstractWallet):
         fd.close()
 
     def get_key(self, mixing_depth, forchange, i):
-        return btc.bip32_extract_key(btc.bip32_ckd(
+        return bip32_extract_key(bip32_ckd(
             self.keys[mixing_depth][forchange], i))
 
     def get_addr(self, mixing_depth, forchange, i):
-        return btc.privtoaddr(self.get_key(mixing_depth, forchange, i),
+        return privtoaddr(self.get_key(mixing_depth, forchange, i),
                               get_p2pk_vbyte())
 
     def get_new_addr(self, mixing_depth, forchange):
@@ -450,7 +464,7 @@ class Wallet(AbstractWallet):
     def add_new_utxos(self, tx, txid):
         added_utxos = {}
         for index, outs in enumerate(tx['outs']):
-            addr = btc.script_to_address(outs['script'], get_p2pk_vbyte())
+            addr = script_to_address(outs['script'], get_p2pk_vbyte())
             if addr not in self.addr_cache:
                 continue
             addrdict = {'address': addr, 'value': outs['value']}
@@ -481,7 +495,7 @@ class BitcoinCoreWallet(AbstractWallet):
 
     def __init__(self, fromaccount):
         super(BitcoinCoreWallet, self).__init__()
-        if not isinstance(bc_interface,
+        if not isinstance(global_bc_interface,
                               blockchaininterface.BitcoinCoreInterface):
             raise RuntimeError(
                 'Bitcoin Core wallet can only be used when blockchain interface is BitcoinCoreInterface')
@@ -489,10 +503,10 @@ class BitcoinCoreWallet(AbstractWallet):
         self.max_mix_depth = 1
 
     def get_key_from_addr(self, addr):
-        return bc_interface.rpc('dumpprivkey', [addr])
+        return global_bc_interface.rpc('dumpprivkey', [addr])
 
     def get_utxos_by_mixdepth(self):
-        unspent_list = bc_interface.rpc('listunspent', [])
+        unspent_list = global_bc_interface.rpc('listunspent', [])
         result = {0: {}}
         for u in unspent_list:
             if not u['spendable']:
@@ -507,7 +521,7 @@ class BitcoinCoreWallet(AbstractWallet):
         return result
 
     def get_change_addr(self, mixing_depth):
-        return bc_interface.rpc('getrawchangeaddress', [])
+        return global_bc_interface.rpc('getrawchangeaddress', [])
 
 
 def calc_cj_fee(ordertype, cjfee, cj_amount):
@@ -639,6 +653,7 @@ def choose_sweep_orders(db, total_input_value, my_tx_fee, n, chooseOrdersBy,
                 raise RuntimeError('unknown order type: ' + str(
                     order[0]['ordertype']))
         cjamount = (total_input_value - my_tx_fee - sumabsfee) / (1 + sumrelfee)
+        # todo: check type of quantize
         cjamount = int(cjamount.quantize(Decimal(1)))
         return cjamount, int(sumabsfee + sumrelfee * cjamount)
 
@@ -683,3 +698,5 @@ def choose_sweep_orders(db, total_input_value, my_tx_fee, n, chooseOrdersBy,
     result = dict([(o[0]['counterparty'], o[0]['oid']) for o in chosen_orders])
     debug('cj amount = ' + str(cj_amount))
     return result, cj_amount
+
+bc_interface = _load_program_config()
