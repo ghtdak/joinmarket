@@ -9,7 +9,7 @@ import enc_wrapper
 from bitcoin.main import ecdsa_verify, privtopub, ecdsa_sign, pubtoaddr, sha256
 from bitcoin.transaction import deserialize, sign, script_to_address
 from joinmarket.common import DUST_THRESHOLD, debug, bc_interface, \
-    get_p2pk_vbyte, calc_cj_fee, load_program_config, Wallet, debug_dump_object
+    get_p2pk_vbyte, calc_cj_fee,  Wallet, debug_dump_object
 from taker import CoinJoinerPeer
 
 
@@ -381,7 +381,6 @@ def main():
     import sys
     seed = sys.argv[1]  #btc.sha256('dont use brainwallets except for holding testnet coins')
 
-    load_program_config()
     wallet = Wallet(seed, max_mix_depth=5)
     bc_interface.sync_wallet(wallet)
 

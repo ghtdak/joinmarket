@@ -292,8 +292,9 @@ class GUITaker(taker.OrderbookWatch):
 def main():
     from optparse import OptionParser
 
-    common.nickname = random_nick()  #watcher' +binascii.hexlify(os.urandom(4))
-    common.load_program_config()
+    # todo:  OK, this is totally outta control.  Setting a module element
+    # common.nickname = random_nick()  #watcher' +binascii.hexlify(os.urandom(4))
+    # common.load_program_config()
 
     parser = OptionParser(
         usage='usage: %prog [options]',

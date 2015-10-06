@@ -4,8 +4,11 @@ import datetime
 import os
 import time
 
-from joinmarket import common, blockchaininterface
-from joinmarket.common import debug, calc_cj_fee, Wallet, debug_dump_object
+# from joinmarket import common, blockchaininterface
+import joinmarket
+from joinmarket.blockchaininterface import BlockrInterface
+from joinmarket.common import debug, calc_cj_fee, Wallet, debug_dump_object, \
+    get_network, DUST_THRESHOLD, bc_interface
 from joinmarket.irc import IRCMessageChannel, random_nick
 from joinmarket.maker import Maker
 
@@ -40,7 +43,7 @@ class YieldGenerator(Maker):
         self.tx_unconfirm_timestamp = {}
 
     def log_statement(self, data):
-        if common.get_network() == 'testnet':
+        if get_network() == 'testnet':
             return
 
         data = [str(d) for d in data]
@@ -71,7 +74,7 @@ class YieldGenerator(Maker):
             'oid': 0,
             'ordertype': 'relorder',
             'minsize': minsize,
-            'maxsize': mix_balance[max_mix] - common.DUST_THRESHOLD,
+            'maxsize': mix_balance[max_mix] - DUST_THRESHOLD,
             'txfee': txfee,
             'cjfee': cjfee
         }
@@ -97,12 +100,12 @@ class YieldGenerator(Maker):
         my_total_in = sum([va['value'] for va in utxos.values()])
         real_cjfee = calc_cj_fee(cjorder.ordertype, cjorder.cjfee, amount)
         change_value = my_total_in - amount - cjorder.txfee + real_cjfee
-        if change_value <= common.DUST_THRESHOLD:
+        if change_value <= DUST_THRESHOLD:
             debug('change value=%d below dust threshold, finding new utxos' %
                   (change_value))
             try:
                 utxos = self.wallet.select_utxos(mixdepth,
-                                                 amount + common.DUST_THRESHOLD)
+                                                 amount + DUST_THRESHOLD)
             except Exception:
                 debug(
                     'dont have the required UTXOs to make a output above the dust threshold, quitting')
@@ -135,10 +138,10 @@ class YieldGenerator(Maker):
 
 
 def main():
-    common.load_program_config()
+    #common.load_program_config()
     import sys
     seed = sys.argv[1]
-    if isinstance(common.bc_interface, blockchaininterface.BlockrInterface):
+    if isinstance(bc_interface, BlockrInterface):
         print '\nYou are running a yield generator by polling the blockr.io website'
         print 'This is quite bad for privacy. That site is owned by coinbase.com'
         print 'Also your bot will run faster and more efficently, you can be immediately notified of new bitcoin network'
@@ -149,12 +152,19 @@ def main():
             return
 
     wallet = Wallet(seed, max_mix_depth=mix_levels)
-    common.bc_interface.sync_wallet(wallet)
+    bc_interface.sync_wallet(wallet)
 
-    common.nickname = nickname
+    # todo: NO!  setting module variables == insane
+
+    # common.nickname = nickname
+
+    # todo: actually, all of this needs looking at.  Not really sure what
+    # is being attempted with all the config stuff.  Architecturally, its
+    # a nightmare and must be changed
+
     debug('starting yield generator')
-    irc = IRCMessageChannel(common.nickname,
-                            realname='btcint=' + common.config.get(
+    irc = IRCMessageChannel(nickname,
+                            realname='btcint=' + joinmarket.common.config.get(
                                 "BLOCKCHAIN", "blockchain_source"),
                             password=nickserv_password)
     maker = YieldGenerator(irc, wallet)

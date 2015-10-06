@@ -8,11 +8,10 @@ import time
 from optparse import OptionParser
 from pprint import pprint
 
-from joinmarket import common
 from joinmarket import taker as takermodule
 from joinmarket.common import rand_norm_array, rand_pow_array, rand_exp_array, \
     debug, choose_orders, weighted_order_choose, choose_sweep_orders, \
-    validate_address, Wallet, debug_dump_object
+    validate_address, Wallet, debug_dump_object, bc_interface
 from joinmarket.irc import IRCMessageChannel, random_nick
 
 orderwaittime = 10
@@ -102,7 +101,7 @@ class TumblerThread(threading.Thread):
     def finishcallback(self, coinjointx):
         if coinjointx.all_responded:
             coinjointx.self_sign_and_push()
-            common.bc_interface.add_tx_notify(
+            bc_interface.add_tx_notify(
                 coinjointx.latest_tx, self.unconfirm_callback,
                 self.confirm_callback, coinjointx.my_cj_addr)
             self.taker.wallet.remove_old_utxos(coinjointx.latest_tx)
@@ -202,6 +201,7 @@ class TumblerThread(threading.Thread):
         if tx['destination'] == 'internal':
             destaddr = self.taker.wallet.get_receive_addr(tx['srcmixdepth'] + 1)
         elif tx['destination'] == 'addrask':
+            # todo: this can't happen
             common.debug_silence = True
             while True:
                 destaddr = raw_input('insert new address: ')

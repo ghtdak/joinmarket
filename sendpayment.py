@@ -223,7 +223,7 @@ def main():
     amount = int(args[1])
     destaddr = args[2]
 
-    load_program_config()
+    # load_program_config()
     addr_valid, errormsg = validate_address(destaddr)
     if not addr_valid:
         print 'ERROR: Address invalid. ' + errormsg

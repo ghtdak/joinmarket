@@ -77,6 +77,10 @@ maker_timeout_sec = 30
 merge_algorithm = default
 """
 
+def set_debug_silence(silence):
+    global debug_silence
+    debug_silence = silence
+
 def load_program_config():
     print "no longer necessary to call load_program_config()"
     pass
