@@ -4,8 +4,9 @@ import threading
 import time
 from optparse import OptionParser
 
-import bitcoin as btc
 import sendpayment
+from bitcoin.main import privtoaddr
+from bitcoin.transaction import serialize, sign
 from joinmarket import common
 from joinmarket import taker as takermodule
 from joinmarket.common import choose_sweep_orders, debug, choose_orders, \
@@ -75,14 +76,14 @@ class PaymentThread(threading.Thread):
     def finishcallback(self, coinjointx):
         if coinjointx.all_responded:
             #now sign it ourselves
-            tx = btc.serialize(coinjointx.latest_tx)
+            tx = serialize(coinjointx.latest_tx)
             for index, ins in enumerate(coinjointx.latest_tx['ins']):
                 utxo = ins['outpoint']['hash'] + ':' + str(
                     ins['outpoint']['index'])
                 if utxo != self.taker.auth_utxo:
                     continue
                 addr = coinjointx.input_utxos[utxo]['address']
-                tx = btc.sign(tx, index,
+                tx = sign(tx, index,
                               coinjointx.wallet.get_key_from_addr(addr))
             print 'unsigned tx = \n\n' + tx + '\n'
             debug('created unsigned tx, ending')
@@ -93,7 +94,9 @@ class PaymentThread(threading.Thread):
         self.create_tx()
 
     def sendpayment_choose_orders(self, cj_amount, makercount,
-                                  nonrespondants=[], active_nicks=None):
+                                  nonrespondants=None, active_nicks=None):
+        if not nonrespondants:
+            nonrespondants = []
         if not active_nicks:
             active_nicks = []
         self.ignored_makers += nonrespondants
@@ -237,7 +240,7 @@ def main():
         utxo_data[utxo] = {'address': data['address'], 'value': data['value']}
     auth_privkey = raw_input('input private key for ' +
                              utxo_data[auth_utxo]['address'] + ' :')
-    if utxo_data[auth_utxo]['address'] != btc.privtoaddr(
+    if utxo_data[auth_utxo]['address'] != privtoaddr(
         auth_privkey, common.get_p2pk_vbyte()):
         print 'ERROR: privkey does not match auth utxo'
         return
@@ -257,7 +260,7 @@ def main():
 
         def get_key_from_addr(self, addr):
             debug('getting privkey of ' + addr)
-            if btc.privtoaddr(auth_privkey, common.get_p2pk_vbyte()) != addr:
+            if privtoaddr(auth_privkey, common.get_p2pk_vbyte()) != addr:
                 raise RuntimeError('privkey doesnt match given address')
             return auth_privkey
 

@@ -7,8 +7,7 @@ from optparse import OptionParser
 
 from bitcoin.main import encode_privkey, sha256, bin_dbl_sha256
 from joinmarket import old_mnemonic, slowaes
-from joinmarket.common import Wallet, load_program_config, get_p2pk_vbyte, \
-    get_network, bc_interface
+from joinmarket.common import Wallet, get_p2pk_vbyte, get_network, bc_interface
 
 
 #structure for cj market wallet

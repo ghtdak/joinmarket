@@ -1,6 +1,7 @@
+import os
 import unittest
 import commontest
-from joinmarket.blockchaininterface import *
+# from joinmarket.blockchaininterface import *
 import pexpect
 
 
@@ -88,5 +89,4 @@ class TestWalletRecovery(unittest.TestCase):
 data_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 if __name__ == '__main__':
     os.chdir(data_dir)
-    common.load_program_config()
     unittest.main()

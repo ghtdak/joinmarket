@@ -1,9 +1,16 @@
 #data_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 #sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
+import os
 import unittest
 
+import subprocess
+
+import time
+
 import commontest
-from joinmarket.blockchaininterface import *
+from bitcoin.main import privkey_to_address
+# from joinmarket.blockchaininterface import *
+from joinmarket.common import get_p2pk_vbyte, bc_interface, debug
 
 ''' Just some random thoughts to motivate possible tests;
 almost none of this has really been done:
@@ -76,8 +83,8 @@ class Join2PTests(unittest.TestCase):
 
         #run a single sendpayment call with wallet2
         amt = n * 100000000  #in satoshis
-        dest_address = btc.privkey_to_address(os.urandom(32),
-                                              common.get_p2pk_vbyte())
+        dest_address = privkey_to_address(os.urandom(32),
+                                              get_p2pk_vbyte())
         try:
             for i in range(m):
                 # todo: sp_proc never gets used
@@ -94,10 +101,10 @@ class Join2PTests(unittest.TestCase):
         if yigen_proc:
             yigen_proc.terminate()
 
-        received = common.bc_interface.get_received_by_addr(
+        received = bc_interface.get_received_by_addr(
             [dest_address], None)['data'][0]['balance']
         if received != amt * m:
-            common.debug('received was: ' + str(received) + ' but amount was: '
+            debug('received was: ' + str(received) + ' but amount was: '
                          + str(amt))
             return False
         return True
@@ -136,8 +143,8 @@ class JoinNPTests(unittest.TestCase):
 
         # run a single sendpayment call
         amt = 100000000  # in satoshis
-        dest_address = btc.privkey_to_address(os.urandom(32),
-                                              common.get_p2pk_vbyte())
+        dest_address = privkey_to_address(os.urandom(32),
+                                              get_p2pk_vbyte())
         try:
             # todo: sp_proc never gets used
             sp_proc = local_command(
@@ -154,7 +161,7 @@ class JoinNPTests(unittest.TestCase):
             for ygp in yigen_procs:
                 ygp.kill()
 
-        received = common.bc_interface.get_received_by_addr(
+        received = bc_interface.get_received_by_addr(
             [dest_address], None)['data'][0]['balance']
         if received != amt:
             return False
@@ -164,7 +171,7 @@ class JoinNPTests(unittest.TestCase):
 data_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 def main():
     os.chdir(data_dir)
-    common.load_program_config()
+    # load_program_config() # automatically called
     unittest.main()
 
 

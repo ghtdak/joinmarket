@@ -1,6 +1,11 @@
-from joinmarket.blockchaininterface import *
 import binascii
+import os
 import random
+
+import subprocess
+
+from joinmarket.common import chunks, Wallet, bc_interface
+
 """Some helper functions for testing"""
 """This code provides subprocess startup cross-platform with some useful
 options; it could do with some simplification/improvement. """
@@ -46,12 +51,12 @@ def make_wallets(n, wallet_structures=None, mean_amt=1, sdev_amt=0):
    """
     if len(wallet_structures) != n:
         raise Exception("Number of wallets doesn't match wallet structures")
-    seeds = common.chunks(binascii.hexlify(os.urandom(15 * n)), n)
+    seeds = chunks(binascii.hexlify(os.urandom(15 * n)), n)
     wallets = {}
     for i in range(n):
         wallets[i] = {
             'seed': seeds[i],
-            'wallet': common.Wallet(seeds[i],
+            'wallet': Wallet(seeds[i],
                                     max_mix_depth=5)
         }
         for j in range(5):
@@ -60,7 +65,7 @@ def make_wallets(n, wallet_structures=None, mean_amt=1, sdev_amt=0):
                 amt = mean_amt - sdev_amt / 2.0 + deviation
                 if amt < 0:
                     amt = 0.001
-                common.bc_interface.grab_coins(
+                bc_interface.grab_coins(
                     wallets[i]['wallet'].get_receive_addr(j), amt)
     return wallets
 

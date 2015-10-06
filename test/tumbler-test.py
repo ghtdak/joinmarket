@@ -1,11 +1,20 @@
 #data_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 #sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
+import os
+import random
 import unittest
-from joinmarket.blockchaininterface import *
-import bitcoin as btc
+
+import subprocess
+
+import time
+
+from bitcoin.main import privkey_to_address
 import binascii
 import pexpect
 import platform
+
+from joinmarket.common import chunks, Wallet, bc_interface
+
 OS = platform.system()
 PINL = '\r\n' if OS == 'Windows' else '\n'
 
@@ -50,12 +59,12 @@ class TumblerTests(unittest.TestCase):
         #put about 10 coins in each, spread over random mixdepths
         #in units of 0.5
 
-        seeds = common.chunks(binascii.hexlify(os.urandom(15 * 7)), 7)
+        seeds = chunks(binascii.hexlify(os.urandom(15 * 7)), 7)
         self.wallets = {}
         for i in range(7):
             self.wallets[i] = {
                 'seed': seeds[i],
-                'wallet': common.Wallet(seeds[i],
+                'wallet': Wallet(seeds[i],
                                         max_mix_depth=5)
             }
         #adding coins somewhat randomly, spread over all 5 depths
@@ -65,7 +74,7 @@ class TumblerTests(unittest.TestCase):
                 for k in range(4):
                     base = 0.001 if i == 6 else 1.0
                     amt = base + random.random()  #average is 0.5 for tumbler, else 1.5
-                    common.bc_interface.grab_coins(w.get_receive_addr(j), amt)
+                    bc_interface.grab_coins(w.get_receive_addr(j), amt)
 
     def run_tumble(self, amt):
         yigen_procs = []
@@ -75,14 +84,14 @@ class TumblerTests(unittest.TestCase):
             time.sleep(2)  #give it a chance
             yigen_procs.append(ygp)
 
-#A significant delay is needed to wait for the yield generators to sync
+        # A significant delay is needed to wait for the yield generators to sync
         time.sleep(60)
 
         #start a tumbler
         amt = amt * 1e8  #in satoshis
         #send to any old address
-        dest_address = btc.privkey_to_address(os.urandom(32),
-                                              common.get_addr_vbyte())
+        dest_address = privkey_to_address(os.urandom(32),
+                                              get_addr_vbyte())
         try:
             #default mixdepth source is zero, so will take coins from m 0.
             #see tumbler.py --h for details
@@ -111,7 +120,7 @@ class TumblerTests(unittest.TestCase):
             for ygp in yigen_procs:
                 ygp.kill()
 
-        received = common.bc_interface.get_received_by_addr(
+        received = bc_interface.get_received_by_addr(
             [dest_address], None)['data'][0]['balance']
         print('received: ' + str(received))
         return True
@@ -123,7 +132,6 @@ class TumblerTests(unittest.TestCase):
 data_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 def main():
     os.chdir(data_dir)
-    common.load_program_config()
     unittest.main()
 
 
