@@ -10,7 +10,7 @@ from bitcoin.main import ecdsa_verify, privtopub, ecdsa_sign, pubtoaddr, sha256
 from bitcoin.transaction import deserialize, sign, script_to_address
 from joinmarket.common import DUST_THRESHOLD, debug, bc_interface, \
     get_p2pk_vbyte, calc_cj_fee,  Wallet, debug_dump_object
-from taker import CoinJoinerPeer
+from joinmarket.coinjoinerpeer import CoinJoinerPeer
 
 
 class CoinJoinOrder(object):

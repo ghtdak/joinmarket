@@ -11,7 +11,8 @@ from pprint import pprint
 from joinmarket import taker as takermodule
 from joinmarket.common import rand_norm_array, rand_pow_array, rand_exp_array, \
     debug, choose_orders, weighted_order_choose, choose_sweep_orders, \
-    validate_address, Wallet, debug_dump_object, bc_interface
+    validate_address, Wallet, debug_dump_object, bc_interface, set_debug_silence, \
+    set_nickname, get_nickname
 from joinmarket.irc import IRCMessageChannel, random_nick
 
 orderwaittime = 10
@@ -202,14 +203,14 @@ class TumblerThread(threading.Thread):
             destaddr = self.taker.wallet.get_receive_addr(tx['srcmixdepth'] + 1)
         elif tx['destination'] == 'addrask':
             # todo: this can't happen
-            common.debug_silence = True
+            set_debug_silence(True)
             while True:
                 destaddr = raw_input('insert new address: ')
                 addr_valid, errormsg = validate_address(destaddr)
                 if addr_valid:
                     break
                 print 'Address ' + destaddr + ' invalid. ' + errormsg + ' try again'
-            common.debug_silence = False
+            set_debug_silence(False)
         else:
             destaddr = tx['destination']
         self.sweep = sweep
@@ -398,7 +399,7 @@ def main():
     wallet_file = args[0]
     destaddrs = args[1:]
 
-    common.load_program_config()
+    # load_program_config()
     for addr in destaddrs:
         addr_valid, errormsg = validate_address(addr)
         if not addr_valid:
@@ -462,11 +463,12 @@ def main():
     # python tumbler.py -N 2 1 -c 3 0.001 -l 0.1 -M 3 -a 0 wallet_file 1xxx 1yyy
     wallet = Wallet(wallet_file,
                     max_mix_depth=options.mixdepthsrc + options.mixdepthcount)
-    common.bc_interface.sync_wallet(wallet)
+    bc_interface.sync_wallet(wallet)
 
-    common.nickname = random_nick()
+    # todo: all these module field sets are insane and must go
+    set_nickname(random_nick())
     debug('starting tumbler')
-    irc = IRCMessageChannel(common.nickname)
+    irc = IRCMessageChannel(get_nickname())
     tumbler = Tumbler(irc, wallet, tx_list, options.txfee, options.maxcjfee,
                       options.mincjamount)
     try:

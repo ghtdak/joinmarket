@@ -7,11 +7,12 @@ from optparse import OptionParser
 import sendpayment
 from bitcoin.main import privtoaddr
 from bitcoin.transaction import serialize, sign
-from joinmarket import common
+#from joinmarket import common
 from joinmarket import taker as takermodule
 from joinmarket.common import choose_sweep_orders, debug, choose_orders, \
     validate_address, pick_order, cheapest_order_choose, weighted_order_choose, \
-    debug_dump_object
+    debug_dump_object, bc_interface, get_p2pk_vbyte, set_nickname, \
+    AbstractWallet, get_nickname
 from joinmarket.irc import IRCMessageChannel, random_nick
 
 
@@ -217,7 +218,6 @@ def main():
     changeaddr = args[3]
     cold_utxos = args[4:]
 
-    common.load_program_config()
     addr_valid1, errormsg1 = validate_address(destaddr)
     #if amount = 0 dont bother checking changeaddr so user can write any junk
     if cjamount != 0:
@@ -232,7 +232,7 @@ def main():
         return
 
     all_utxos = [auth_utxo] + cold_utxos
-    query_result = common.bc_interface.query_utxo_set(all_utxos)
+    query_result = bc_interface.query_utxo_set(all_utxos)
     if None in query_result:
         print query_result
     utxo_data = {}
@@ -241,7 +241,7 @@ def main():
     auth_privkey = raw_input('input private key for ' +
                              utxo_data[auth_utxo]['address'] + ' :')
     if utxo_data[auth_utxo]['address'] != privtoaddr(
-        auth_privkey, common.get_p2pk_vbyte()):
+        auth_privkey, get_p2pk_vbyte()):
         print 'ERROR: privkey does not match auth utxo'
         return
 
@@ -253,19 +253,19 @@ def main():
     else:  #choose randomly (weighted)
         chooseOrdersFunc = weighted_order_choose
 
-    common.nickname = random_nick()
+    set_nickname(random_nick())
     debug('starting sendpayment')
 
-    class UnsignedTXWallet(common.AbstractWallet):
+    class UnsignedTXWallet(AbstractWallet):
 
         def get_key_from_addr(self, addr):
             debug('getting privkey of ' + addr)
-            if privtoaddr(auth_privkey, common.get_p2pk_vbyte()) != addr:
+            if privtoaddr(auth_privkey, get_p2pk_vbyte()) != addr:
                 raise RuntimeError('privkey doesnt match given address')
             return auth_privkey
 
     wallet = UnsignedTXWallet()
-    irc = IRCMessageChannel(common.nickname)
+    irc = IRCMessageChannel(get_nickname())
     taker = CreateUnsignedTx(irc, wallet, auth_utxo, cjamount, destaddr,
                              changeaddr, utxo_data, options, chooseOrdersFunc)
     try:

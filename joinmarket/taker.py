@@ -4,17 +4,17 @@ import base64
 import pprint
 import random
 import sqlite3
-import threading
-
 import sys
+import threading
 from decimal import Decimal, InvalidOperation
 
 import enc_wrapper
 from bitcoin.main import privtopub, ecdsa_sign, ecdsa_verify, pubtoaddr
 from bitcoin.transaction import mktx, deserialize, serialize, verify_tx_input, \
     deserialize_script, sign, txhash
+from joinmarket.coinjoinerpeer import CoinJoinerPeer
 from joinmarket.common import debug, bc_interface, calc_cj_fee, get_p2pk_vbyte, \
-    maker_timeout_sec, JM_VERSION
+    maker_timeout_sec
 
 
 class CoinJoinTX(object):
@@ -327,32 +327,6 @@ class CoinJoinTX(object):
                         'timeout thread woken by timeout, makers didnt respond')
                     with self.cjtx.timeout_thread_lock:
                         self.cjtx.recover_from_nonrespondants()
-
-
-class CoinJoinerPeer(object):
-
-    def __init__(self, msgchan):
-        self.msgchan = msgchan
-
-    def get_crypto_box_from_nick(self, nick):
-        raise Exception()
-
-    def on_set_topic(self, newtopic):
-        chunks = newtopic.split('|')
-        for msg in chunks[1:]:
-            try:
-                msg = msg.strip()
-                params = msg.split(' ')
-                min_version = int(params[0])
-                max_version = int(params[1])
-                alert = msg[msg.index(params[1]) + len(params[1]):].strip()
-            except ValueError, IndexError:
-                continue
-            if min_version < JM_VERSION and max_version > JM_VERSION:
-                print '=' * 60
-                print 'JOINMARKET ALERT'
-                print alert
-                print '=' * 60
 
 
 class OrderbookWatch(CoinJoinerPeer):

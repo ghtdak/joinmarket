@@ -19,7 +19,7 @@ from bitcoin.main import get_version_byte, bin_dbl_sha256, privtoaddr
 from bitcoin.transaction import select, script_to_address
 
 JM_VERSION = 2
-nickname = ''
+global_nickname = ''
 DUST_THRESHOLD = 546
 global_bc_interface = None
 
@@ -34,8 +34,28 @@ maker_timeout_sec = 30
 debug_file_lock = threading.Lock()
 debug_file_handle = None
 core_alert = None
-joinmarket_alert = None
-debug_silence = False
+
+# substantial re-architecture.  Some code was setting these fields
+# from... well... all over the place.  Trying to unscrew it but the rot extends
+# throughout the code.
+# A long slow slog indeed
+
+global_joinmarket_alert = None
+global_debug_silence = False
+
+def set_debug_silence(bool):
+    global global_debug_silence
+    global_debug_silence = bool
+
+def set_nickname(n):
+    global global_nickname
+    global_nickname = n
+
+def get_nickname():
+    return global_nickname
+
+def get_joinmarket_alert():
+    return global_joinmarket_alert
 
 config = SafeConfigParser()
 config_location = 'joinmarket.cfg'
@@ -78,8 +98,8 @@ merge_algorithm = default
 """
 
 def set_debug_silence(silence):
-    global debug_silence
-    debug_silence = silence
+    global global_debug_silence
+    global_debug_silence = silence
 
 def load_program_config():
     print "no longer necessary to call load_program_config()"
@@ -127,17 +147,17 @@ def get_config_irc_channel():
 def debug(msg):
     global debug_file_handle
     with debug_file_lock:
-        if nickname and not debug_file_handle:
-            debug_file_handle = open(os.path.join('logs', nickname + '.log'),
+        if global_nickname and not debug_file_handle:
+            debug_file_handle = open(os.path.join('logs', global_nickname + '.log'),
                                      'ab', 1)
         outmsg = datetime.datetime.now().strftime("[%Y/%m/%d %H:%M:%S] ") + msg
-        if not debug_silence:
+        if not global_debug_silence:
             if core_alert:
                 print 'Core Alert Message: ' + core_alert
-            if joinmarket_alert:
-                print 'JoinMarket Alert Message: ' + joinmarket_alert
+            if global_joinmarket_alert:
+                print 'JoinMarket Alert Message: ' + global_joinmarket_alert
             print outmsg
-        if nickname:  #debugs before creating bot nick won't be handled like this
+        if global_nickname:  #debugs before creating bot nick won't be handled like this
             debug_file_handle.write(outmsg + '\r\n')
 
 

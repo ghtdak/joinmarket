@@ -14,7 +14,7 @@ from joinmarket.maker import Maker
 
 txfee = 1000
 cjfee = '0.002'  # 0.2% fee
-nickname = random_nick()
+global_nickname = random_nick()
 nickserv_password = ''
 minsize = int(1.2 * txfee / float(cjfee))  #minimum size is such that you always net profit at least 20% of the miner fee
 mix_levels = 5
@@ -163,7 +163,7 @@ def main():
     # a nightmare and must be changed
 
     debug('starting yield generator')
-    irc = IRCMessageChannel(nickname,
+    irc = IRCMessageChannel(global_nickname,
                             realname='btcint=' + joinmarket.common.config.get(
                                 "BLOCKCHAIN", "blockchain_source"),
                             password=nickserv_password)

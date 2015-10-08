@@ -8,9 +8,10 @@ import urllib2
 import json
 from decimal import Decimal
 
-from joinmarket import common
+#from joinmarket import common
 from joinmarket import taker
-from joinmarket.common import calc_cj_fee
+from joinmarket.common import calc_cj_fee, get_joinmarket_alert, get_nickname, \
+    set_nickname
 from joinmarket.irc import IRCMessageChannel, random_nick
 
 # ['counterparty', 'oid', 'ordertype', 'minsize', 'maxsize', 'txfee', 'cjfee']
@@ -193,8 +194,8 @@ class OrderbookPageRequestHeader(SimpleHTTPServer.SimpleHTTPRequestHandler):
         orderbook_fmt = fd.read()
         fd.close()
         alert_msg = ''
-        if common.joinmarket_alert:
-            alert_msg = '<br />JoinMarket Alert Message:<br />' + common.joinmarket_alert
+        if get_joinmarket_alert():
+            alert_msg = '<br />JoinMarket Alert Message:<br />' + get_joinmarket_alert()
         if self.path == '/':
             ordercount, ordertable = self.create_orderbook_table(
                 args.get('orderby'), 'desc' in args)
@@ -292,9 +293,7 @@ class GUITaker(taker.OrderbookWatch):
 def main():
     from optparse import OptionParser
 
-    # todo:  OK, this is totally outta control.  Setting a module element
-    # common.nickname = random_nick()  #watcher' +binascii.hexlify(os.urandom(4))
-    # common.load_program_config()
+    set_nickname(random_nick())
 
     parser = OptionParser(
         usage='usage: %prog [options]',
@@ -317,8 +316,8 @@ def main():
 
     hostport = (options.host, options.port)
 
-    irc = IRCMessageChannel(common.nickname)
-    taker = GUITaker(irc, hostport)
+    irc = IRCMessageChannel(get_nickname())
+    GUITaker(irc, hostport)
     print('starting irc')
 
     irc.run()

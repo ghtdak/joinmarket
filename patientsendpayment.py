@@ -2,7 +2,7 @@ import time
 from datetime import timedelta
 from optparse import OptionParser
 
-from joinmarket import common
+#from joinmarket import common
 from joinmarket import maker
 from joinmarket import taker
 from joinmarket.common import *
@@ -217,20 +217,20 @@ def main():
 
     # todo: is this right?  code was shifted under above else
     wallet = BitcoinCoreWallet(fromaccount=wallet_name)
-    common.bc_interface.sync_wallet(wallet)
+    bc_interface.sync_wallet(wallet)
 
     available_balance = wallet.get_balance_by_mixdepth()[options.mixdepth]
     if available_balance < amount:
         print 'not enough money at mixdepth=%d, exiting' % (options.mixdepth)
         return
 
-    common.nickname = random_nick()
+    set_nickname(random_nick())
     debug('Running patient sender of a payment')
 
-    irc = IRCMessageChannel(common.nickname)
-    bot = PatientSendPayment(irc, wallet, destaddr, amount, options.makercount,
-                             options.txfee, options.cjfee, waittime,
-                             options.mixdepth)
+    irc = IRCMessageChannel(get_nickname())
+    PatientSendPayment(irc, wallet, destaddr, amount, options.makercount,
+                       options.txfee, options.cjfee, waittime,
+                       options.mixdepth)
     try:
         irc.run()
     except:

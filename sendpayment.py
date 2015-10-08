@@ -4,11 +4,12 @@ import threading
 import time
 from optparse import OptionParser
 
-from joinmarket import common
+#from joinmarket import common
 from joinmarket import taker as takermodule
 from joinmarket.common import choose_sweep_orders, debug, choose_orders, \
-    load_program_config, validate_address, pick_order, cheapest_order_choose, \
-    weighted_order_choose, Wallet, BitcoinCoreWallet, debug_dump_object
+    validate_address, pick_order, cheapest_order_choose, \
+    weighted_order_choose, Wallet, BitcoinCoreWallet, debug_dump_object, \
+    set_nickname, bc_interface, get_nickname
 from joinmarket.irc import IRCMessageChannel, random_nick
 
 
@@ -236,16 +237,16 @@ def main():
     else:  #choose randomly (weighted)
         chooseOrdersFunc = weighted_order_choose
 
-    common.nickname = random_nick()
+    set_nickname(random_nick())
     debug('starting sendpayment')
 
     if not options.userpcwallet:
         wallet = Wallet(wallet_name, options.mixdepth + 1)
     else:
         wallet = BitcoinCoreWallet(fromaccount=wallet_name)
-    common.bc_interface.sync_wallet(wallet)
+    bc_interface.sync_wallet(wallet)
 
-    irc = IRCMessageChannel(common.nickname)
+    irc = IRCMessageChannel(get_nickname())
     taker = SendPayment(irc, wallet, destaddr, amount, options.makercount,
                         options.txfee, options.waittime, options.mixdepth,
                         options.answeryes, chooseOrdersFunc)
