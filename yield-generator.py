@@ -146,8 +146,7 @@ class YieldGenerator(Maker):
                                          if b > common.DUST_THRESHOLD])
             filtered_mix_balance = sorted(
                 list(mix_balance.iteritems()),
-                key=lambda a: a[1],
-                reverse=True)
+                key=lambda a: a[1])
             mixdepth = filtered_mix_balance[0][0]
         debug('filling order, mixdepth=' + str(mixdepth))
 
