@@ -502,9 +502,9 @@ def main():
                     max_mix_depth=options.mixdepthsrc + options.mixdepthcount)
     common.bc_interface.sync_wallet(wallet)
 
-    common.nickname = random_nick()
+    common.script_name = 'tumbler'
     debug('starting tumbler')
-    irc = IRCMessageChannel(common.nickname)
+    irc = IRCMessageChannel()
     tumbler = Tumbler(irc, wallet, tx_list, options)
     try:
         debug('connecting to irc')

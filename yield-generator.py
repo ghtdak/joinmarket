@@ -14,8 +14,6 @@ from socket import gethostname
 
 txfee = 1000
 cjfee = '0.002'  # 0.2% fee
-nickname = random_nick()
-nickserv_password = ''
 minsize = int(
     1.2 * txfee / float(cjfee)
 )  #minimum size is such that you always net profit at least 20% of the miner fee
@@ -36,9 +34,6 @@ class YieldGenerator(Maker):
 
     def __init__(self, msgchan, wallet):
         Maker.__init__(self, msgchan, wallet)
-        self.msgchan.register_channel_callbacks(self.on_welcome,
-                                                self.on_set_topic, None, None,
-                                                self.on_nick_leave, None)
         self.tx_unconfirm_timestamp = {}
 
     def log_statement(self, data):
@@ -151,12 +146,12 @@ def main():
     wallet = Wallet(seed, max_mix_depth=mix_levels)
     common.bc_interface.sync_wallet(wallet)
 
-    common.nickname = nickname
+    common.script_name = 'yield-generator'
     debug('starting yield generator')
-    irc = IRCMessageChannel(common.nickname,
-                            realname='btcint=' + common.config.get(
-                                "BLOCKCHAIN", "blockchain_source"),
-                            password=nickserv_password)
+    irc = IRCMessageChannel(
+        connect_to_all=True
+    )  #, realname='btcint=' + common.config.get("BLOCKCHAIN", "blockchain_source"),
+    #	password=nickserv_password)
     maker = YieldGenerator(irc, wallet)
     try:
         debug('connecting to irc')

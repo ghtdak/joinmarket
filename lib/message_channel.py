@@ -9,10 +9,11 @@ class MessageChannel(object):
 
     def __init__(self):
         #all
-        self.on_welcome = None
         self.on_set_topic = None
-        self.on_connect = None
-        self.on_disconnect = None
+        self.on_connected = None
+        self.on_disconnected = None
+        self.on_join_subchannel = None
+        self.on_leave_subchannel = None
         self.on_nick_leave = None
         self.on_nick_change = None
         #orderbook watch functions
@@ -42,16 +43,18 @@ class MessageChannel(object):
     #callbacks for everyone
     #some of these many not have meaning in a future channel, like bitmessage
     def register_channel_callbacks(self,
-                                   on_welcome=None,
                                    on_set_topic=None,
-                                   on_connect=None,
-                                   on_disconnect=None,
+                                   on_connected=None,
+                                   on_disconnected=None,
+                                   on_join_subchannel=None,
+                                   on_leave_subchannel=None,
                                    on_nick_leave=None,
                                    on_nick_change=None):
-        self.on_welcome = on_welcome
         self.on_set_topic = on_set_topic
-        self.on_connect = on_connect
-        self.on_disconnect = on_disconnect
+        self.on_connected = on_connected
+        self.on_disconnected = on_disconnected
+        self.on_join_subchannel = on_join_subchannel
+        self.on_leave_subchannel = on_leave_subchannel
         self.on_nick_leave = on_nick_leave
         self.on_nick_change = on_nick_change
 
@@ -62,8 +65,8 @@ class MessageChannel(object):
         self.on_order_seen = on_order_seen
         self.on_order_cancel = on_order_cancel
 
-    def request_orderbook(self):
-        pass
+    def request_orderbook(self, context=None):
+        pass  #context=None means request everywhere
 
     #taker commands
     def register_taker_callbacks(self,
@@ -101,8 +104,8 @@ class MessageChannel(object):
         self.on_seen_tx = on_seen_tx
         self.on_push_tx = on_push_tx
 
-    def announce_orders(self, orderlist, nick=None):
-        pass  #nick=None means announce publicly
+    def announce_orders(self, orderlist, nick=None, context=None):
+        pass
 
     def cancel_orders(self, oid_list):
         pass

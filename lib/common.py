@@ -2,13 +2,13 @@ import bitcoin as btc
 from decimal import Decimal, InvalidOperation
 from math import factorial, exp
 import sys, datetime, json, time, pprint, threading, getpass
-import random
+import random, traceback
 import blockchaininterface, jsonrpc, slowaes
 from ConfigParser import SafeConfigParser, NoSectionError, NoOptionError
 import os, io, itertools
 
 JM_VERSION = 2
-nickname = ''
+script_name = None
 DUST_THRESHOLD = 546
 bc_interface = None
 ordername_list = ["absorder", "relorder"]
@@ -24,7 +24,8 @@ config = SafeConfigParser()
 config_location = 'joinmarket.cfg'
 # FIXME: Add rpc_* options here in the future!
 required_options = {'BLOCKCHAIN': ['blockchain_source', 'network'],
-                    'MESSAGING': ['host', 'channel', 'port']}
+                    'MESSAGING':
+                    ['irc_config_file', 'usetor', 'socks5_host', 'socks5_port']}
 
 defaultconfig =\
 """
@@ -39,11 +40,8 @@ rpc_user = bitcoin
 rpc_password = password
 
 [MESSAGING]
-host = irc.cyberguerrilla.org
-channel = joinmarket-pit
-port = 6697
-usessl = true
-socks5 = false
+irc_config_file = irc-connection-config.json
+usetor = false
 socks5_host = localhost
 socks5_port = 9050
 #for tor
@@ -90,19 +88,14 @@ def load_program_config():
     bc_interface = blockchaininterface.get_blockchain_interface_instance(config)
 
 
-def get_config_irc_channel():
-    channel = '#' + config.get("MESSAGING", "channel")
-    if get_network() == 'testnet':
-        channel += '-test'
-    return channel
-
-
-def debug(msg):
+def debug(msg, printexc=False):
     global debug_file_handle
     with debug_file_lock:
-        if nickname and not debug_file_handle:
+        if script_name and not debug_file_handle:
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
             debug_file_handle = open(
-                os.path.join('logs', nickname + '.log'), 'ab', 1)
+                os.path.join('logs',
+                             script_name + '-' + timestamp + '.log'), 'ab', 1)
         outmsg = datetime.datetime.now().strftime("[%Y/%m/%d %H:%M:%S] ") + msg
         if not debug_silence:
             if core_alert:
@@ -110,8 +103,11 @@ def debug(msg):
             if joinmarket_alert:
                 print 'JoinMarket Alert Message: ' + joinmarket_alert
             print outmsg
-        if nickname:  #debugs before creating bot nick won't be handled like this
+        if script_name:  #debugs before creating bot nick won't be handled like this
             debug_file_handle.write(outmsg + '\r\n')
+        if printexc:
+            traceback.print_exc()
+            traceback.print_exc(file=debug_file_handle)
 
 
             #Random functions - replacing some NumPy features

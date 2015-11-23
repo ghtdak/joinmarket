@@ -251,7 +251,7 @@ def main():
     else:  #choose randomly (weighted)
         chooseOrdersFunc = weighted_order_choose
 
-    common.nickname = random_nick()
+    common.script_name = 'create-unsigned-tx'
     debug('starting sendpayment')
 
     class UnsignedTXWallet(common.AbstractWallet):
@@ -263,7 +263,7 @@ def main():
             return auth_privkey
 
     wallet = UnsignedTXWallet()
-    irc = IRCMessageChannel(common.nickname)
+    irc = IRCMessageChannel(connect_to_all=False)
     taker = CreateUnsignedTx(irc, wallet, auth_utxo, cjamount, destaddr,
                              changeaddr, utxo_data, options, chooseOrdersFunc)
     try:

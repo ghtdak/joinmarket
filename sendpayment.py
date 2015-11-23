@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.join(data_dir, 'lib'))
 from common import *
 import common
 import taker as takermodule
-from irc import IRCMessageChannel, random_nick
+from irc import IRCMessageChannel
 import bitcoin as btc
 
 
@@ -144,8 +144,8 @@ class SendPayment(takermodule.Taker):
         self.answeryes = answeryes
         self.chooseOrdersFunc = chooseOrdersFunc
 
-    def on_welcome(self):
-        takermodule.Taker.on_welcome(self)
+    def on_connected(self):
+        takermodule.Taker.on_connected(self)
         PaymentThread(self).start()
 
 
@@ -238,7 +238,7 @@ def main():
     else:  #choose randomly (weighted)
         chooseOrdersFunc = weighted_order_choose
 
-    common.nickname = random_nick()
+    common.script_name = 'send-payment'
     debug('starting sendpayment')
 
     if not options.userpcwallet:
@@ -247,7 +247,7 @@ def main():
         wallet = BitcoinCoreWallet(fromaccount=wallet_name)
     common.bc_interface.sync_wallet(wallet)
 
-    irc = IRCMessageChannel(common.nickname)
+    irc = IRCMessageChannel(connect_to_all=False)
     taker = SendPayment(irc, wallet, destaddr, amount, options.makercount,
                         options.txfee, options.waittime, options.mixdepth,
                         options.answeryes, chooseOrdersFunc)

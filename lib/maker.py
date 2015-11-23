@@ -183,9 +183,10 @@ class Maker(CoinJoinerPeer):
 
     def __init__(self, msgchan, wallet):
         CoinJoinerPeer.__init__(self, msgchan)
-        self.msgchan.register_channel_callbacks(self.on_welcome,
-                                                self.on_set_topic, None, None,
-                                                self.on_nick_leave, None)
+        self.msgchan.register_channel_callbacks(
+            self.on_set_topic, self.on_connected, self.on_disconnected,
+            self.on_join_subchannel, self.on_leave_subchannel,
+            self.on_nick_leave, self.on_nick_change)
         msgchan.register_maker_callbacks(self.on_orderbook_requested,
                                          self.on_order_fill, self.on_seen_auth,
                                          self.on_seen_tx, self.on_push_tx)
@@ -242,14 +243,25 @@ class Maker(CoinJoinerPeer):
         if txid == None:
             self.send_error(nick, 'Unable to push tx')
 
-    def on_welcome(self):
-        self.msgchan.announce_orders(self.orderlist)
+    def on_connected(self):
+        pass
+
+    def on_disconnected(self):
         self.active_orders = {}
+
+    def on_join_subchannel(self, context):
+        self.msgchan.announce_orders(self.orderlist, None, context)
+
+    def on_leave_subchannel(self, context):
+        pass
 
     def on_nick_leave(self, nick):
         if nick in self.active_orders:
             debug('nick ' + nick + ' has left')
             del self.active_orders[nick]
+
+    def on_nick_change(self, oldnick, newnick):
+        pass  #TODO implement
 
     def modify_orders(self, to_cancel, to_announce):
         debug('modifying orders. to_cancel=' + str(to_cancel) + '\nto_announce='

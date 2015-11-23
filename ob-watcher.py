@@ -1,6 +1,7 @@
 import BaseHTTPServer, SimpleHTTPServer, threading
 import urllib2
 import io, base64, time, sys, os
+from optparse import OptionParser
 data_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, os.path.join(data_dir, 'lib'))
 
@@ -311,19 +312,17 @@ class GUITaker(taker.OrderbookWatch):
     def __init__(self, msgchan, hostport):
         self.hostport = hostport
         super(GUITaker, self).__init__(msgchan)
+        self.httpdthread = None
 
-    def on_welcome(self):
-        taker.OrderbookWatch.on_welcome(self)
-        HTTPDThread(self, self.hostport).start()
+    def on_connected(self):
+        taker.OrderbookWatch.on_connected(self)
+        if not self.httpdthread:
+            self.httpdthread = HTTPDThread(self, self.hostport)
+            self.httpdthread.start()
 
 
 def main():
-    import bitcoin as btc
-    import common
-    import binascii, os
-    from optparse import OptionParser
-
-    common.nickname = random_nick()  #watcher' +binascii.hexlify(os.urandom(4))
+    common.script_name = 'ob-watcher'
     common.load_program_config()
 
     parser = OptionParser(
@@ -347,7 +346,7 @@ def main():
 
     hostport = (options.host, options.port)
 
-    irc = IRCMessageChannel(common.nickname)
+    irc = IRCMessageChannel(connect_to_all=False)
     taker = GUITaker(irc, hostport)
     print('starting irc')
 

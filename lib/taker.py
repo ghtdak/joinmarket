@@ -366,9 +366,9 @@ class OrderbookWatch(CoinJoinerPeer):
         self.msgchan.register_orderbookwatch_callbacks(self.on_order_seen,
                                                        self.on_order_cancel)
         self.msgchan.register_channel_callbacks(
-            self.on_welcome, self.on_set_topic, None, self.on_disconnect,
-            self.on_nick_leave, None)
-
+            self.on_set_topic, self.on_connected, self.on_disconnected,
+            self.on_join_subchannel, self.on_leave_subchannel,
+            self.on_nick_leave, self.on_nick_change)
         con = sqlite3.connect(":memory:", check_same_thread=False)
         con.row_factory = sqlite3.Row
         self.db = con.cursor()
@@ -416,14 +416,23 @@ class OrderbookWatch(CoinJoinerPeer):
         self.db.execute("DELETE FROM orderbook WHERE counterparty=? AND oid=?;",
                         (counterparty, oid))
 
-    def on_welcome(self):
-        self.msgchan.request_orderbook()
+    def on_connected(self):
+        pass
+
+    def on_disconnected(self):
+        self.db.execute('DELETE FROM orderbook;')
+
+    def on_join_subchannel(self, context):
+        self.msgchan.request_orderbook(context)
+
+    def on_leave_subchannel(self, context):
+        pass
 
     def on_nick_leave(self, nick):
         self.db.execute('DELETE FROM orderbook WHERE counterparty=?;', (nick,))
 
-    def on_disconnect(self):
-        self.db.execute('DELETE FROM orderbook;')
+    def on_nick_change(self, oldnick, newnick):
+        pass  #TODO
 
 
 #assume this only has one open cj tx at a time

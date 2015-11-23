@@ -219,10 +219,10 @@ def main():
         print 'not enough money at mixdepth=%d, exiting' % (options.mixdepth)
         return
 
-    common.nickname = random_nick()
+    common.script_name = 'patient-send-payment'
     debug('Running patient sender of a payment')
 
-    irc = IRCMessageChannel(common.nickname)
+    irc = IRCMessageChannel(connect_to_all=True)
     bot = PatientSendPayment(irc, wallet, destaddr, amount, options.makercount,
                              options.txfee, options.cjfee, waittime,
                              options.mixdepth)
