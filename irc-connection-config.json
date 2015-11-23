@@ -1,0 +1,14 @@
+{"clearnet":[
+		{"use": true, "host": "irc.snoonet.org", "port": 6697, "channel": "#joinmarket-pit",
+		"usessl": true, "password": false, "usermodes": ["-R", "+B"]},
+		{"use": true, "host": "irc.freenode.net", "port": 6697, "channel": "#joinmarket-pit-test",
+		"usessl": true, "password": false},
+		{"use": false, "host": "irc.cyberguerrilla.org", "port": 6697, "channel": "#joinmarket-pit",
+		"usessl": true, "password": false, "usermodes": ["-R", "+B"]}
+	],
+"tor":[
+		{"use": false, "host": "6dvj6v5imhny3anf.onion", "port": 6697, "channel": "#joinmarket-pit",
+		"usessl": true, "password": false, "usermodes": ["-R", "+B"]}
+	]
+}
+
