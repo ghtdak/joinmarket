@@ -43,6 +43,7 @@ class AttributeDict(object):
                     'logs/{}.log'.format(value))
             fileHandler.setFormatter(logFormatter)
             log.addHandler(fileHandler)
+            log.info('{} log starts'.format(value))
 
         super(AttributeDict, self).__setattr__(name, value)
 

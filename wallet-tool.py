@@ -113,7 +113,6 @@ if method == 'display' or method == 'displayall' or method == 'summary':
         if method != 'summary':
             print(s)
 
-
     total_balance = 0
     for m in range(wallet.max_mix_depth):
         cus_print('mixing depth %d m/0/%d/' % (m, m))
