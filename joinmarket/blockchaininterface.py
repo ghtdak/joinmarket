@@ -496,9 +496,9 @@ class BitcoinCoreInterface(BlockchainInterface):
             self.rpc('importaddress', [addr, wallet_name, False])
         if jm_single().config.get(
                 "BLOCKCHAIN", "blockchain_source") != 'regtest':
-            print('restart Bitcoin Core with -rescan if you\'re '
-                  'recovering an existing wallet from backup seed')
-            print(' otherwise just restart this joinmarket script')
+            log.info('restart Bitcoin Core with -rescan if you\'re '
+                  'recovering an existing wallet from backup seed\n'
+                     ' otherwise just restart this joinmarket script')
             sys.exit(0)
 
     def sync_addresses(self, wallet):

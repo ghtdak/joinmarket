@@ -154,7 +154,7 @@ class Wallet(AbstractWallet):
                 else:
                     raise ValueError
             except ValueError:
-                print('Incorrect password')
+                log.error('Incorrect password')
                 decrypted = False
         if self.storepassword:
             self.password_key = password_key

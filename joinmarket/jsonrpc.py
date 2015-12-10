@@ -24,6 +24,9 @@ import base64
 import httplib
 import json
 
+from .support import get_log
+
+log = get_log()
 
 class JsonRpcError(Exception):
     """
@@ -114,7 +117,8 @@ class JsonRpc(object):
             raise JsonRpcConnectionError("invalid id returned by query")
 
         if response["error"] is not None:
-            print(response["error"])
+            # todo: could be a warning or error
+            log.warning(response["error"])
             raise JsonRpcError(response["error"])
 
         return response["result"]

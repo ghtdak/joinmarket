@@ -38,7 +38,7 @@ def random_nick(nick_len=9):
     ircnick = ''.join([i for sl in zip(rnd_consonants, rnd_vowels) for i in sl])
     ircnick = ircnick.capitalize()
     # not using debug because it might not know the logfile name at this point
-    print('Generated random nickname: ' + ircnick)
+    log.info('Generated random nickname: ' + ircnick)
     return ircnick
     # Other ideas for random nickname generation:
     # - weight randomness by frequency of letter appearance
@@ -559,10 +559,11 @@ class IRCMessageChannel(MessageChannel):
                 log.debug(repr(e))
             finally:
                 try:
+                    # todo: does this seem right?
                     self.fd.close()
                     self.sock.close()
                 except Exception as e:
-                    print(repr(e))
+                    log.info(repr(e))
             if self.on_disconnect:
                 self.on_disconnect()
             log.debug('disconnected irc')

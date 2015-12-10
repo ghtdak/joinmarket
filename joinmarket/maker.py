@@ -78,7 +78,8 @@ class CoinJoinOrder(object):
         self.i_utxo_pubkey = i_utxo_pubkey
 
         if not btc.ecdsa_verify(self.taker_pk, btc_sig, self.i_utxo_pubkey):
-            print('signature didnt match pubkey and message')
+            # todo: says didn't match.  warning / info / error?
+            log.warning('signature didnt match pubkey and message')
             return False
         # authorisation of taker passed
         # (but input utxo pubkey is checked in verify_unsigned_tx).
@@ -400,7 +401,7 @@ def main():
     irc = IRCMessageChannel(nickname)
     maker = Maker(irc, wallet)
     try:
-        print('connecting to irc')
+        log.info('connecting to irc')
         irc.run()
     except:
         log.debug('CRASHING, DUMPING EVERYTHING')
@@ -413,4 +414,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    print('done')
+    log.info('done')

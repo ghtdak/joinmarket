@@ -33,10 +33,7 @@ consoleHandler = logging.StreamHandler(stream=sys.stdout)
 consoleHandler.setFormatter(logFormatter)
 log.addHandler(consoleHandler)
 
-# log = logging.getLogger('joinmarket')
-# log.addHandler(logging.NullHandler())
-
-log.debug('hello joinmarket')
+log.info('logger started')
 
 def get_log():
     """
@@ -215,13 +212,13 @@ def cheapest_order_choose(orders, n, feekey):
 
 def pick_order(orders, n, feekey):
     i = -1
-    print("Considered orders:")
+    log.info("Considered orders:")
     for o in orders:
         i += 1
-        print("    %2d. %20s, CJ fee: %6d, tx fee: %6d" % (i, o[0], o[2], o[3]))
+        log.info("    %2d. %20s, CJ fee: %6d, tx fee: %6d" % (i, o[0], o[2], o[3]))
     pickedOrderIndex = -1
     if i == 0:
-        print("Only one possible pick, picking it.")
+        log.info("Only one possible pick, picking it.")
         return orders[0]
     while pickedOrderIndex == -1:
         try:

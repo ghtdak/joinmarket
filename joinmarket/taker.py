@@ -375,13 +375,13 @@ class CoinJoinerPeer(object):
                 min_version = int(params[0])
                 max_version = int(params[1])
                 alert = msg[msg.index(params[1]) + len(params[1]):].strip()
-            except ValueError, IndexError:
+            except (ValueError, IndexError):
                 continue
             if min_version < jm_single().JM_VERSION < max_version:
-                print('=' * 60)
-                print('JOINMARKET ALERT')
-                print(alert)
-                print('=' * 60)
+                log.error('=' * 60)
+                log.error('JOINMARKET ALERT')
+                log.error(alert)
+                log.error('=' * 60)
                 # todo: is this right?
                 jm_single().joinmarket_alert = alert
 

@@ -11,9 +11,10 @@ import base64
 import string
 import random
 
-
+from .support import get_log
 from libnacl import public
 
+log = get_log()
 
 def init_keypair(fname=None):
     """Create a new encryption
@@ -110,7 +111,7 @@ def test_case(case_name,
             "Encryption test: FAILED. Alice sent: {}, Bob received: {}".format(
                     ba_message, alice_ptext)
 
-    print("Encryption test PASSED for case: " + case_name)
+    log.info("Encryption test PASSED for case: " + case_name)
 
 
 def test_keypair_setup():
@@ -151,5 +152,5 @@ if __name__ == "__main__":
     # 1 character
     alice_box, bob_box = test_keypair_setup()
     test_case("1 char", alice_box, bob_box, '\x00', '\x00', 5)
-    print("All test cases passed - encryption "
+    log.info("All test cases passed - encryption "
           "and decryption should work correctly.")
