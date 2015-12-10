@@ -361,6 +361,7 @@ class CoinJoinTX(object):
 class CoinJoinerPeer(object):
     def __init__(self, msgchan):
         self.msgchan = msgchan
+        self.msgchan.set_coinjoiner_peer(self)
 
     def get_crypto_box_from_nick(self, nick):
         raise Exception()
@@ -385,15 +386,61 @@ class CoinJoinerPeer(object):
                 # todo: is this right?
                 jm_single().joinmarket_alert = alert
 
+    def on_welcome(self, *args, **kwargs):
+        pass
+
+    def on_connect(self, *args, **kwargs):
+        pass
+
+    def on_disconnect(self, *args, **kwargs):
+        pass
+
+    def on_nick_leave(self, *args, **kwargs):
+        pass
+
+    def on_nick_change(self, *args, **kwargs):
+        pass
+
+    def on_set_topic(self, *args, **kwargs):
+        pass
+
+    def on_order_seen(self, *args, **kwargs):
+        pass
+
+    def on_order_cancel(self, *args, **kwargs):
+        pass
+
+    def on_error(self, *args, **kwargs):
+        pass
+
+    def on_pubkey(self, *args, **kwargs):
+        pass
+
+    def on_ioauth(self, *args, **kwargs):
+        pass
+
+    def on_sig(self, *args, **kwargs):
+        pass
+
+    def on_orderbook_requested(self, *args, **kwargs):
+        pass
+
+    def on_order_fill(self, *args, **kwargs):
+        pass
+
+    def on_seen_auth(self, *args, **kwargs):
+        pass
+
+    def on_seen_tx(self, *args, **kwargs):
+        pass
+
+    def on_push_tx(self, *args, **kwargs):
+        pass
+
 
 class OrderbookWatch(CoinJoinerPeer):
     def __init__(self, msgchan):
-        CoinJoinerPeer.__init__(self, msgchan)
-        self.msgchan.register_orderbookwatch_callbacks(self.on_order_seen,
-                                                       self.on_order_cancel)
-        self.msgchan.register_channel_callbacks(
-                self.on_welcome, self.on_set_topic, None, self.on_disconnect,
-                self.on_nick_leave, None)
+        super(OrderbookWatch, self).__init__(msgchan)
 
         con = sqlite3.connect(":memory:", check_same_thread=False)
         con.row_factory = sqlite3.Row
@@ -461,8 +508,6 @@ class OrderbookWatch(CoinJoinerPeer):
 class Taker(OrderbookWatch):
     def __init__(self, msgchan):
         OrderbookWatch.__init__(self, msgchan)
-        msgchan.register_taker_callbacks(self.on_error, self.on_pubkey,
-                                         self.on_ioauth, self.on_sig)
         msgchan.cjpeer = self
         self.cjtx = None
         self.maker_pks = {}

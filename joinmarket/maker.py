@@ -203,12 +203,6 @@ class CJMakerOrderError(StandardError):
 class Maker(CoinJoinerPeer):
     def __init__(self, msgchan, wallet):
         CoinJoinerPeer.__init__(self, msgchan)
-        self.msgchan.register_channel_callbacks(self.on_welcome,
-                                                self.on_set_topic, None, None,
-                                                self.on_nick_leave, None)
-        msgchan.register_maker_callbacks(self.on_orderbook_requested,
-                                         self.on_order_fill, self.on_seen_auth,
-                                         self.on_seen_tx, self.on_push_tx)
         msgchan.cjpeer = self
 
         self.active_orders = {}

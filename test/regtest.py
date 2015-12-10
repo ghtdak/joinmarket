@@ -1,20 +1,16 @@
 #! /usr/bin/env python
-from __future__ import absolute_import
+#from __future__ import absolute_import
 
-'''Some helper functions for testing'''
+"""Some helper functions for testing"""
 
-import sys
 import os
-import time
-import binascii
-import pexpect
-import random
 import subprocess
+import time
 import unittest
-from commontest import local_command, make_wallets
 
-data_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-sys.path.insert(0, os.path.join(data_dir))
+from commontest import local_command, make_wallets
+# data_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+# sys.path.insert(0, os.path.join(data_dir))
 
 import bitcoin as btc
 
@@ -23,7 +19,8 @@ from joinmarket import get_p2pk_vbyte, get_log
 
 log = get_log()
 
-''' Just some random thoughts to motivate possible tests;
+"""
+Just some random thoughts to motivate possible tests;
 almost none of this has really been done:
 
 Expectations
@@ -36,16 +33,17 @@ messages it receives, except bots which perform a finite action
 respecting the JoinMarket protocol for its version.
 
 4. Bots must never send bitcoin data in the clear over the wire.
-'''
-'''helper functions put here to avoid polluting the main codebase.'''
+"""
 
 
 class Join2PTests(unittest.TestCase):
-    '''This test case intends to simulate
+    """
+    This test case intends to simulate
     a single join with a single counterparty. In that sense,
     it's not realistic, because nobody (should) do joins with only 1 maker,
     but this test has the virtue of being the simplest possible thing
-    that JoinMarket can do. '''
+    that JoinMarket can do.
+    """
 
     def setUp(self):
         #create 2 new random wallets.
@@ -59,10 +57,11 @@ class Join2PTests(unittest.TestCase):
     def run_simple_send(self, n, m):
         #start yield generator with wallet1
         yigen_proc = local_command(
-            ['python', 'yield-generator-basic.py', str(self.wallets[0]['seed'])],
-            bg=True)
+            ['python', 'yield-gen-bas-test.py',
+             str(self.wallets[0]['seed'])], bg=True)
 
-        #A significant delay is needed to wait for the yield generator to sync its wallet
+        # A significant delay is needed to wait for the yield generator to
+        # sync its wallet
         time.sleep(30)
 
         #run a single sendpayment call with wallet2
@@ -71,8 +70,9 @@ class Join2PTests(unittest.TestCase):
             os.urandom(32), get_p2pk_vbyte())
         try:
             for i in range(m):
-                sp_proc = local_command(['python','sendpayment.py','--yes','-N','1', self.wallets[1]['seed'],\
-                                                      str(amt), dest_address])
+                sp_proc = local_command(
+                        ['python','sendpayment.py','--yes','-N','1',
+                         self.wallets[1]['seed'], str(amt), dest_address])
         except subprocess.CalledProcessError, e:
             if yigen_proc:
                 yigen_proc.terminate()
@@ -115,8 +115,9 @@ class JoinNPTests(unittest.TestCase):
     def run_nparty_join(self):
         yigen_procs = []
         for i in range(self.n):
-            ygp = local_command(['python','yield-generator-basic.py',\
-                                 str(self.wallets[i]['seed'])], bg=True)
+            ygp = local_command(
+                    ['python','yield-gen-bas-test.py',
+                     str(self.wallets[i]['seed'])], bg=True)
             time.sleep(2)  #give it a chance
             yigen_procs.append(ygp)
 
@@ -128,8 +129,9 @@ class JoinNPTests(unittest.TestCase):
         dest_address = btc.privkey_to_address(
             os.urandom(32), get_p2pk_vbyte())
         try:
-            sp_proc = local_command(['python','sendpayment.py','--yes','-N', str(self.n),\
-                                     self.wallets[self.n]['seed'], str(amt), dest_address])
+            sp_proc = local_command(
+                    ['python','sendpayment.py','--yes','-N', str(self.n),
+                     self.wallets[self.n]['seed'], str(amt), dest_address])
         except subprocess.CalledProcessError, e:
             for ygp in yigen_procs:
                 ygp.kill()
@@ -149,7 +151,7 @@ class JoinNPTests(unittest.TestCase):
 
 
 def main():
-    os.chdir(data_dir)
+    # os.chdir(data_dir)
     load_program_config()
     unittest.main()
 

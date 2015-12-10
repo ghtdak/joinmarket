@@ -219,9 +219,9 @@ class IRCMessageChannel(MessageChannel):
                 maxsize = _chunks[3]
                 txfee = _chunks[4]
                 cjfee = _chunks[5]
-                if self.on_order_seen:
-                    self.on_order_seen(counterparty, oid, ordertype, minsize,
-                                       maxsize, txfee, cjfee)
+                self.coinjoinerpeer.on_order_seen(
+                        counterparty, oid, ordertype, minsize,
+                        maxsize, txfee, cjfee)
             except IndexError as e:
                 log.exception(e)
                 log.debug('index error parsing chunks')
@@ -248,20 +248,17 @@ class IRCMessageChannel(MessageChannel):
                 # taker commands
                 elif _chunks[0] == 'pubkey':
                     maker_pk = _chunks[1]
-                    if self.on_pubkey:
-                        self.on_pubkey(nick, maker_pk)
+                    self.coinjoinerpeer.on_pubkey(nick, maker_pk)
                 elif _chunks[0] == 'ioauth':
                     utxo_list = _chunks[1].split(',')
                     cj_pub = _chunks[2]
                     change_addr = _chunks[3]
                     btc_sig = _chunks[4]
-                    if self.on_ioauth:
-                        self.on_ioauth(nick, utxo_list, cj_pub, change_addr,
-                                       btc_sig)
+                    self.coinjoinerpeer.on_ioauth(nick, utxo_list, cj_pub,
+                                                  change_addr, btc_sig)
                 elif _chunks[0] == 'sig':
                     sig = _chunks[1]
-                    if self.on_sig:
-                        self.on_sig(nick, sig)
+                    self.coinjoinerpeer.on_sig(nick, sig)
 
                 # maker commands
                 if _chunks[0] == 'fill':
@@ -271,32 +268,37 @@ class IRCMessageChannel(MessageChannel):
                         taker_pk = _chunks[3]
                     except (ValueError, IndexError) as e:
                         self.send_error(nick, str(e))
-                    if self.on_order_fill:
-                        self.on_order_fill(nick, oid, amount, taker_pk)
+                        # todo: probably need contiue here
+
+                    # todo: shouldn't this be inside try
+                    self.coinjoinerpeer.on_order_fill(
+                            nick, oid, amount, taker_pk)
                 elif _chunks[0] == 'auth':
                     try:
                         i_utxo_pubkey = _chunks[1]
                         btc_sig = _chunks[2]
                     except (ValueError, IndexError) as e:
                         self.send_error(nick, str(e))
-                    if self.on_seen_auth:
-                        self.on_seen_auth(nick, i_utxo_pubkey, btc_sig)
+
+                    # todo: shouldn't this be inside try?
+                    self.coinjoinerpeer.on_seen_auth(nick, i_utxo_pubkey, btc_sig)
                 elif _chunks[0] == 'tx':
                     b64tx = _chunks[1]
                     try:
                         txhex = base64.b64decode(b64tx).encode('hex')
                     except TypeError as e:
                         self.send_error(nick, 'bad base64 tx. ' + repr(e))
-                    if self.on_seen_tx:
-                        self.on_seen_tx(nick, txhex)
+
+                    # todo: inside try!
+                    self.coinjoinerpeer.on_seen_tx(nick, txhex)
                 elif _chunks[0] == 'push':
                     b64tx = _chunks[1]
                     try:
                         txhex = base64.b64decode(b64tx).encode('hex')
+                        # todo: moved
+                        self.coinjoinerpeer.on_push_tx(nick, txhex)
                     except TypeError as e:
                         self.send_error(nick, 'bad base64 tx. ' + repr(e))
-                    if self.on_push_tx:
-                        self.on_push_tx(nick, txhex)
             except CJPeerError:
                 # TODO proper error handling
                 log.debug('cj peer error TODO handle')
@@ -313,18 +315,14 @@ class IRCMessageChannel(MessageChannel):
                 # !cancel [oid]
                 try:
                     oid = int(_chunks[1])
-                    if self.on_order_cancel:
-                        self.on_order_cancel(nick, oid)
+
+                    self.coinjoinerpeer.on_order_cancel(nick, oid)
                 except ValueError as e:
                     log.debug("!cancel " + repr(e))
                     return
             elif _chunks[0] == 'orderbook':
-                if self.on_orderbook_requested:
-                    self.on_orderbook_requested(nick)
-            else:
-                # TODO this is for testing/debugging, should be removed, see taker.py
-                if hasattr(self, 'debug_on_pubmsg_cmd'):
-                    self.debug_on_pubmsg_cmd(nick, _chunks)
+                self.coinjoinerpeer.on_orderbook_requested(nick)
+
 
     def __get_encryption_box(self, cmd, nick):
         """Establish whether the message is to be
@@ -336,7 +334,7 @@ class IRCMessageChannel(MessageChannel):
         if cmd in plaintext_commands:
             return None, False
         else:
-            return self.cjpeer.get_crypto_box_from_nick(nick), True
+            return self.coinjoinerpeer.get_crypto_box_from_nick(nick), True
 
     def __handle_privmsg(self, source, target, message):
         nick = get_irc_nick(source)
@@ -416,8 +414,7 @@ class IRCMessageChannel(MessageChannel):
             if nick == self.nick:
                 raise IOError('we quit')
             else:
-                if self.on_nick_leave:
-                    self.on_nick_leave(nick)
+                self.coinjoinerpeer.on_nick_leave(nick)
         elif _chunks[1] == '433':  # nick in use
             # self.nick = random_nick()
             self.nick += '_'  # helps keep identity constant if just _ added
@@ -448,8 +445,7 @@ class IRCMessageChannel(MessageChannel):
             self.lockcond.notify()
             self.lockcond.release()
         elif _chunks[1] == '376':  # end of motd
-            if self.on_connect:
-                self.on_connect()
+            self.coinjoinerpeer.on_connect()
             self.send_raw('JOIN ' + self.channel)
             self.send_raw(
                 'MODE ' + self.nick + ' +B')  # marks as bots on unreal
@@ -457,11 +453,10 @@ class IRCMessageChannel(MessageChannel):
                           )  # allows unreg'd private messages
         elif _chunks[1] == '366':  # end of names list
             log.debug('Connected to IRC and joined channel')
-            if self.on_welcome:
-                self.on_welcome()
+            self.coinjoinerpeer.on_welcome()
         elif _chunks[1] == '332' or _chunks[1] == 'TOPIC':  # channel topic
             topic = get_irc_text(line)
-            self.on_set_topic(topic)
+            self.coinjoinerpeer.on_set_topic(topic)
         elif _chunks[1] == 'KICK':
             target = _chunks[3]
             if target == self.nick:
@@ -469,24 +464,10 @@ class IRCMessageChannel(MessageChannel):
                 fmt = '{} has kicked us from the irc channel! Reason= {}'.format
                 raise IOError(fmt(get_irc_nick(_chunks[0]), get_irc_text(line)))
             else:
-                if self.on_nick_leave:
-                    self.on_nick_leave(target)
+                self.coinjoinerpeer.on_nick_leave(target)
         elif _chunks[1] == 'PART':
             nick = get_irc_nick(_chunks[0])
-            if self.on_nick_leave:
-                self.on_nick_leave(nick)
-
-        # todo: cleanup
-        # elif _chunks[1] == 'JOIN':
-        #     channel = _chunks[2][1:]
-        #     nick = get_irc_nick(_chunks[0])
-        #
-        # elif chunks[1] == '005':
-        #     self.motd_fd = open("motd.txt", "w")
-        # elif chunks[1] == '372':
-        #     self.motd_fd.write(get_irc_text(line) + "\n")
-        # elif chunks[1] == '251':
-        #     self.motd_fd.close()
+            self.coinjoinerpeer.on_nick_leave(nick)
 
 
     def __init__(self,
@@ -494,9 +475,8 @@ class IRCMessageChannel(MessageChannel):
                  username='username',
                  realname='realname',
                  password=None):
-        MessageChannel.__init__(self)
+        super(IRCMessageChannel, self).__init__()
         self.give_up = True
-        self.cjpeer = None  # subclasses have to set this to self
         self.given_nick = given_nick
         self.nick = given_nick
         config = jm_single().config
@@ -564,8 +544,7 @@ class IRCMessageChannel(MessageChannel):
                     self.sock.close()
                 except Exception as e:
                     log.info(repr(e))
-            if self.on_disconnect:
-                self.on_disconnect()
+            self.coinjoinerpeer.on_disconnect()
             log.debug('disconnected irc')
             if not self.give_up:
                 time.sleep(30)

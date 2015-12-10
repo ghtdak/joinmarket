@@ -1,20 +1,19 @@
 #! /usr/bin/env python
-from __future__ import absolute_import
+from __future__ import absolute_import, print_function
 
 import sys
 import threading
 from optparse import OptionParser
 
-# data_dir = os.path.dirname(os.path.realpath(__file__))
-# sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
 import time
 
-from joinmarket import Taker, load_program_config, IRCMessageChannel
+from joinmarket import Taker, load_program_config
 from joinmarket import validate_address, jm_single
 from joinmarket import random_nick
 from joinmarket import get_log, choose_sweep_orders, choose_orders, \
     pick_order, cheapest_order_choose, weighted_order_choose, debug_dump_object
 from joinmarket import Wallet, BitcoinCoreWallet
+from joinmarket.txirc import build_irc_communicator
 
 log = get_log()
 
@@ -22,13 +21,13 @@ log = get_log()
 def check_high_fee(total_fee_pc):
     WARNING_THRESHOLD = 0.02  # 2%
     if total_fee_pc > WARNING_THRESHOLD:
-        print '\n'.join(['=' * 60] * 3)
-        print 'WARNING   ' * 6
-        print '\n'.join(['=' * 60] * 1)
-        print 'OFFERED COINJOIN FEE IS UNUSUALLY HIGH. DOUBLE/TRIPLE CHECK.'
-        print '\n'.join(['=' * 60] * 1)
-        print 'WARNING   ' * 6
-        print '\n'.join(['=' * 60] * 3)
+        log.info('\n'.join(['=' * 60] * 3))
+        log.info('WARNING   ' * 6)
+        log.info('\n'.join(['=' * 60] * 1))
+        log.info('OFFERED COINJOIN FEE IS UNUSUALLY HIGH. DOUBLE/TRIPLE CHECK.')
+        log.info('\n'.join(['=' * 60] * 1))
+        log.info('WARNING   ' * 6)
+        log.info('\n'.join(['=' * 60] * 3))
 
 
 # thread which does the buy-side algorithm
@@ -41,12 +40,12 @@ class PaymentThread(threading.Thread):
         self.ignored_makers = []
 
     def create_tx(self):
-        crow = self.taker.db.execute(
-                'SELECT COUNT(DISTINCT counterparty) FROM orderbook;').fetchone()
+        crow = self.taker.db.execute('SELECT COUNT(DISTINCT counterparty) FROM '
+                                     'orderbook;').fetchone()
         counterparty_count = crow['COUNT(DISTINCT counterparty)']
         counterparty_count -= len(self.ignored_makers)
         if counterparty_count < self.taker.makercount:
-            print 'not enough counterparties to fill order, ending'
+            log.info('not enough counterparties to fill order, ending')
             self.taker.msgchan.shutdown()
             return
 
@@ -81,7 +80,7 @@ class PaymentThread(threading.Thread):
                     'ERROR not enough liquidity in the orderbook, exiting')
                 return
             total_amount = self.taker.amount + total_cj_fee + self.taker.txfee
-            print 'total amount spent = ' + str(total_amount)
+            log.info('total amount spent = ' + str(total_amount))
             utxos = self.taker.wallet.select_utxos(self.taker.mixdepth,
                                                    total_amount)
             cjamount = self.taker.amount
@@ -119,8 +118,8 @@ class PaymentThread(threading.Thread):
                 self.ignored_makers + active_nicks)
         if not orders:
             return None, 0
-        print 'chosen orders to fill ' + str(orders) + ' totalcjfee=' + str(
-                total_cj_fee)
+        log.info('chosen orders to fill {} totalcjfee={}'.format(
+            orders, total_cj_fee))
         if not self.taker.answeryes:
             if len(self.ignored_makers) > 0:
                 noun = 'total'
@@ -137,8 +136,9 @@ class PaymentThread(threading.Thread):
         return orders, total_cj_fee
 
     def run(self):
-        print 'waiting for all orders to certainly arrive'
+        log.debug('sleeping: waiting for orders')
         time.sleep(self.taker.waittime)
+        log.debug('waking: ')
         self.create_tx()
 
 
@@ -157,6 +157,7 @@ class SendPayment(Taker):
         self.chooseOrdersFunc = chooseOrdersFunc
 
     def on_welcome(self):
+        log.debug('on_welcome: {}'.format(__name__))
         Taker.on_welcome(self)
         PaymentThread(self).start()
 
@@ -243,7 +244,7 @@ def main():
     load_program_config()
     addr_valid, errormsg = validate_address(destaddr)
     if not addr_valid:
-        print 'ERROR: Address invalid. ' + errormsg
+        log.info('ERROR: Address invalid. ' + errormsg)
         return
 
     chooseOrdersFunc = None
@@ -264,7 +265,10 @@ def main():
         wallet = BitcoinCoreWallet(fromaccount=wallet_name)
     jm_single().bc_interface.sync_wallet(wallet)
 
-    irc = IRCMessageChannel(jm_single().nickname)
+    # irc = IRCMessageChannel(jm_single().nickname)
+
+    irc = build_irc_communicator(jm_single().nickname)
+
     taker = SendPayment(irc, wallet, destaddr, amount, options.makercount,
                         options.txfee, options.waittime, options.mixdepth,
                         options.answeryes, chooseOrdersFunc)
@@ -281,4 +285,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    print('done')
+    log.info('sendpayment: done')

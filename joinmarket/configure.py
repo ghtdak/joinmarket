@@ -16,6 +16,16 @@ from joinmarket.support import get_log
 log = get_log()
 
 
+logFormatter = logging.Formatter(
+        ('%(asctime)s [%(threadName)-12.12s] '
+         '[%(levelname)-5.5s]  %(message)s'))
+
+# todo: before the nick is set, we don't grab stuff.  rearchitect!!!
+fileHandler = logging.FileHandler(
+        'logs/{}.log'.format('everything'))
+fileHandler.setFormatter(logFormatter)
+log.addHandler(fileHandler)
+
 class AttributeDict(object):
     """
     A class to convert a nested Dictionary into an object with key-values
@@ -36,9 +46,6 @@ class AttributeDict(object):
 
     def __setattr__(self, name, value):
         if name == 'nickname' and value:
-            logFormatter = logging.Formatter(
-                    ('%(asctime)s [%(threadName)-12.12s] '
-                     '[%(levelname)-5.5s]  %(message)s'))
             fileHandler = logging.FileHandler(
                     'logs/{}.log'.format(value))
             fileHandler.setFormatter(logFormatter)
@@ -55,23 +62,6 @@ class AttributeDict(object):
         return getattr(self, key)
 
 
-# global_singleton = AttributeDict(
-#         **{'log': log,
-#            'JM_VERSION': 2,
-#            'nickname': None,
-#            'DUST_THRESHOLD': 2730,
-#            'bc_interface': None,
-#            'ordername_list': ["absorder", "relorder"],
-#            'maker_timeout_sec': 30,
-#            'debug_file_lock': threading.Lock(),
-#            'debug_file_handle': None,
-#            'core_alert': None,
-#            'joinmarket_alert': None,
-#            'debug_silence': False,
-#            'config': SafeConfigParser(),
-#            'config_location': 'joinmarket.cfg'})
-
-# todo: same as above.  decide!!!
 global_singleton = AttributeDict()
 global_singleton.JM_VERSION = 2
 global_singleton.nickname = None
@@ -97,45 +87,46 @@ required_options = {'BLOCKCHAIN': ['blockchain_source', 'network'],
 
 defaultconfig = \
     """
-    [BLOCKCHAIN]
-    blockchain_source = blockr
-    #options: blockr, bitcoin-rpc, json-rpc, regtest
-    # for instructions on bitcoin-rpc read
-    # https://github.com/chris-belcher/joinmarket/wiki/Running-JoinMarket-with-Bitcoin-Core-full-node
-    network = mainnet
-    rpc_host = localhost
-    rpc_port = 8332
-    rpc_user = bitcoin
-    rpc_password = password
+[BLOCKCHAIN]
+blockchain_source = blockr
+#options: blockr, bitcoin-rpc, json-rpc, regtest
+# for instructions on bitcoin-rpc read
+# https://github.com/chris-belcher/joinmarket/wiki/Running-JoinMarket-with-Bitcoin-Core-full-node
+network = mainnet
+rpc_host = localhost
+rpc_port = 8332
+rpc_user = bitcoin
+rpc_password = password
 
-    [MESSAGING]
-    host = irc.cyberguerrilla.org
-    channel = joinmarket-pit
-    port = 6697
-    usessl = true
-    socks5 = false
-    socks5_host = localhost
-    socks5_port = 9050
-    #for tor
-    #host = 6dvj6v5imhny3anf.onion
-    #port = 6697
-    #usessl = true
-    #socks5 = true
-    maker_timeout_sec = 30
+[MESSAGING]
+host = irc.cyberguerrilla.org
+channel = joinmarket-pit
+port = 6697
+usessl = true
+socks5 = false
+socks5_host = localhost
+socks5_port = 9050
+#for tor
+#host = 6dvj6v5imhny3anf.onion
+#port = 6697
+#usessl = true
+#socks5 = true
+maker_timeout_sec = 30
 
-    [POLICY]
-    # for dust sweeping, try merge_algorithm = gradual
-    # for more rapid dust sweeping, try merge_algorithm = greedy
-    # for most rapid dust sweeping, try merge_algorithm = greediest
-    # but don't forget to bump your miner fees!
-    merge_algorithm = default
-    """
+[POLICY]
+# for dust sweeping, try merge_algorithm = gradual
+# for more rapid dust sweeping, try merge_algorithm = greedy
+# for most rapid dust sweeping, try merge_algorithm = greediest
+# but don't forget to bump your miner fees!
+merge_algorithm = default
+"""
 
 
 def get_config_irc_channel():
     channel = '#' + global_singleton.config.get("MESSAGING", "channel")
-    if get_network() == 'testnet':
-        channel += '-test'
+    # todo: this isn't right, at least from the testing I was doing
+    # if get_network() == 'testnet':
+    #     channel += '-test'
     return channel
 
 

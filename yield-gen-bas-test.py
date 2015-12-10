@@ -5,50 +5,31 @@ import datetime
 import os
 import time
 
-from joinmarket import Maker, IRCMessageChannel
-from joinmarket import BlockrInterface
-from joinmarket import jm_single, get_network, load_program_config
-from joinmarket import random_nick
-from joinmarket import get_log, calc_cj_fee, debug_dump_object
-from joinmarket import Wallet
-
-# data_dir = os.path.dirname(os.path.realpath(__file__))
-# sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
-
-# import blockchaininterface
+import joinmarket as jm
+from joinmarket.txirc import build_irc_communicator
 
 txfee = 1000
 cjfee = '0.002'  # 0.2% fee
-jm_single().nickname = random_nick()
-nickserv_password = ''
+jm.jm_single().nickname = jm.random_nick()
+nickserv_password = 'nimDid[Quoc6'
 
 # minimum size is such that you always net profit at least 20% of the miner fee
 minsize = int(1.2 * txfee / float(cjfee))
 
-
 mix_levels = 5
 
-log = get_log()
+log = jm.get_log()
 
-
-# is a maker for the purposes of generating a yield from held
-# bitcoins without ruining privacy for the taker, the taker could easily check
-# the history of the utxos this bot sends, so theres not much incentive
-# to ruin the privacy for barely any more yield
-# sell-side algorithm:
-# add up the value of each utxo for each mixing depth,
-# announce a relative-fee order of the highest balance
-# spent from utxos that try to make the highest balance even higher
-# so try to keep coins concentrated in one mixing depth
-class YieldGenerator(Maker):
+class YieldGenerator(jm.Maker):
     statement_file = os.path.join('logs', 'yigen-statement.csv')
 
     def __init__(self, msgchan, wallet):
-        Maker.__init__(self, msgchan, wallet)
+        super(YieldGenerator, self).__init__(msgchan, wallet)
         self.tx_unconfirm_timestamp = {}
+        self.income_statement = None
 
     def log_statement(self, data):
-        if get_network() == 'testnet':
+        if jm.get_network() == 'testnet':
             return
 
         data = [str(d) for d in data]
@@ -57,7 +38,7 @@ class YieldGenerator(Maker):
         self.income_statement.close()
 
     def on_welcome(self):
-        Maker.on_welcome(self)
+        jm.Maker.on_welcome(self)
         if not os.path.isfile(self.statement_file):
             self.log_statement(
                     ['timestamp', 'cj amount/satoshi', 'my input count',
@@ -71,7 +52,7 @@ class YieldGenerator(Maker):
     def create_my_orders(self):
         mix_balance = self.wallet.get_balance_by_mixdepth()
         if len([b for m, b in mix_balance.iteritems() if b > 0]) == 0:
-            log.debug('do not have any coins left')
+            log.debug('No coins left!!!')
             return []
 
         # print mix_balance
@@ -79,7 +60,7 @@ class YieldGenerator(Maker):
         order = {'oid': 0,
                  'ordertype': 'relorder',
                  'minsize': minsize,
-                 'maxsize': mix_balance[max_mix] - jm_single().DUST_THRESHOLD,
+                 'maxsize': mix_balance[max_mix] - jm.jm_single().DUST_THRESHOLD,
                  'txfee': txfee,
                  'cjfee': cjfee}
         return [order]
@@ -103,14 +84,14 @@ class YieldGenerator(Maker):
 
         utxos = self.wallet.select_utxos(mixdepth, amount)
         my_total_in = sum([va['value'] for va in utxos.values()])
-        real_cjfee = calc_cj_fee(cjorder.ordertype, cjorder.cjfee, amount)
+        real_cjfee = jm.calc_cj_fee(cjorder.ordertype, cjorder.cjfee, amount)
         change_value = my_total_in - amount - cjorder.txfee + real_cjfee
-        if change_value <= jm_single().DUST_THRESHOLD:
+        if change_value <= jm.jm_single().DUST_THRESHOLD:
             log.debug(('change value={} below dust threshold, '
                        'finding new utxos').format(change_value))
             try:
                 utxos = self.wallet.select_utxos(
-                        mixdepth, amount + jm_single().DUST_THRESHOLD)
+                        mixdepth, amount + jm.jm_single().DUST_THRESHOLD)
             except Exception:
                 log.debug('dont have the required UTXOs to make a '
                           'output above the dust threshold, quitting')
@@ -149,10 +130,10 @@ class YieldGenerator(Maker):
 
 
 def main():
-    load_program_config()
+    jm.load_program_config()
     import sys
     seed = sys.argv[1]
-    if isinstance(jm_single().bc_interface, BlockrInterface):
+    if isinstance(jm.jm_single().bc_interface, jm.BlockrInterface):
         c = ('\nYou are running a yield generator by polling the blockr.io '
              'website. This is quite bad for privacy. That site is owned by '
              'coinbase.com Also your bot will run faster and more efficently, '
@@ -166,30 +147,45 @@ def main():
         if ret[0] != 'y':
             return
 
-    wallet = Wallet(seed, max_mix_depth=mix_levels)
-    jm_single().bc_interface.sync_wallet(wallet)
+    wallet = jm.Wallet(seed, max_mix_depth=mix_levels)
+    jm.jm_single().bc_interface.sync_wallet(wallet)
 
     # nickname is set way above
     # nickname
 
     log.debug('starting yield generator')
-    irc = IRCMessageChannel(jm_single().nickname,
-                            realname='btcint=' + jm_single().config.get(
-                                    "BLOCKCHAIN", "blockchain_source"),
-                            password=nickserv_password)
+
+    # irc = jm.IRCMessageChannel(
+    #         jm.jm_single().nickname,
+    #         realname='btcint=' + jm.jm_single().config.get(
+    #                 "BLOCKCHAIN", "blockchain_source"),
+    #         password=nickserv_password)
+
+    nickname = jm.jm_single().nickname
+    log.info("starting irc thingy with nick: {}".format(nickname))
+
+    realname = realname='btcint=' + jm.jm_single().config.get(
+            "BLOCKCHAIN", "blockchain_source")
+    irc = build_irc_communicator(
+            nickname,
+            realname=realname,
+            password=nickserv_password)
+
+    log.info('irc thingy launched')
+
     maker = YieldGenerator(irc, wallet)
     try:
-        log.debug('connecting to irc')
+        log.debug('Reactor Run - nick: {}'.format(nickname))
         irc.run()
     except:
         log.debug('CRASHING, DUMPING EVERYTHING')
-        debug_dump_object(wallet, ['addr_cache', 'keys', 'seed'])
-        debug_dump_object(maker)
-        debug_dump_object(irc)
+        jm.debug_dump_object(wallet, ['addr_cache', 'keys', 'seed'])
+        jm.debug_dump_object(maker)
+        jm.debug_dump_object(irc)
         import traceback
         log.debug(traceback.format_exc())
 
 
 if __name__ == "__main__":
     main()
-    print('done')
+    log.info('yield-gen-bas-test done')

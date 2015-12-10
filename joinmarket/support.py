@@ -17,12 +17,12 @@ from decimal import Decimal
 
 from math import exp
 
-# todo: this was the date format used in the original debug().  Use it?
-# logging.basicConfig(filename='logs/joinmarket.log',
-#                     stream=sys.stdout,
-#                     level=logging.DEBUG,
-#                     format='%(asctime)s %(message)s',
-#                     dateformat='[%Y/%m/%d %H:%M:%S] ')
+from twisted.python import log
+
+observer = log.PythonLoggingObserver()
+observer.start()
+
+# log.startLogging(sys.stdout)
 
 logFormatter = logging.Formatter(
         "%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")

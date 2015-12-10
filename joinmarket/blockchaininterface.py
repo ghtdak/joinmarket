@@ -142,10 +142,6 @@ class BlockrInterface(BlockchainInterface):
                     res = btc.make_request(blockr_url + ','.join(addrs))
                     data = json.loads(res)['data']
                     for dat in data:
-                        # todo: remove these commented out code sections
-                        # if forchange == 0: print ' nbtxs ' + str(dat[
-                        # 'nb_txs']) + ' addr=' + dat['address'] + ' unused='
-                        # + str(unused_addr_count)
                         if dat['nb_txs'] != 0:
                             last_used_addr = dat['address']
                             unused_addr_count = 0
@@ -443,6 +439,8 @@ class BitcoinCoreNotifyThread(threading.Thread):
             notify_port = int(config.get("BLOCKCHAIN", "notify_port"))
         for inc in range(10):
             hostport = (notify_host, notify_port + inc)
+            log.debug('BitcoinCoreNotifyThread hostport: {}:{:d}'.format(
+                    notify_host, notify_port))
             try:
                 httpd = BaseHTTPServer.HTTPServer(hostport, NotifyRequestHeader)
             except Exception:
@@ -515,8 +513,11 @@ class BitcoinCoreInterface(BlockchainInterface):
                 wallet_addr_list += [wallet.get_new_addr(mix_depth, forchange)
                                      for _ in range(addr_req_count)]
                 wallet.index[mix_depth][forchange] = 0
-        # makes more sense to add these in an account called "joinmarket-imported" but its much
-        # simpler to add to the same account here
+
+        # makes more sense to add these in an account called
+        # "joinmarket-imported" but its much simpler to add to the same
+        # account here
+
         for privkey_list in wallet.imported_privkeys.values():
             for privkey in privkey_list:
                 imported_addr = btc.privtoaddr(privkey, get_p2pk_vbyte())
@@ -530,8 +531,8 @@ class BitcoinCoreInterface(BlockchainInterface):
         txs = buf
         # If the buffer's full, check for more, until it ain't
         while len(buf) == 1000:
-            buf = self.rpc('listtransactions', [wallet_name, 1000, len(txs),
-                                                True])
+            buf = self.rpc('listtransactions',
+                           [wallet_name, 1000, len(txs), True])
             txs += buf
         # TODO check whether used_addr_list can be a set, may be faster (if
         # its a hashset) and allows using issubset() here and setdiff() for
@@ -614,6 +615,7 @@ class BitcoinCoreInterface(BlockchainInterface):
         if not self.notifythread:
             self.notifythread = BitcoinCoreNotifyThread(self)
             self.notifythread.start()
+
         one_addr_imported = False
         for outs in txd['outs']:
             addr = btc.script_to_address(outs['script'], get_p2pk_vbyte())
