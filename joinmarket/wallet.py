@@ -1,20 +1,19 @@
 from __future__ import absolute_import, print_function
+
 import json
 import os
 import pprint
-import sys
 from decimal import Decimal
-
-from ConfigParser import NoSectionError
 from getpass import getpass
 
+from ConfigParser import NoSectionError
+
 import bitcoin as btc
-from joinmarket.slowaes import decryptData
 from joinmarket.blockchaininterface import BitcoinCoreInterface
 from joinmarket.configure import jm_single, get_network, get_p2pk_vbyte
-
+from joinmarket.slowaes import decryptData
 from joinmarket.support import get_log, select_gradual, select_greedy, \
-    select_greediest
+    select_greediest, system_shutdown
 
 log = get_log()
 
@@ -131,10 +130,10 @@ class Wallet(AbstractWallet):
         fd.close()
         walletdata = json.loads(walletfile)
         if walletdata['network'] != get_network():
-            print ('wallet network(%s) does not match '
-                   'joinmarket configured network(%s)' % (
+            system_shutdown('wallet network(%s) does not match '
+                            'joinmarket configured network(%s)' % (
                 walletdata['network'], get_network()))
-            sys.exit(0)
+            # sys.exit(0)
         if 'index_cache' in walletdata:
             self.index_cache = walletdata['index_cache']
         decrypted = False

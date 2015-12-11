@@ -114,11 +114,13 @@ class JsonRpc(object):
         response = self.queryHTTP(request)
 
         if response["id"] != currentId:
+            log.debug('jsonrpc: {}'.format(response))
             raise JsonRpcConnectionError("invalid id returned by query")
 
         if response["error"] is not None:
             # todo: could be a warning or error
             log.warning(response["error"])
+            log.debug('jsonrpc: {}'.format(response))
             raise JsonRpcError(response["error"])
 
         return response["result"]

@@ -1,8 +1,12 @@
+from __future__ import absolute_import
 import sys, os
+
+from joinmarket import rand_pow_array
+from joinmarket.support import rand_weighted_choice
+
 data_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
 
-import common
 
 try:
     import matplotlib.pyplot as plt
@@ -16,7 +20,7 @@ def test_power():
     a = 5.  # shape
     samples = 10000
     s1 = np.random.power(a, samples)
-    s2 = common.rand_pow_array(a, samples)
+    s2 = rand_pow_array(a, samples)
 
     plt.figure('power test')
     count1, bins1, ignored1 = plt.hist(s1,
@@ -63,7 +67,7 @@ def test_choice():
         common_data = []
         numpy_data = []
         for i in range(samples):
-            cpoint = common.rand_weighted_choice(xaxis_divisions, p)
+            cpoint = rand_weighted_choice(xaxis_divisions, p)
             common_data.append(cpoint)
             nppoint = np.random.choice(xaxis_divisions, p=p)
             numpy_data.append(nppoint)

@@ -11,7 +11,8 @@ from joinmarket import IRCMessageChannel
 from joinmarket.configure import get_p2pk_vbyte, load_program_config, jm_single
 from joinmarket.enc_wrapper import init_keypair, as_init_encryption, init_pubkey
 
-from joinmarket.support import get_log, calc_cj_fee, debug_dump_object
+from joinmarket.support import get_log, calc_cj_fee, debug_dump_object, \
+    system_shutdown
 from joinmarket.taker import CoinJoinerPeer
 from joinmarket.wallet import Wallet
 
@@ -60,14 +61,14 @@ class CoinJoinOrder(object):
         utxo_list = self.utxos.keys()
         utxo_data = jm_single().bc_interface.query_utxo_set(utxo_list)
         if None in utxo_data:
-            log.debug('wrongly using an already spent utxo. utxo_data = ' +
-                      pprint.pformat(utxo_data))
-            sys.exit(0)
+            system_shutdown('wrongly using an already spent utxo. '
+                            'utxo_data = '.format(pprint.pformat(utxo_data)))
+            # sys.exit(0)
         for utxo, data in zip(utxo_list, utxo_data):
             if self.utxos[utxo]['value'] != data['value']:
                 fmt = 'wrongly labeled utxo, expected value: {} got {}'.format
-                log.debug(fmt(self.utxos[utxo]['value'], data['value']))
-                sys.exit(0)
+                system_shutdown(fmt(self.utxos[utxo]['value'], data['value']))
+                # sys.exit(0)
 
         # always a new address even if the order ends up never being
         # furfilled, you dont want someone pretending to fill all your

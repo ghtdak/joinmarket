@@ -38,9 +38,9 @@ class CoinJoinTX(object):
         thats used if you want to entirely coinjoin one utxo with no change left over
         orders is the orders you want to fill {'counterpartynick': oid, 'cp2': oid2}
         """
-        log.debug(
-            'starting cj to ' + str(my_cj_addr) + ' with change at ' + str(
-                    my_change_addr))
+        log.debug('starting cj to {} with change '
+                  'at {}'.format(my_change_addr, my_change_addr))
+
         # parameters
         self.msgchan = msgchan
         self.wallet = wallet

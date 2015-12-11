@@ -12,11 +12,13 @@ Only for sampling purposes
 import logging
 import pprint
 import random
+import traceback
 
 from decimal import Decimal
 
 from math import exp
 
+from twisted.internet import reactor
 from twisted.python import log
 
 observer = log.PythonLoggingObserver()
@@ -41,6 +43,17 @@ def get_log():
     :return: log instance
     """
     return log
+
+def system_shutdown(reason):
+    log.error('Shutdown: {}'.format(reason))
+
+    # todo: this seems kludgy.  Rearchitect.
+    try:
+        raise TypeError(reason)
+    except Exception as e:
+        traceback.print_exc()
+
+    reactor.stop()
 
 
 def rand_norm_array(mu, sigma, n):

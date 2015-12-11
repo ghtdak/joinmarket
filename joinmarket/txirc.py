@@ -13,6 +13,7 @@ from twisted.internet import reactor, protocol
 from twisted.internet.endpoints import TCP4ClientEndpoint
 from twisted.internet.ssl import ClientContextFactory
 from twisted.words.protocols import irc
+from twisted.words.protocols.irc import stripFormatting
 from txsocksx.client import SOCKS5ClientEndpoint
 from txsocksx.tls import TLSWrapClientEndpoint
 
@@ -71,7 +72,8 @@ class txIRC_Client(irc.IRCClient, object):
         reactor.callLater(0.0, self.irc_market.joined, channel)
 
     def privmsg(self, userIn, channel, msg):
-        log.debug('privmsg: {} {} {}'.format(userIn, channel, msg))
+        log.debug('privmsg: {} {} {:d} {}'.format(userIn, channel,
+                                                  len(msg), msg))
 
         reactor.callLater(0.0,
                           self.irc_market.handle_privmsg,
@@ -152,8 +154,8 @@ class txIRC_Client(irc.IRCClient, object):
     def left(self, channel):
         log.debug('left: {}'.format(channel))
 
-    def notice(self, user, message):
-        log.debug('notice: {} {}'.format(user, message))
+    def noticed(self, user, channel, message):
+        log.debug('notice: {} {} {}'.format(user, channel, message))
 
 """
 17:40 <marketeer> !relorder 4 2220656169 2494728195 1000 0.0000649!relorder 5
@@ -265,7 +267,7 @@ class CommSuper(object):
 
 class IRC_Market(CommSuper):
     def __init__(
-            self, given_nick, username='username',
+            self, channel, given_nick, username='username',
             realname='realname', password=None):
         super(IRC_Market, self).__init__()
 
@@ -276,7 +278,8 @@ class IRC_Market(CommSuper):
             password = None
         self.given_password = password
 
-        self.channel = get_config_irc_channel()
+        self.channel = channel
+        # self.channel = get_config_irc_channel()
 
         # todo: rename this.  too confusing
         self.tx_irc_client = None
@@ -313,7 +316,9 @@ class IRC_Market(CommSuper):
         reactor.stop()
 
     def send(self, send_to, msg):
-        self.tx_irc_client.msg(send_to, msg)
+        log.debug('send: {} {:d}: {}'.format(send_to, len(msg), msg))
+        omsg = 'PRIVMSG %s :' % (send_to,) + msg
+        self.tx_irc_client.sendLine(omsg.encode('ascii'))
 
     def send_error(self, nick, errormsg):
         log.debug('error<%s> : %s' % (nick, errormsg))
@@ -326,25 +331,49 @@ class IRC_Market(CommSuper):
 
     def joined(self, channel):
         # todo: mode changes needed?
-        self.coinjoinerpeer.on_welcome()
+        try:
+            self.coinjoinerpeer.on_welcome()
+        except Exception as e:
+            log.exception(e)
+            reactor.stop()
 
     def userJoined(self, user, channel):
         pass
 
     def connectionMade(self, *args, **kwargs):
-        self.coinjoinerpeer.on_connect(*args, **kwargs)
+        try:
+            self.coinjoinerpeer.on_connect(*args, **kwargs)
+        except Exception as e:
+            log.exception(e)
+            reactor.stop()
 
     def connectionLost(self, *args, **kwargs):
-        self.coinjoinerpeer.on_disconnect(*args, **kwargs)
+        try:
+            self.coinjoinerpeer.on_disconnect(*args, **kwargs)
+        except Exception as e:
+            log.exception(e)
+            reactor.stop()
 
     def userLeft(self, *args, **kwargs):
-        self.coinjoinerpeer.on_nick_leave(*args, **kwargs)
+        try:
+            self.coinjoinerpeer.on_nick_leave(*args, **kwargs)
+        except Exception as e:
+            log.exception(e)
+            reactor.stop()
 
     def userRenamed(self, *args, **kwargs):
-        self.coinjoinerpeer.on_nick_change(*args, **kwargs)
+        try:
+            self.coinjoinerpeer.on_nick_change(*args, **kwargs)
+        except Exception as e:
+            log.exception(e)
+            reactor.stop()
 
     def topicUpdated(self, *args, **kwargs):
-        self.coinjoinerpeer.on_set_topic(*args, **kwargs)
+        try:
+            self.coinjoinerpeer.on_set_topic(*args, **kwargs)
+        except Exception as e:
+            log.exception(e)
+            reactor.stop()
 
     # OrderbookWatch callback
     def request_orderbook(self):
@@ -381,7 +410,9 @@ class IRC_Market(CommSuper):
     def announce_orders(self, orderlist, nick=None):
         # nick=None means announce publicly
         order_keys = ['oid', 'minsize', 'maxsize', 'txfee', 'cjfee']
-        header = 'PRIVMSG ' + (nick if nick else self.channel) + ' :'
+        # header = 'PRIVMSG ' + (nick if nick else self.channel) + ' :'
+        send_to = nick if nick else self.channel
+        header = '' # todo: HACK!! fix this
         orderlines = []
         for i, order in enumerate(orderlist):
             orderparams = COMMAND_PREFIX + order['ordertype'] + \
@@ -391,7 +422,7 @@ class IRC_Market(CommSuper):
             if len(line) > MAX_PRIVMSG_LEN or i == len(orderlist) - 1:
                 if i < len(orderlist) - 1:
                     line = header + ''.join(orderlines[:-1]) + ' ~'
-                self.send(nick, line)
+                self.send(send_to, line)
                 orderlines = [orderlines[-1]]
 
     def cancel_orders(self, oid_list):
@@ -416,7 +447,7 @@ class IRC_Market(CommSuper):
     def __pubmsg(self, message):
         log.debug('>>pubmsg ' + message)
         # self.send_raw("PRIVMSG " + self.channel + " :" + message)
-        self.send(self.from_to[0], message)
+        self.send(self.channel, message)
 
     def __privmsg(self, nick, cmd, message):
         log.debug(
@@ -576,79 +607,83 @@ class IRC_Market(CommSuper):
             return self.coinjoinerpeer.get_crypto_box_from_nick(nick), True
 
     def handle_privmsg(self, sent_from, sent_to, message):
+        try:
 
-        nick = get_irc_nick(sent_from)
-        # todo: kludge - we need this elsewhere. rearchitect!!
+            nick = get_irc_nick(sent_from)
+            # todo: kludge - we need this elsewhere. rearchitect!!
 
-        self.from_to = (nick, sent_to)
+            self.from_to = (nick, sent_to)
 
-        if sent_to == self.nick:
-            # todo: this is some ctcp thing handled elsewhere. check
-            # if message[0] == '\x01':
-            #     endindex = message[1:].find('\x01')
-            #     if endindex == -1:
-            #         return
-            #     ctcp = message[1:endindex + 1]
-            #     if ctcp.upper() == 'VERSION':
-            #         self.send_raw('PRIVMSG ' + nick +
-            #                       ' :\x01VERSION xchat 2.8.8 Ubuntu\x01')
-            #         return
+            if sent_to == self.nick:
+                # todo: this is some ctcp thing handled elsewhere. check
+                # if message[0] == '\x01':
+                #     endindex = message[1:].find('\x01')
+                #     if endindex == -1:
+                #         return
+                #     ctcp = message[1:endindex + 1]
+                #     if ctcp.upper() == 'VERSION':
+                #         self.send_raw('PRIVMSG ' + nick +
+                #                       ' :\x01VERSION xchat 2.8.8 Ubuntu\x01')
+                #         return
 
-            if nick not in self.built_privmsg:
-                if message[0] != COMMAND_PREFIX:
-                    log.debug('message not a cmd')
-                    return
-
-                # new message starting
-                cmd_string = message[1:].split(' ')[0]
-                if cmd_string not in plaintext_commands + encrypted_commands:
-                    log.debug('cmd not in cmd_list, line="' + message + '"')
-                    return
-                self.built_privmsg[nick] = [cmd_string, message[:-2]]
-            else:
-                self.built_privmsg[nick][1] += message[:-2]
-            box, encrypt = self.__get_encryption_box(
-                    self.built_privmsg[nick][0], nick)
-
-            # todo: this is sensitive command parser stuff I'm guessing
-            # todo: change format, use regex etc
-            if message[-1] == ';':
-                self.waiting[nick] = True
-            elif message[-1] == '~':
-                self.waiting[nick] = False
-                if encrypt:
-                    if not box:
-                        log.debug(
-                            'error, dont have encryption box object for ' +
-                            nick + ', dropping message')
+                if nick not in self.built_privmsg:
+                    if message[0] != COMMAND_PREFIX:
+                        log.debug('Expecting Command, got: {}'.format(message))
                         return
-                    # need to decrypt everything after the command string
-                    to_decrypt = ''.join(self.built_privmsg[nick][1].split(' ')[
-                                             1])
-                    try:
-                        decrypted = decode_decrypt(to_decrypt, box)
-                    except ValueError as e:
-                        log.debug(
-                            'valueerror when decrypting, skipping: ' + repr(e))
+
+                    # new message starting
+                    cmd_string = message[1:].split(' ')[0]
+                    if cmd_string not in plaintext_commands + encrypted_commands:
+                        log.debug('cmd not in cmd_list, line="' + message + '"')
                         return
-                    parsed = self.built_privmsg[nick][1].split(' ')[0] + ' ' + decrypted
+                    self.built_privmsg[nick] = [cmd_string, message[:-2]]
                 else:
-                    parsed = self.built_privmsg[nick][1]
-                # wipe the message buffer waiting for the next one
-                # todo: kinda tricky here.  rearchitect!!
-                del self.built_privmsg[nick]
+                    self.built_privmsg[nick][1] += message[:-2]
+                box, encrypt = self.__get_encryption_box(
+                        self.built_privmsg[nick][0], nick)
 
-                log.debug("<<privmsg nick=%s message=%s" % (nick, parsed))
-                self.__on_privmsg(nick, parsed)
+                # todo: this is sensitive command parser stuff I'm guessing
+                # todo: change format, use regex etc
+                if message[-1] == ';':
+                    self.waiting[nick] = True
+                elif message[-1] == '~':
+                    self.waiting[nick] = False
+                    if encrypt:
+                        if not box:
+                            log.debug('error, dont have encryption box object '
+                                      'for {}, dropping message'.format(nick))
+                            return
+                        # need to decrypt everything after the command string
+                        to_decrypt = ''.join(
+                                self.built_privmsg[nick][1].split(' ')[1])
+                        try:
+                            decrypted = decode_decrypt(to_decrypt, box)
+                        except ValueError as e:
+                            log.debug('valueerror when decrypting, '
+                                      'skipping: {}'.format(repr(e)))
+                            return
+                        parsed = self.built_privmsg[nick][1].split(' ')[0]
+                        parsed += ' ' + decrypted
+                    else:
+                        parsed = self.built_privmsg[nick][1]
+                    # wipe the message buffer waiting for the next one
+                    # todo: kinda tricky here.  rearchitect!!
+                    del self.built_privmsg[nick]
+
+                    log.debug("<<privmsg nick=%s message=%s" % (nick, parsed))
+                    self.__on_privmsg(nick, parsed)
+                else:
+                    # drop the bad nick
+                    del self.built_privmsg[nick]
+            elif sent_to == self.channel:
+                log.debug("<<pubmsg nick=%s message=%s" % (nick, message))
+                self.__on_pubmsg(nick, message)
             else:
-                # drop the bad nick
-                del self.built_privmsg[nick]
-        elif sent_to == self.channel:
-            log.debug("<<pubmsg nick=%s message=%s" % (nick, message))
-            self.__on_pubmsg(nick, message)
-        else:
-            log.debug('what is this? privmsg src=%s target=%s message=%s;' %
-                      (sent_from, sent_to, message))
+                log.debug('what is this? privmsg src=%s target=%s message=%s;' %
+                          (sent_from, sent_to, message))
+        except Exception as e:
+            log.exception(e)
+            reactor.stop()
 
 
 
@@ -731,9 +766,12 @@ def build_irc_communicator(
                        int(config.get("MESSAGING", "port")))
     socks5_host = config.get("MESSAGING", "socks5_host")
     socks5_port = int(config.get("MESSAGING", "socks5_port"))
+
+    # todo: channel set in too many places.  Should be only one
     channel = get_config_irc_channel()
 
-    irc_market = IRC_Market(given_nick,
+    irc_market = IRC_Market(channel,
+                            given_nick,
                             username=username,
                             realname=realname,
                             password=password)
@@ -744,9 +782,7 @@ def build_irc_communicator(
           'password': 'nimDid[Quoc6',
           'hostname': 'nowhere.com'}
 
-    channel = get_config_irc_channel()
-
-    factory = LogBotFactory('#joinmarket-pit', cr)
+    factory = LogBotFactory(channel, cr)
 
     # todo: hack!!!
     serverport = ('192.168.1.200', 6667)

@@ -5,8 +5,13 @@ import datetime
 import os
 import time
 
+import sys
+
+import bitcoin
 import joinmarket as jm
+
 from joinmarket.txirc import build_irc_communicator
+from joinmarket.test.commontest import make_wallets
 
 txfee = 1000
 cjfee = '0.002'  # 0.2% fee
@@ -131,8 +136,9 @@ class YieldGenerator(jm.Maker):
 
 def main():
     jm.load_program_config()
-    import sys
-    seed = sys.argv[1]
+
+    # todo: for testing... remove me!!
+
     if isinstance(jm.jm_single().bc_interface, jm.BlockrInterface):
         c = ('\nYou are running a yield generator by polling the blockr.io '
              'website. This is quite bad for privacy. That site is owned by '
@@ -147,7 +153,33 @@ def main():
         if ret[0] != 'y':
             return
 
+    # --------------------------------------------------------
+    # Testing Infrastructure
+
+    #create 2 new random wallets.
+    #put 10 coins into the first receive address
+    #to allow that bot to start.
+    wallets = make_wallets(
+            2, wallet_structures=[[1, 0, 0, 0, 0], [1, 0, 0, 0, 0]],
+            mean_amt=10)
+
+    seed = str(wallets[0]['seed'])
+
+    #run a single sendpayment call with wallet2
+    n = m = 2
+    amt = n * 100000000  #in satoshis
+    dest_address = bitcoin.privkey_to_address(
+        os.urandom(32), jm.get_p2pk_vbyte())
+
+    for i in range(m):
+        print('python','sendpayment.py','--yes','-N','1',
+              wallets[1]['seed'], str(amt), dest_address)
+
+    # seed = sys.argv[1]
+    # -----------------------------------------------------
+
     wallet = jm.Wallet(seed, max_mix_depth=mix_levels)
+
     jm.jm_single().bc_interface.sync_wallet(wallet)
 
     # nickname is set way above

@@ -13,14 +13,19 @@ import time
 import urllib
 from decimal import Decimal
 
-import bitcoin as btc
-
 # This can be removed once CliJsonRpc is gone.
 import subprocess
 
+from twisted.web import server as twisted_server
+from twisted.web import resource as twisted_resource
+from twisted.internet import reactor
+import treq
+
+import bitcoin as btc
+
 from joinmarket.jsonrpc import JsonRpcConnectionError
 from joinmarket.configure import get_p2pk_vbyte, jm_single
-from joinmarket.support import get_log, chunks
+from joinmarket.support import get_log, chunks, system_shutdown
 
 log = get_log()
 
@@ -359,20 +364,26 @@ class BlockrInterface(BlockchainInterface):
         return result
 
 
-class NotifyRequestHeader(BaseHTTPServer.BaseHTTPRequestHandler):
-    def __init__(self, request, client_address, base_server):
-        self.btcinterface = base_server.btcinterface
-        self.base_server = base_server
-        BaseHTTPServer.BaseHTTPRequestHandler.__init__(
-                self, request, client_address, base_server)
+class NotifyHttpServer(twisted_resource.Resource):
+    isLeaf = True
+    # def __init__(self, request, client_address, base_server):
+    #     self.btcinterface = base_server.btcinterface
+    #     self.base_server = base_server
 
-    def do_HEAD(self):
+    def __init__(self, btcinterface):
+        self.btcinterface = btcinterface
+        self.using_port = None
+
+    def render_GET(self, request):
+
         pages = ('/walletnotify?', '/alertnotify?')
 
-        if self.path.startswith('/walletnotify?'):
-            txid = self.path[len(pages[0]):]
+        path = request.uri
+
+        if path.startswith('/walletnotify?'):
+            txid = path[len(pages[0]):]
             if not re.match('^[0-9a-fA-F]*$', txid):
-                log.debug('not a txid')
+                log.debug('not a txid: {}'.format(txid))
                 return
             tx = self.btcinterface.rpc('getrawtransaction', [txid])
             if not re.match('^[0-9a-fA-F]*$', tx):
@@ -412,15 +423,21 @@ class NotifyRequestHeader(BaseHTTPServer.BaseHTTPRequestHandler):
                             (tx_out, unconfirmfun, confirmfun))
                     log.debug('ran confirmfun')
 
-        elif self.path.startswith('/alertnotify?'):
-            jm_single().core_alert = urllib.unquote(self.path[len(pages[1]):])
+        elif path.startswith('/alertnotify?'):
+            jm_single().core_alert = urllib.unquote(path[len(pages[1]):])
             log.debug('Got an alert!\nMessage=' + jm_single().core_alert)
 
-        os.system('curl -sI --connect-timeout 1 http://localhost:' + str(
-                self.base_server.server_address[1] + 1) + self.path)
-        self.send_response(200)
-        # self.send_header('Connection', 'close')
-        self.end_headers()
+        url = 'http://localhost:{:d}{}'.format(self.using_port + 1, path)
+
+        self.debug('NotifyHttpServer notify: {}'.format(url))
+
+        treq.request(url)
+
+        # todo: spawning curl.  we can do this differently
+        # os.system('curl -sI --connect-timeout 1 http://localhost:' + str(
+        #         self.base_server.server_address[1] + 1) + path)
+
+        return ''
 
 
 class BitcoinCoreNotifyThread(threading.Thread):
@@ -442,7 +459,7 @@ class BitcoinCoreNotifyThread(threading.Thread):
             log.debug('BitcoinCoreNotifyThread hostport: {}:{:d}'.format(
                     notify_host, notify_port))
             try:
-                httpd = BaseHTTPServer.HTTPServer(hostport, NotifyRequestHeader)
+                httpd = BaseHTTPServer.HTTPServer(hostport, NotifyHttpServer)
             except Exception:
                 continue
             httpd.btcinterface = self.btcinterface
@@ -471,7 +488,7 @@ class BitcoinCoreInterface(BlockchainInterface):
         if netmap[actualNet] != network:
             raise Exception('wrong network configured')
 
-        self.notifythread = None
+        self.http_server = None
         self.txnotify_fun = []
         self.wallet_synced = False
 
@@ -494,10 +511,10 @@ class BitcoinCoreInterface(BlockchainInterface):
             self.rpc('importaddress', [addr, wallet_name, False])
         if jm_single().config.get(
                 "BLOCKCHAIN", "blockchain_source") != 'regtest':
-            log.info('restart Bitcoin Core with -rescan if you\'re '
-                  'recovering an existing wallet from backup seed\n'
-                     ' otherwise just restart this joinmarket script')
-            sys.exit(0)
+            system_shutdown('restart Bitcoin Core with -rescan if you\'re '
+                            'recovering an existing wallet from backup seed\n'
+                            ' otherwise just restart this joinmarket script')
+            # sys.exit(0)
 
     def sync_addresses(self, wallet):
         from joinmarket.wallet import BitcoinCoreWallet
@@ -611,10 +628,36 @@ class BitcoinCoreInterface(BlockchainInterface):
         et = time.time()
         log.debug('bitcoind sync_unspent took ' + str((et - st)) + 'sec')
 
+    def start_http_server(self):
+        log.debug('**** start_http_server')
+        srv = NotifyHttpServer(self)
+        self.http_server = twisted_server.Site(srv)
+        notify_host = 'localhost'
+        notify_port = 62602  # defaults
+        config = jm_single().config
+        if 'notify_host' in config.options("BLOCKCHAIN"):
+            notify_host = config.get("BLOCKCHAIN", "notify_host").strip()
+        if 'notify_port' in config.options("BLOCKCHAIN"):
+            notify_port = int(config.get("BLOCKCHAIN", "notify_port"))
+        for inc in range(10):
+            hostport = (notify_host, notify_port + inc)
+            log.debug('start_http_server trying hostport: {}:{:d}'.format(
+                    notify_host, notify_port))
+            try:
+                reactor.listenTCP(hostport[1], self.http_server)
+            except:
+                pass
+            else:
+                log.debug('start_http_server, using '
+                          'hostport= {}'.format(hostport))
+                srv.using_port = hostport[1]
+                break
+
     def add_tx_notify(self, txd, unconfirmfun, confirmfun, notifyaddr):
-        if not self.notifythread:
-            self.notifythread = BitcoinCoreNotifyThread(self)
-            self.notifythread.start()
+        if not self.http_server:
+            self.start_http_server()
+        #     self.notifythread = BitcoinCoreNotifyThread(self)
+        #     self.notifythread.start()
 
         one_addr_imported = False
         for outs in txd['outs']:
