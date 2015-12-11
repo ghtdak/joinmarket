@@ -1,5 +1,5 @@
 #! /usr/bin/env python
-#from __future__ import absolute_import
+from __future__ import absolute_import
 
 """Some helper functions for testing"""
 
@@ -8,7 +8,7 @@ import subprocess
 import time
 import unittest
 
-from commontest import local_command, make_wallets
+from .commontest import local_command, make_wallets
 # data_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 # sys.path.insert(0, os.path.join(data_dir))
 

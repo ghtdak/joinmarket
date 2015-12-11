@@ -369,22 +369,20 @@ class IRCMessageChannel(MessageChannel):
                 self.waiting[nick] = False
                 if encrypt:
                     if not box:
-                        log.debug(
-                            'error, dont have encryption box object for ' +
-                            nick + ', dropping message')
+                        log.debug('error, dont have encryption box object '
+                                  'for {}, dropping message'.format(nick))
                         return
                     # need to decrypt everything after the command string
-                    to_decrypt = ''.join(self.built_privmsg[nick][1].split(' ')[
-                                             1])
+                    to_decrypt = ''.join(
+                            self.built_privmsg[nick][1].split(' ')[1])
                     try:
                         decrypted = decode_decrypt(to_decrypt, box)
                     except ValueError as e:
-                        log.debug(
-                            'valueerror when decrypting, skipping: ' + repr(
-                                    e))
+                        log.debug(('valueerror when decrypting, '
+                                   'skipping: {}').format(e))
                         return
-                    parsed = self.built_privmsg[nick][1].split(' ')[
-                                 0] + ' ' + decrypted
+                    parsed = self.built_privmsg[nick][1].split(' ')[0]
+                    parsed += ' ' + decrypted
                 else:
                     parsed = self.built_privmsg[nick][1]
                 # wipe the message buffer waiting for the next one

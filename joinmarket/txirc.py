@@ -19,9 +19,13 @@ from txsocksx.tls import TLSWrapClientEndpoint
 log = get_log()
 log.debug('Twisted Logging Starts in txirc')
 
-class IRC_Channel(irc.IRCClient, object):
+class txIRC_Client(irc.IRCClient, object):
     def __init__(self, irc_market, nickname, password, hostname):
         self.irc_market = irc_market
+
+        #register with the irc_market
+        self.irc_market.set_tx_irc_client(self)
+
         self.nickname = nickname
         self.password = password
         self.hostname = hostname
@@ -64,6 +68,7 @@ class IRC_Channel(irc.IRCClient, object):
 
     def joined(self, channel):
         log.debug('joined: {}'.format(channel))
+        reactor.callLater(0.0, self.irc_market.joined, channel)
 
     def privmsg(self, userIn, channel, msg):
         log.debug('privmsg: {} {} {}'.format(userIn, channel, msg))
@@ -274,7 +279,7 @@ class IRC_Market(CommSuper):
         self.channel = get_config_irc_channel()
 
         # todo: rename this.  too confusing
-        self.irc_channel = None
+        self.tx_irc_client = None
         self.from_to = None
         self.built_privmsg = []
         self.waiting = []
@@ -288,6 +293,9 @@ class IRC_Market(CommSuper):
         self.give_up = True
 
         # todo: how to end??? kicked?  timeout? etc...
+
+    def set_tx_irc_client(self, tx_irc_client):
+        self.tx_irc_client = tx_irc_client
 
     def run(self):
         """
@@ -305,7 +313,7 @@ class IRC_Market(CommSuper):
         reactor.stop()
 
     def send(self, send_to, msg):
-        self.irc_channel.msg(send_to, msg)
+        self.tx_irc_client.msg(send_to, msg)
 
     def send_error(self, nick, errormsg):
         log.debug('error<%s> : %s' % (nick, errormsg))
@@ -316,23 +324,27 @@ class IRC_Market(CommSuper):
     # connection callbacks
     # -----------------------------------
 
-    def userJoined(self, *args, **kwargs):
-        self.irc_channel.on_welcome(*args, **kwargs)
+    def joined(self, channel):
+        # todo: mode changes needed?
+        self.coinjoinerpeer.on_welcome()
+
+    def userJoined(self, user, channel):
+        pass
 
     def connectionMade(self, *args, **kwargs):
-        self.irc_channel.on_connect(*args, **kwargs)
+        self.coinjoinerpeer.on_connect(*args, **kwargs)
 
     def connectionLost(self, *args, **kwargs):
-        self.irc_channel.on_disconnect(*args, **kwargs)
+        self.coinjoinerpeer.on_disconnect(*args, **kwargs)
 
     def userLeft(self, *args, **kwargs):
-        self.irc_channel.on_nick_leave(*args, **kwargs)
+        self.coinjoinerpeer.on_nick_leave(*args, **kwargs)
 
     def userRenamed(self, *args, **kwargs):
-        self.irc_channel.on_nick_change(*args, **kwargs)
+        self.coinjoinerpeer.on_nick_change(*args, **kwargs)
 
     def topicUpdated(self, *args, **kwargs):
-        self.irc_channel.on_set_topic(*args, **kwargs)
+        self.coinjoinerpeer.on_set_topic(*args, **kwargs)
 
     # OrderbookWatch callback
     def request_orderbook(self):
@@ -565,10 +577,11 @@ class IRC_Market(CommSuper):
 
     def handle_privmsg(self, sent_from, sent_to, message):
 
-        # todo: kludge - we need this elsewhere. rearchitect!!
-        self.from_to = (sent_from, sent_to)
-
         nick = get_irc_nick(sent_from)
+        # todo: kludge - we need this elsewhere. rearchitect!!
+
+        self.from_to = (nick, sent_to)
+
         if sent_to == self.nick:
             # todo: this is some ctcp thing handled elsewhere. check
             # if message[0] == '\x01':
@@ -650,7 +663,7 @@ class LogBotFactory(protocol.ClientFactory):
         self.the_cred = the_cred
 
     def buildProtocol(self, addr):
-        p = IRC_Channel(**self.the_cred)
+        p = txIRC_Client(**self.the_cred)
         p.factory = self
         return p
 
