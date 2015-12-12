@@ -1,14 +1,10 @@
 from __future__ import absolute_import, print_function
 
-import BaseHTTPServer
 import abc
 import json
-import os
 import pprint
 import random
 import re
-import sys
-import threading
 import time
 import urllib
 from decimal import Decimal
@@ -18,7 +14,7 @@ import subprocess
 
 from twisted.web import server as twisted_server
 from twisted.web import resource as twisted_resource
-from twisted.internet import reactor
+from twisted.internet import defer, task, reactor
 import treq
 
 import bitcoin as btc
@@ -209,116 +205,156 @@ class BlockrInterface(BlockchainInterface):
         confirm_timeout = 2 * 60 * 60
         confirm_poll_period = 5 * 60
 
-        class NotifyThread(threading.Thread):
+        # AsyncWebSucker returns immediately.  The yields are non-blocking
+        # calls managed by Twisted using the miracle of generators.  The
+        # illusion of blocking
 
-            def __init__(self, blockr_domain, txd, unconfirmfun, confirmfun):
-                threading.Thread.__init__(self)
-                self.daemon = True
-                self.blockr_domain = blockr_domain
-                self.unconfirmfun = unconfirmfun
-                self.confirmfun = confirmfun
-                self.tx_output_set = set([(sv['script'], sv['value'])
-                                          for sv in txd['outs']])
-                self.output_addresses = [
-                    btc.script_to_address(scrval[0], get_p2pk_vbyte())
-                    for scrval in self.tx_output_set]
-                log.debug('txoutset=' + pprint.pformat(self.tx_output_set))
-                log.debug('outaddrs=' + ','.join(self.output_addresses))
+        @defer.inlineCallbacks
+        def AsyncWebSucker():
+            blockr_domain = self.blockr_domain
+            daemon = True
+            tx_output_set = set([(sv['script'], sv['value'])
+                                 for sv in txd['outs']])
+            output_addresses = [
+                btc.script_to_address(scrval[0], get_p2pk_vbyte())
+                for scrval in tx_output_set]
 
-            def run(self):
-                st = int(time.time())
-                unconfirmed_txid = None
-                unconfirmed_txhex = None
-                while not unconfirmed_txid:
-                    time.sleep(unconfirm_poll_period)
-                    if int(time.time()) - st > unconfirm_timeout:
-                        log.debug('checking for unconfirmed tx timed out')
-                        return
-                    blockr_url = 'https://' + self.blockr_domain
-                    blockr_url += '.blockr.io/api/v1/address/unspent/'
-                    random.shuffle(self.output_addresses
-                                   )  # seriously weird bug with blockr.io
-                    data = json.loads(
-                            btc.make_request(blockr_url + ','.join(
-                                    self.output_addresses
-                            ) + '?unconfirmed=1'))['data']
+            log.debug('txoutset=' + pprint.pformat(tx_output_set))
+            log.debug('outaddrs=' + ','.join(output_addresses))
 
-                    shared_txid = None
-                    for unspent_list in data:
-                        txs = set([str(txdata['tx'])
-                                   for txdata in unspent_list['unspent']])
-                        if not shared_txid:
-                            shared_txid = txs
-                        else:
-                            shared_txid = shared_txid.intersection(txs)
-                    log.debug('sharedtxid = ' + str(shared_txid))
-                    if len(shared_txid) == 0:
-                        continue
-                    time.sleep(
-                            2
-                    )  # here for some race condition bullshit with blockr.io
-                    blockr_url = 'https://' + self.blockr_domain
-                    blockr_url += '.blockr.io/api/v1/tx/raw/'
-                    data = json.loads(btc.make_request(blockr_url + ','.join(
-                            shared_txid)))['data']
-                    if not isinstance(data, list):
-                        data = [data]
-                    for txinfo in data:
-                        txhex = str(txinfo['tx']['hex'])
-                        outs = set([(sv['script'], sv['value'])
-                                    for sv in btc.deserialize(txhex)['outs']])
-                        log.debug('unconfirm query outs = ' + str(outs))
-                        if outs == self.tx_output_set:
-                            unconfirmed_txid = txinfo['tx']['txid']
-                            unconfirmed_txhex = str(txinfo['tx']['hex'])
-                            break
+            def sleep(seconds):
+                d = defer.Deferred()
+                reactor.callLater(seconds, d.callback, seconds)
+                return d
 
-                self.unconfirmfun(
-                        btc.deserialize(unconfirmed_txhex), unconfirmed_txid)
+            st = int(time.time())
+            unconfirmed_txid = None
+            unconfirmed_txhex = None
+            while not unconfirmed_txid:
 
-                st = int(time.time())
-                confirmed_txid = None
-                confirmed_txhex = None
-                while not confirmed_txid:
-                    time.sleep(confirm_poll_period)
-                    if int(time.time()) - st > confirm_timeout:
-                        log.debug('checking for confirmed tx timed out')
-                        return
-                    blockr_url = 'https://' + self.blockr_domain
-                    blockr_url += '.blockr.io/api/v1/address/txs/'
-                    data = json.loads(btc.make_request(blockr_url + ','.join(
-                            self.output_addresses)))['data']
-                    shared_txid = None
-                    for addrtxs in data:
-                        txs = set(str(txdata['tx'])
-                                  for txdata in addrtxs['txs'])
-                        if not shared_txid:
-                            shared_txid = txs
-                        else:
-                            shared_txid = shared_txid.intersection(txs)
-                    log.debug('sharedtxid = ' + str(shared_txid))
-                    if len(shared_txid) == 0:
-                        continue
-                    blockr_url = 'https://' + self.blockr_domain
-                    blockr_url += '.blockr.io/api/v1/tx/raw/'
-                    data = json.loads(
-                            btc.make_request(
-                                    blockr_url + ','.join(shared_txid)))['data']
-                    if not isinstance(data, list):
-                        data = [data]
-                    for txinfo in data:
-                        txhex = str(txinfo['tx']['hex'])
-                        outs = set([(sv['script'], sv['value'])
-                                    for sv in btc.deserialize(txhex)['outs']])
-                        log.debug('confirm query outs = ' + str(outs))
-                        if outs == self.tx_output_set:
-                            confirmed_txid = txinfo['tx']['txid']
-                            confirmed_txhex = str(txinfo['tx']['hex'])
-                            break
-                self.confirmfun(
-                        btc.deserialize(confirmed_txhex), confirmed_txid, 1)
+                # time.sleep(unconfirm_poll_period)
+                yield sleep(unconfirm_poll_period)
 
-        NotifyThread(self.blockr_domain, txd, unconfirmfun, confirmfun).start()
+                if int(time.time()) - st > unconfirm_timeout:
+                    log.debug('checking for unconfirmed tx timed out')
+                    return
+                blockr_url = 'https://' + blockr_domain
+                blockr_url += '.blockr.io/api/v1/address/unspent/'
+
+                # seriously weird bug with blockr.io
+                random.shuffle(output_addresses)
+
+                # it started out looking like this
+                # data = json.loads(
+                #         btc.make_request(blockr_url + ','.join(
+                #                 self.output_addresses) + '?unconfirmed=1'))['data']
+
+                # >>> A non-blocking call (Black Magic)
+                res = yield treq.get('{}?unconfirmed=1'.format(
+                        blockr_url + ','.join(output_addresses)))
+
+                data = json.loads(res)['data']
+
+                shared_txid = None
+                for unspent_list in data:
+                    txs = set([str(txdata['tx'])
+                               for txdata in unspent_list['unspent']])
+                    if not shared_txid:
+                        shared_txid = txs
+                    else:
+                        shared_txid = shared_txid.intersection(txs)
+                log.debug('sharedtxid = ' + str(shared_txid))
+                if len(shared_txid) == 0:
+                    continue
+
+                # here for some race condition bullshit with blockr.io
+                # time.sleep(2)
+                yield sleep(2)
+
+                blockr_url = 'https://' + blockr_domain
+                blockr_url += '.blockr.io/api/v1/tx/raw/'
+
+                # data = json.loads(btc.make_request(blockr_url + ','.join(
+                #         shared_txid)))['data']
+
+                res = yield treq.get(
+                        blockr_url + ','.join(shared_txid))
+
+                data = json.loads(res)['data']
+
+                if not isinstance(data, list):
+                    data = [data]
+                for txinfo in data:
+                    txhex = str(txinfo['tx']['hex'])
+                    outs = set([(sv['script'], sv['value'])
+                                for sv in btc.deserialize(txhex)['outs']])
+
+                    log.debug('unconfirm query outs = ' + str(outs))
+                    if outs == tx_output_set:
+                        unconfirmed_txid = txinfo['tx']['txid']
+                        unconfirmed_txhex = str(txinfo['tx']['hex'])
+                        break
+
+            unconfirmfun(btc.deserialize(unconfirmed_txhex), unconfirmed_txid)
+
+            st = int(time.time())
+            confirmed_txid = None
+            confirmed_txhex = None
+            while not confirmed_txid:
+                # time.sleep(confirm_poll_period)
+                yield sleep(confirm_poll_period)
+
+                if int(time.time()) - st > confirm_timeout:
+                    log.debug('checking for confirmed tx timed out')
+                    return
+                blockr_url = 'https://' + blockr_domain
+                blockr_url += '.blockr.io/api/v1/address/txs/'
+
+                # data = json.loads(btc.make_request(blockr_url + ','.join(
+                #         self.output_addresses)))['data']
+
+                res = yield treq.get(
+                        blockr_url + ','.join(output_addresses))
+
+                data = json.loads(res)['data']
+
+                shared_txid = None
+                for addrtxs in data:
+                    txs = set(str(txdata['tx'])
+                              for txdata in addrtxs['txs'])
+                    if not shared_txid:
+                        shared_txid = txs
+                    else:
+                        shared_txid = shared_txid.intersection(txs)
+                log.debug('sharedtxid = ' + str(shared_txid))
+                if len(shared_txid) == 0:
+                    continue
+                blockr_url = 'https://' + blockr_domain
+                blockr_url += '.blockr.io/api/v1/tx/raw/'
+                # data = json.loads(
+                #         btc.make_request(
+                #                 blockr_url + ','.join(shared_txid)))['data']
+
+                res = yield treq.get(blockr_url + ','.join(shared_txid))
+
+                data = json.loads(res)['data']
+
+                if not isinstance(data, list):
+                    data = [data]
+                for txinfo in data:
+                    txhex = str(txinfo['tx']['hex'])
+                    outs = set([(sv['script'], sv['value'])
+                                for sv in btc.deserialize(txhex)['outs']])
+                    log.debug('confirm query outs = ' + str(outs))
+                    if outs == tx_output_set:
+                        confirmed_txid = txinfo['tx']['txid']
+                        confirmed_txhex = str(txinfo['tx']['hex'])
+                        break
+            confirmfun(
+                    btc.deserialize(confirmed_txhex), confirmed_txid, 1)
+
+        AsyncWebSucker()
+
 
     def pushtx(self, txhex):
         try:
@@ -364,6 +400,7 @@ class BlockrInterface(BlockchainInterface):
         return result
 
 
+# noinspection PyMissingConstructor
 class NotifyHttpServer(twisted_resource.Resource):
     isLeaf = True
     # def __init__(self, request, client_address, base_server):
@@ -440,38 +477,33 @@ class NotifyHttpServer(twisted_resource.Resource):
         return ''
 
 
-class BitcoinCoreNotifyThread(threading.Thread):
-    def __init__(self, btcinterface):
-        threading.Thread.__init__(self)
-        self.daemon = True
-        self.btcinterface = btcinterface
-
-    def run(self):
-        notify_host = 'localhost'
-        notify_port = 62602  # defaults
-        config = jm_single().config
-        if 'notify_host' in config.options("BLOCKCHAIN"):
-            notify_host = config.get("BLOCKCHAIN", "notify_host").strip()
-        if 'notify_port' in config.options("BLOCKCHAIN"):
-            notify_port = int(config.get("BLOCKCHAIN", "notify_port"))
-        for inc in range(10):
-            hostport = (notify_host, notify_port + inc)
-            log.debug('BitcoinCoreNotifyThread hostport: {}:{:d}'.format(
-                    notify_host, notify_port))
-            try:
-                httpd = BaseHTTPServer.HTTPServer(hostport, NotifyHttpServer)
-            except Exception:
-                continue
-            httpd.btcinterface = self.btcinterface
-            log.debug('started bitcoin core notify listening thread, host=' +
-                      str(notify_host) + ' port=' + str(hostport[1]))
-            httpd.serve_forever()
-        log.debug('failed to bind for bitcoin core notify listening')
-
-
-# must run bitcoind with -server
-# -walletnotify="curl -sI --connect-timeout 1 http://localhost:62602/walletnotify?%s"
-# and make sure curl is installed (git uses it, odds are you've already got it)
+# class BitcoinCoreNotifyThread(threading.Thread):
+#     def __init__(self, btcinterface):
+#         threading.Thread.__init__(self)
+#         self.daemon = True
+#         self.btcinterface = btcinterface
+#
+#     def run(self):
+#         notify_host = 'localhost'
+#         notify_port = 62602  # defaults
+#         config = jm_single().config
+#         if 'notify_host' in config.options("BLOCKCHAIN"):
+#             notify_host = config.get("BLOCKCHAIN", "notify_host").strip()
+#         if 'notify_port' in config.options("BLOCKCHAIN"):
+#             notify_port = int(config.get("BLOCKCHAIN", "notify_port"))
+#         for inc in range(10):
+#             hostport = (notify_host, notify_port + inc)
+#             log.debug('BitcoinCoreNotifyThread hostport: {}:{:d}'.format(
+#                     notify_host, notify_port))
+#             try:
+#                 httpd = BaseHTTPServer.HTTPServer(hostport, NotifyHttpServer)
+#             except Exception:
+#                 continue
+#             httpd.btcinterface = self.btcinterface
+#             log.debug('started bitcoin core notify listening thread, host=' +
+#                       str(notify_host) + ' port=' + str(hostport[1]))
+#             httpd.serve_forever()
+#         log.debug('failed to bind for bitcoin core notify listening')
 
 
 # TODO must add the tx addresses as watchonly if case we ever broadcast a tx
@@ -703,16 +735,22 @@ class RegtestBitcoinCoreInterface(BitcoinCoreInterface):
     def pushtx(self, txhex):
         ret = super(RegtestBitcoinCoreInterface, self).pushtx(txhex)
 
-        class TickChainThread(threading.Thread):
-            def __init__(self, bcinterface):
-                threading.Thread.__init__(self)
-                self.bcinterface = bcinterface
+        # class TickChainThread(threading.Thread):
+        #     def __init__(self, bcinterface):
+        #         threading.Thread.__init__(self)
+        #         self.bcinterface = bcinterface
+        #
+        #     def run(self):
+        #         time.sleep(15)
+        #         self.bcinterface.tick_forward_chain(1)
+        # TickChainThread(self).start()
 
-            def run(self):
-                time.sleep(15)
-                self.bcinterface.tick_forward_chain(1)
+        # todo: there's no way to stop this without keeping a ref
 
-        TickChainThread(self).start()
+
+        l = task.LoopingCall(self.tick_forward_chain, 1)
+        l.start(15, now=False)
+
         return ret
 
     def tick_forward_chain(self, n):

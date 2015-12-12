@@ -4,14 +4,17 @@ from __future__ import absolute_import, print_function
 import datetime
 import os
 import time
+from collections import defaultdict
 
-import sys
+from twisted.internet import task, reactor
 
 import bitcoin
 import joinmarket as jm
 
 from joinmarket.txirc import build_irc_communicator
 from joinmarket.test.commontest import make_wallets
+
+from joinmarket.jsonrpc import tb_stack_set
 
 txfee = 1000
 cjfee = '0.002'  # 0.2% fee
@@ -134,6 +137,41 @@ class YieldGenerator(jm.Maker):
         return self.on_tx_unconfirmed(cjorder, txid, None)
 
 
+# class Monitor(object):
+#     def __init__(self):
+#         self.callgraph = None
+#         reactor.callLater(30, self.doboth)
+#
+#     def doboth(self):
+#         self.makegraph()
+#         self.printgraph()
+#
+#     def makegraph(self):
+#         """
+#         build call graph
+#         """
+#         self.callgraph = defaultdict(set)
+#         for tb in tb_stack_set:
+#             for i in range(len(tb) - 1):
+#                 self.callgraph[tb[i]] = tb[i+1]  # from- > to
+#             # self.callgraph[tb[-1]] = 'terminal'
+#
+#     def printgraph(self):
+#
+# m = Monitor()
+
+def calltrace():
+    for t in tb_stack_set:
+        log.debug(str(t))
+
+reactor.callLater(120, calltrace)
+
+# def monitor():
+#     log.debug('tick')
+#
+# l = task.LoopingCall(monitor)
+# l.start(5, now=False)
+
 def main():
     jm.load_program_config()
 
@@ -206,6 +244,7 @@ def main():
     log.info('irc thingy launched')
 
     maker = YieldGenerator(irc, wallet)
+
     try:
         log.debug('Reactor Run - nick: {}'.format(nickname))
         irc.run()

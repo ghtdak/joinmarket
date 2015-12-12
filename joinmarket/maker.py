@@ -3,14 +3,11 @@ from __future__ import absolute_import, print_function
 
 import base64
 import pprint
-import sys
-import threading
 
 import bitcoin as btc
 from joinmarket import IRCMessageChannel
 from joinmarket.configure import get_p2pk_vbyte, load_program_config, jm_single
 from joinmarket.enc_wrapper import init_keypair, as_init_encryption, init_pubkey
-
 from joinmarket.support import get_log, calc_cj_fee, debug_dump_object, \
     system_shutdown
 from joinmarket.taker import CoinJoinerPeer
@@ -125,11 +122,8 @@ class CoinJoinOrder(object):
         self.maker.active_orders[nick] = None
 
     def unconfirm_callback(self, txd, txid):
-        self.maker.wallet_unspent_lock.acquire()
-        try:
-            removed_utxos = self.maker.wallet.remove_old_utxos(self.tx)
-        finally:
-            self.maker.wallet_unspent_lock.release()
+        removed_utxos = self.maker.wallet.remove_old_utxos(self.tx)
+
         log.debug('saw tx on network, removed_utxos=\n{}'.format(
                 pprint.pformat(removed_utxos)))
         to_cancel, to_announce = self.maker.on_tx_unconfirmed(
@@ -137,11 +131,7 @@ class CoinJoinOrder(object):
         self.maker.modify_orders(to_cancel, to_announce)
 
     def confirm_callback(self, txd, txid, confirmations):
-        self.maker.wallet_unspent_lock.acquire()
-        try:
-            jm_single().bc_interface.sync_unspent(self.maker.wallet)
-        finally:
-            self.maker.wallet_unspent_lock.release()
+        jm_single().bc_interface.sync_unspent(self.maker.wallet)
         log.debug('tx in a block')
         log.debug('earned = ' + str(self.real_cjfee - self.txfee))
         to_cancel, to_announce = self.maker.on_tx_confirmed(self, confirmations,
@@ -210,7 +200,6 @@ class Maker(CoinJoinerPeer):
         self.wallet = wallet
         self.nextoid = -1
         self.orderlist = self.create_my_orders()
-        self.wallet_unspent_lock = threading.Lock()
 
     def get_crypto_box_from_nick(self, nick):
         if nick not in self.active_orders:
@@ -228,12 +217,8 @@ class Maker(CoinJoinerPeer):
         if nick in self.active_orders and self.active_orders[nick] is not None:
             self.active_orders[nick] = None
             log.debug('had a partially filled order but starting over now')
-        self.wallet_unspent_lock.acquire()
-        try:
-            self.active_orders[nick] = CoinJoinOrder(self, nick, oid, amount,
-                                                     taker_pubkey)
-        finally:
-            self.wallet_unspent_lock.release()
+        self.active_orders[nick] = CoinJoinOrder(self, nick, oid, amount,
+                                                 taker_pubkey)
 
     def on_seen_auth(self, nick, pubkey, sig):
         if nick not in self.active_orders or self.active_orders[nick] is None:
@@ -245,11 +230,7 @@ class Maker(CoinJoinerPeer):
     def on_seen_tx(self, nick, txhex):
         if nick not in self.active_orders or self.active_orders[nick] is None:
             self.msgchan.send_error(nick, 'No open order from this nick')
-        self.wallet_unspent_lock.acquire()
-        try:
-            self.active_orders[nick].recv_tx(nick, txhex)
-        finally:
-            self.wallet_unspent_lock.release()
+        self.active_orders[nick].recv_tx(nick, txhex)
 
     def on_push_tx(self, nick, txhex):
         log.debug('received txhex from ' + nick + ' to push\n' + txhex)

@@ -6,7 +6,6 @@ import pprint
 import random
 import sqlite3
 import sys
-import threading
 from decimal import InvalidOperation, Decimal
 
 from twisted.internet import reactor
@@ -57,6 +56,7 @@ class CoinJoinTX(object):
         self.choose_orders_recover = choose_orders_recover
         self.auth_addr = auth_addr
 
+        self.all_responded = False
         self.watchdog = CoinJoinTX.Watchdog(self)
         self.watchdog.start()
 
@@ -139,7 +139,7 @@ class CoinJoinTX(object):
             log.debug('nonrespondants = ' + str(self.nonrespondants))
             return
 
-        self.watchdog.cancel()
+        self.watchdog.success()
 
         log.debug('got all parts, enough to build a tx')
         self.nonrespondants = list(self.active_orders.keys())
@@ -239,7 +239,7 @@ class CoinJoinTX(object):
         if not tx_signed:
             return
 
-        self.watchdog.cancel()
+        self.watchdog.success()
 
         log.debug('all makers have sent their signatures')
         for index, ins in enumerate(self.latest_tx['ins']):
@@ -329,21 +329,25 @@ class CoinJoinTX(object):
 
         def __init__(self, cjtx):
             self.cjtx = cjtx
+            # todo: all_responded communication strategy - rearchitect!
             self.watchdog = None
 
         def times_up(self):
             self.watchdog = None
             log.debug('CJTX Timeout: Makers didnt respond')
-            # todo: in the multithreaded version, it grabs a lock
             self.cjtx.recover_from_nonrespondants()
 
-        def cancel(self):
-            self.watchdog.cancel()
-            self.watchdog = None
+        def success(self):
+            self.cjtx.all_responded = True
+            if self.watchdog:
+                self.watchdog.cancel()
+                self.watchdog = None
 
         def start(self):
             if self.watchdog:
                 self.watchdog.cancel()
+
+            self.cjtx.all_responded = False
 
             self.watchdog = reactor.callLater(
                     jm_single().maker_timeout_sec, self.times_up)
@@ -417,9 +421,6 @@ class CoinJoinerPeer(object):
         pass
 
     def on_nick_change(self, *args, **kwargs):
-        pass
-
-    def on_set_topic(self, *args, **kwargs):
         pass
 
     def on_order_seen(self, *args, **kwargs):
@@ -518,7 +519,7 @@ class OrderbookWatch(CoinJoinerPeer):
     def on_nick_leave(self, nick):
         self.db.execute('DELETE FROM orderbook WHERE counterparty=?;', (nick,))
 
-    def on_disconnect(self):
+    def on_disconnect(self, reason):
         self.db.execute('DELETE FROM orderbook;')
 
 

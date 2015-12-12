@@ -1,10 +1,10 @@
 #! /usr/bin/env python
-from __future__ import absolute_import
+from __future__ import absolute_import, print_function
 
 import sys
-import threading
-import time
 from optparse import OptionParser
+
+from twisted.internet import reactor
 
 # data_dir = os.path.dirname(os.path.realpath(__file__))
 # sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
@@ -26,9 +26,8 @@ log = get_log()
 
 # thread which does the buy-side algorithm
 # chooses which coinjoins to initiate and when
-class PaymentThread(threading.Thread):
+class PaymentThread(object):
     def __init__(self, taker):
-        threading.Thread.__init__(self)
         self.daemon = True
         self.taker = taker
         self.ignored_makers = []
@@ -41,7 +40,7 @@ class PaymentThread(threading.Thread):
         counterparty_count = crow['COUNT(DISTINCT counterparty)']
         counterparty_count -= len(self.ignored_makers)
         if counterparty_count < self.taker.options.makercount:
-            print 'not enough counterparties to fill order, ending'
+            log.info('not enough counterparties to fill order, ending')
             self.taker.msgchan.shutdown()
             return
 
@@ -74,7 +73,7 @@ class PaymentThread(threading.Thread):
                 return
             total_amount = self.taker.cjamount + total_cj_fee + \
                            self.taker.options.txfee
-            print 'total amount spent = ' + str(total_amount)
+            log.info('total amount spent = ' + str(total_amount))
             cjamount = self.taker.cjamount
             change_addr = self.taker.changeaddr
             choose_orders_recover = self.sendpayment_choose_orders
@@ -97,7 +96,7 @@ class PaymentThread(threading.Thread):
                 addr = coinjointx.input_utxos[utxo]['address']
                 tx = btc.sign(tx, index,
                               coinjointx.wallet.get_key_from_addr(addr))
-            print 'unsigned tx = \n\n' + tx + '\n'
+            log.info('unsigned tx = \n\n' + tx + '\n')
             log.debug('created unsigned tx, ending')
             self.taker.msgchan.shutdown()
             return
@@ -122,8 +121,8 @@ class PaymentThread(threading.Thread):
                 self.ignored_makers + active_nicks)
         if not orders:
             return None, 0
-        print 'chosen orders to fill ' + str(orders) + ' totalcjfee=' + str(
-                total_cj_fee)
+        log.info('chosen orders to fill ' + str(orders) + ' totalcjfee=' + str(
+                total_cj_fee))
         if not self.taker.options.answeryes:
             if len(self.ignored_makers) > 0:
                 noun = 'total'
@@ -139,10 +138,10 @@ class PaymentThread(threading.Thread):
                 return None, -1
         return orders, total_cj_fee
 
-    def run(self):
-        print 'waiting for all orders to certainly arrive'
-        time.sleep(self.taker.options.waittime)
-        self.create_tx()
+    def start(self):
+        log.info('PaymentWatchdog waiting for stuff to arrive')
+        # time.sleep(self.taker.options.waittime)
+        reactor.callLater(self.taker.options.waittime, self.create_tx)
 
 
 class CreateUnsignedTx(takermodule.Taker):
@@ -247,15 +246,15 @@ def main():
         addr_valid2 = True
     if not addr_valid1 or not addr_valid2:
         if not addr_valid1:
-            print 'ERROR: Address invalid. ' + errormsg1
+            log.info('ERROR: Address invalid. ' + errormsg1)
         else:
-            print 'ERROR: Address invalid. ' + errormsg2
+            log.info('ERROR: Address invalid. ' + errormsg2)
         return
 
     all_utxos = [auth_utxo] + cold_utxos
     query_result = jm_single().bc_interface.query_utxo_set(all_utxos)
     if None in query_result:
-        print query_result
+        log.info(query_result)
     utxo_data = {}
     for utxo, data in zip(all_utxos, query_result):
         utxo_data[utxo] = {'address': data['address'], 'value': data['value']}
@@ -263,7 +262,7 @@ def main():
         'address'] + ' :')
     if utxo_data[auth_utxo]['address'] != btc.privtoaddr(
             auth_privkey, get_p2pk_vbyte()):
-        print 'ERROR: privkey does not match auth utxo'
+        log.info('ERROR: privkey does not match auth utxo')
         return
 
     if options.pickorders and cjamount != 0:  # cant use for sweeping
@@ -301,4 +300,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    print('done')
+    log.info('done')

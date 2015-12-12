@@ -18,10 +18,10 @@ from decimal import Decimal
 
 from math import exp
 
-from twisted.internet import reactor
-from twisted.python import log
+from twisted.internet import defer, reactor
+from twisted.python import log as twisted_log
 
-observer = log.PythonLoggingObserver()
+observer = twisted_log.PythonLoggingObserver()
 observer.start()
 
 # log.startLogging(sys.stdout)
@@ -47,13 +47,21 @@ def get_log():
 def system_shutdown(reason):
     log.error('Shutdown: {}'.format(reason))
 
-    # todo: this seems kludgy.  Rearchitect.
-    try:
-        raise TypeError(reason)
-    except Exception as e:
-        traceback.print_exc()
-
+    traceback.print_stack()
     reactor.stop()
+    sys.exit(0)
+
+def sleepGenerator(seconds):
+    """
+    Mimics sleeping when using Twisted's inlineCallbacks
+    https://twistedmatrix.com/pipermail/twisted-python/2009-October/020788.html
+    :param seconds:
+    :return:
+    """
+    d = defer.Deferred()
+    reactor.callLater(seconds, d.callback, seconds)
+    return d
+
 
 
 def rand_norm_array(mu, sigma, n):

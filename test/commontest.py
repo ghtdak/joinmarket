@@ -5,12 +5,9 @@ from __future__ import absolute_import
 
 import sys
 import os
-import time
 import binascii
-import pexpect
 import random
 import subprocess
-import platform
 
 data_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, os.path.join(data_dir))
@@ -54,13 +51,13 @@ def local_command(command, bg=False, redirect=''):
 
 
 def make_wallets(n, wallet_structures=None, mean_amt=1, sdev_amt=0):
-    '''n: number of wallets to be created
+    """n: number of wallets to be created
        wallet_structure: array of n arrays , each subarray
        specifying the number of addresses to be populated with coins
        at each depth (for now, this will only populate coins into 'receive' addresses)
        mean_amt: the number of coins (in btc units) in each address as above
        sdev_amt: if randomness in amouts is desired, specify here.
-       Returns: a dict of dicts of form {0:{'seed':seed,'wallet':Wallet object},1:..,}'''
+       Returns: a dict of dicts of form {0:{'seed':seed,'wallet':Wallet object},1:..,}"""
     if len(wallet_structures) != n:
         raise Exception("Number of wallets doesn't match wallet structures")
     seeds = chunks(binascii.hexlify(os.urandom(15 * n)), n)

@@ -2,7 +2,6 @@ from __future__ import absolute_import, print_function
 
 import io
 import logging
-import threading
 
 from ConfigParser import SafeConfigParser, NoOptionError
 

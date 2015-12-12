@@ -3,12 +3,12 @@
 
 import base64
 import random
-import time
 
 from joinmarket.configure import jm_single, get_config_irc_channel
 from joinmarket.enc_wrapper import encrypt_encode, decode_decrypt
-from joinmarket.support import get_log, chunks
-from twisted.internet import reactor, protocol
+from joinmarket.jsonrpc import JsonRpcError
+from joinmarket.support import get_log, chunks, sleepGenerator, system_shutdown
+from twisted.internet import defer, reactor, protocol
 from twisted.internet.endpoints import TCP4ClientEndpoint
 from twisted.internet.ssl import ClientContextFactory
 from twisted.words.protocols import irc
@@ -58,7 +58,7 @@ class txIRC_Client(irc.IRCClient, object):
 
     def connectionLost(self, reason=protocol.connectionDone):
         log.debug('connectionLost: {}'.format(reason))
-        reactor.callLater(0.0, self.irc_market.connectionLost)
+        reactor.callLater(0.0, self.irc_market.connectionLost, reason)
         return irc.IRCClient.connectionLost(self, reason)
 
     def signedOn(self):
@@ -316,11 +316,9 @@ class IRC_Market(CommSuper):
 
     def shutdown(self):
         log.debug('SHUTDOWN Called: Death Imminent')
-        def finish():
-            log.debug('Connection Closed: Death Certain - 2 seconds.....')
-            reactor.callLater(2.0, reactor.stop)
-        d = self.connector.disconnect()
-        d.addCallback(finish)
+        # todo: disconnection policy
+        # disconnect will cause connectionLost which stops the reactor
+        self.connector.disconnect()
 
     def send(self, send_to, msg):
         log.debug('send: {} {:d}: {}'.format(send_to, len(msg), msg))
@@ -349,14 +347,18 @@ class IRC_Market(CommSuper):
 
     def connectionMade(self, *args, **kwargs):
         try:
+            log.debug('IRC connection made')
             self.coinjoinerpeer.on_connect(*args, **kwargs)
         except Exception as e:
             log.exception(e)
             self.shutdown()
 
-    def connectionLost(self, *args, **kwargs):
+    def connectionLost(self, reason):
         try:
-            self.coinjoinerpeer.on_disconnect(*args, **kwargs)
+            log.debug('IRC connection lost: {}'.format(reason))
+            self.coinjoinerpeer.on_disconnect(reason)
+            # todo: I'm making policy to shut down
+            system_shutdown(reason)
         except Exception as e:
             log.exception(e)
             self.shutdown()
@@ -399,12 +401,14 @@ class IRC_Market(CommSuper):
         message = pubkey + ' ' + sig
         self.__privmsg(nick, 'auth', message)
 
+    @defer.inlineCallbacks
     def send_tx(self, nick_list, txhex):
+        # HACK! really there should be rate limiting, see issue#31
         txb64 = base64.b64encode(txhex.decode('hex'))
         for nick in nick_list:
             self.__privmsg(nick, 'tx', txb64)
-            # HACK! really there should be rate limiting, see issue#31
-            time.sleep(1)
+            # time.sleep(1)
+            yield sleepGenerator(1)
 
     def push_tx(self, nick, txhex):
         txb64 = base64.b64encode(txhex.decode('hex'))
@@ -444,12 +448,14 @@ class IRC_Market(CommSuper):
                    change_addr + ' ' + sig)
         self.__privmsg(nick, 'ioauth', authmsg)
 
+    @defer.inlineCallbacks
     def send_sigs(self, nick, sig_list):
         # TODO make it send the sigs on one line if there's space
+        # todo: use better mechanism for delay
         for s in sig_list:
             self.__privmsg(nick, 'sig', s)
-            time.sleep(
-                    0.5)  # HACK! really there should be rate limiting, see issue#31
+            # time.sleep(0.5)
+            yield sleepGenerator(0.5)
 
     def __pubmsg(self, message):
         log.debug('>>pubmsg ' + message)
@@ -688,16 +694,15 @@ class IRC_Market(CommSuper):
             else:
                 log.debug('what is this? privmsg src=%s target=%s message=%s;' %
                           (sent_from, sent_to, message))
+        except JsonRpcError as e:
+            log.debug(str(e))
         except Exception as e:
             log.exception(e)
             self.shutdown()
 
-
-
-
-"""
-Twisted Infrastructure
-"""
+# -----------------------------------------------------
+# Twisted Infrastructure
+# -----------------------------------------------------
 
 class LogBotFactory(protocol.ClientFactory):
     def __init__(self, channel, the_cred):
@@ -709,11 +714,13 @@ class LogBotFactory(protocol.ClientFactory):
         p.factory = self
         return p
 
-    def clientConnectionLost(self, connector, reason):
-        connector.connect()
-
-    def clientConnectionFailed(self, connector, reason):
-        log.debug("connection failed: {}".format(reason))
+    # todo: connection info in IRC_Market.  Need reconnect policy
+    # def clientConnectionLost(self, connector, reason):
+    #     log.info('IRC connection lost: {}'.format(reason))
+    #     connector.connect()
+    #
+    # def clientConnectionFailed(self, connector, reason):
+    #     log.info("IRC connection failed: {}".format(reason))
 
 # todo: all this in config
 

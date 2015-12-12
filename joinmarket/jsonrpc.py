@@ -23,10 +23,14 @@ from __future__ import absolute_import, print_function
 import base64
 import httplib
 import json
+import traceback
 
 from .support import get_log
 
 log = get_log()
+
+tb_stack_set = set()
+
 
 class JsonRpcError(Exception):
     """
@@ -68,6 +72,8 @@ class JsonRpc(object):
     the resulting JSON object is returned.  In case of an error
     with the connection (not JSON-RPC itself), an exception is raised.
     """
+
+        tb_stack_set.add(tuple(x[:-1] for x in traceback.extract_stack()))
 
         headers = {"User-Agent": "joinmarket",
                    "Content-Type": "application/json",

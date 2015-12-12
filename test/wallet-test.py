@@ -6,21 +6,15 @@ from __future__ import absolute_import
 import sys
 import os
 import time
-import binascii
 import pexpect
-import random
-import subprocess
 import unittest
-from commontest import local_command, interact
+from .commontest import interact
 
 data_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, os.path.join(data_dir))
 
-import bitcoin as btc
-
-from joinmarket import load_program_config, jm_single
-from joinmarket import get_p2pk_vbyte, get_log, Wallet
-from joinmarket.support import chunks
+from joinmarket import load_program_config
+from joinmarket import get_log
 
 log = get_log()
 
