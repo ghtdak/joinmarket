@@ -8,12 +8,10 @@ import time
 from joinmarket.configure import jm_single, get_config_irc_channel
 from joinmarket.enc_wrapper import encrypt_encode, decode_decrypt
 from joinmarket.support import get_log, chunks
-
 from twisted.internet import reactor, protocol
 from twisted.internet.endpoints import TCP4ClientEndpoint
 from twisted.internet.ssl import ClientContextFactory
 from twisted.words.protocols import irc
-from twisted.words.protocols.irc import stripFormatting
 from txsocksx.client import SOCKS5ClientEndpoint
 from txsocksx.tls import TLSWrapClientEndpoint
 
@@ -283,6 +281,7 @@ class IRC_Market(CommSuper):
 
         # todo: rename this.  too confusing
         self.tx_irc_client = None
+        self.connector = None
         self.from_to = None
         self.built_privmsg = []
         self.waiting = []
@@ -296,6 +295,9 @@ class IRC_Market(CommSuper):
         self.give_up = True
 
         # todo: how to end??? kicked?  timeout? etc...
+
+    def set_tcp_connector(self, connector):
+        self.connector = connector
 
     def set_tx_irc_client(self, tx_irc_client):
         self.tx_irc_client = tx_irc_client
@@ -313,7 +315,12 @@ class IRC_Market(CommSuper):
         reactor.run()
 
     def shutdown(self):
-        reactor.stop()
+        log.debug('SHUTDOWN Called: Death Imminent')
+        def finish():
+            log.debug('Connection Closed: Death Certain - 2 seconds.....')
+            reactor.callLater(2.0, reactor.stop)
+        d = self.connector.disconnect()
+        d.addCallback(finish)
 
     def send(self, send_to, msg):
         log.debug('send: {} {:d}: {}'.format(send_to, len(msg), msg))
@@ -335,7 +342,7 @@ class IRC_Market(CommSuper):
             self.coinjoinerpeer.on_welcome()
         except Exception as e:
             log.exception(e)
-            reactor.stop()
+            self.shutdown()
 
     def userJoined(self, user, channel):
         pass
@@ -345,35 +352,35 @@ class IRC_Market(CommSuper):
             self.coinjoinerpeer.on_connect(*args, **kwargs)
         except Exception as e:
             log.exception(e)
-            reactor.stop()
+            self.shutdown()
 
     def connectionLost(self, *args, **kwargs):
         try:
             self.coinjoinerpeer.on_disconnect(*args, **kwargs)
         except Exception as e:
             log.exception(e)
-            reactor.stop()
+            self.shutdown()
 
     def userLeft(self, *args, **kwargs):
         try:
             self.coinjoinerpeer.on_nick_leave(*args, **kwargs)
         except Exception as e:
             log.exception(e)
-            reactor.stop()
+            self.shutdown()
 
     def userRenamed(self, *args, **kwargs):
         try:
             self.coinjoinerpeer.on_nick_change(*args, **kwargs)
         except Exception as e:
             log.exception(e)
-            reactor.stop()
+            self.shutdown()
 
     def topicUpdated(self, *args, **kwargs):
         try:
             self.coinjoinerpeer.on_set_topic(*args, **kwargs)
         except Exception as e:
             log.exception(e)
-            reactor.stop()
+            self.shutdown()
 
     # OrderbookWatch callback
     def request_orderbook(self):
@@ -683,7 +690,7 @@ class IRC_Market(CommSuper):
                           (sent_from, sent_to, message))
         except Exception as e:
             log.exception(e)
-            reactor.stop()
+            self.shutdown()
 
 
 
@@ -706,8 +713,7 @@ class LogBotFactory(protocol.ClientFactory):
         connector.connect()
 
     def clientConnectionFailed(self, connector, reason):
-        print("connection failed:", reason)
-        reactor.stop()
+        log.debug("connection failed: {}".format(reason))
 
 # todo: all this in config
 
@@ -787,6 +793,8 @@ def build_irc_communicator(
     # todo: hack!!!
     serverport = ('192.168.1.200', 6667)
 
-    reactor.connectTCP(serverport[0], serverport[1], factory)
+    connector = reactor.connectTCP(serverport[0], serverport[1], factory)
+
+    irc_market.set_tcp_connector(connector)
 
     return irc_market

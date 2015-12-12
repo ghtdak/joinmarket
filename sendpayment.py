@@ -2,18 +2,16 @@
 from __future__ import absolute_import, print_function
 
 import sys
-import threading
 from optparse import OptionParser
 
-import time
-
 from joinmarket import Taker, load_program_config
-from joinmarket import validate_address, jm_single
-from joinmarket import random_nick
+from joinmarket import Wallet, BitcoinCoreWallet
 from joinmarket import get_log, choose_sweep_orders, choose_orders, \
     pick_order, cheapest_order_choose, weighted_order_choose, debug_dump_object
-from joinmarket import Wallet, BitcoinCoreWallet
+from joinmarket import random_nick
+from joinmarket import validate_address, jm_single
 from joinmarket.txirc import build_irc_communicator
+from twisted.internet import reactor
 
 log = get_log()
 
@@ -32,20 +30,21 @@ def check_high_fee(total_fee_pc):
 
 # thread which does the buy-side algorithm
 # chooses which coinjoins to initiate and when
-class PaymentThread(threading.Thread):
+class PaymentThread(object):
     def __init__(self, taker):
-        threading.Thread.__init__(self)
         self.daemon = True
         self.taker = taker
         self.ignored_makers = []
 
     def create_tx(self):
+        log.debug('sendpayment: create_tx called')
         crow = self.taker.db.execute('SELECT COUNT(DISTINCT counterparty) FROM '
                                      'orderbook;').fetchone()
         counterparty_count = crow['COUNT(DISTINCT counterparty)']
         counterparty_count -= len(self.ignored_makers)
         if counterparty_count < self.taker.makercount:
-            log.info('not enough counterparties to fill order, ending')
+            log.info('{:d} of {:d} not enough counterparties to fill order, '
+                     'ending'.format(counterparty_count, self.taker.makercount))
             self.taker.msgchan.shutdown()
             return
 
@@ -76,8 +75,8 @@ class PaymentThread(threading.Thread):
             orders, total_cj_fee = self.sendpayment_choose_orders(
                     self.taker.amount, self.taker.makercount)
             if not orders:
-                log.debug(
-                    'ERROR not enough liquidity in the orderbook, exiting')
+                log.debug('ERROR not enough liquidity in the orderbook, '
+                          'exiting')
                 return
             total_amount = self.taker.amount + total_cj_fee + self.taker.txfee
             log.info('total amount spent = ' + str(total_amount))
@@ -92,15 +91,16 @@ class PaymentThread(threading.Thread):
                             self.finishcallback, choose_orders_recover)
 
     def finishcallback(self, coinjointx):
+        log.debug('sendpayment->finishcallback: {}'.format(coinjointx))
         if coinjointx.all_responded:
             coinjointx.self_sign_and_push()
             log.debug('created fully signed tx, ending')
             self.taker.msgchan.shutdown()
             return
         self.ignored_makers += coinjointx.nonrespondants
-        log.debug(
-            'recreating the tx, ignored_makers=' + str(self.ignored_makers))
-        self.create_tx()
+        log.debug('recreating the tx, ignored_makers='.format(
+                self.ignored_makers))
+        reactor.callLater(2.0, self.create_tx)
 
     def sendpayment_choose_orders(self,
                                   cj_amount,
@@ -135,11 +135,8 @@ class PaymentThread(threading.Thread):
                 return None, -1
         return orders, total_cj_fee
 
-    def run(self):
-        log.debug('sleeping: waiting for orders')
-        time.sleep(self.taker.waittime)
-        log.debug('waking: ')
-        self.create_tx()
+    def start(self):
+        reactor.callLater(self.taker.waittime, self.create_tx)
 
 
 class SendPayment(Taker):

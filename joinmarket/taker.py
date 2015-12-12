@@ -326,10 +326,9 @@ class CoinJoinTX(object):
                 self.finishcallback(self)
                 # finishcallback will check if self.all_responded is True and will know it came from here
 
-    class TimeoutThread(threading.Thread):
+    class TimeoutThread(object):
 
         def __init__(self, cjtx):
-            threading.Thread.__init__(self)
             self.cjtx = cjtx
 
         def run(self):
@@ -337,13 +336,13 @@ class CoinJoinTX(object):
                        'addr {}').format(self.cjtx.cj_amount,
                                          self.cjtx.my_cj_addr))
 
-            # how the threading to check for nonresponding makers works like this
-            # there is a Condition object
-            # in a loop, call cond.wait(timeout)
-            # after it returns, check a boolean
-            # to see if if the messages have arrived
+            # how the threading to check for nonresponding makers works like
+            # this there is a Condition object in a loop, call cond.wait(
+            # timeout) after it returns, check a boolean to see if if the
+            # messages have arrived
+
             while not self.cjtx.end_timeout_thread:
-                log.debug('waiting for all replies.. timeout=' + str(
+                log.debug('waiting for all replies.. timeout={:d}'.format(
                         jm_single().maker_timeout_sec))
                 with self.cjtx.timeout_lock:
                     self.cjtx.timeout_lock.wait(jm_single().maker_timeout_sec)

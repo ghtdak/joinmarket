@@ -429,9 +429,9 @@ class NotifyHttpServer(twisted_resource.Resource):
 
         url = 'http://localhost:{:d}{}'.format(self.using_port + 1, path)
 
-        self.debug('NotifyHttpServer notify: {}'.format(url))
+        log.debug('NotifyHttpServer notify: {}'.format(url))
 
-        treq.request(url)
+        treq.get(url)
 
         # todo: spawning curl.  we can do this differently
         # os.system('curl -sI --connect-timeout 1 http://localhost:' + str(
