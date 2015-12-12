@@ -9,6 +9,8 @@ import sys
 import threading
 from decimal import InvalidOperation, Decimal
 
+from twisted.internet import reactor
+
 import bitcoin as btc
 from joinmarket.configure import jm_single, get_p2pk_vbyte
 from joinmarket.enc_wrapper import init_keypair, as_init_encryption, init_pubkey
@@ -54,17 +56,16 @@ class CoinJoinTX(object):
         self.my_change_addr = my_change_addr
         self.choose_orders_recover = choose_orders_recover
         self.auth_addr = auth_addr
-        self.timeout_lock = threading.Condition()  # used to wait() and notify()
-        # used to restrict access to certain variables across threads
-        self.timeout_thread_lock = threading.Condition()
-        self.end_timeout_thread = False
-        CoinJoinTX.TimeoutThread(self).start()
+
+        self.watchdog = CoinJoinTX.Watchdog(self)
+        self.watchdog.start()
+
         # state variables
         self.txid = None
         self.cjfee_total = 0
         self.maker_txfee_contributions = 0
         self.nonrespondants = list(self.active_orders.keys())
-        self.all_responded = False
+
         self.latest_tx = None
         # None means they belong to me
         self.utxos = {None: self.input_utxos.keys()}
@@ -137,9 +138,9 @@ class CoinJoinTX(object):
         if len(self.nonrespondants) > 0:
             log.debug('nonrespondants = ' + str(self.nonrespondants))
             return
-        self.all_responded = True
-        with self.timeout_lock:
-            self.timeout_lock.notify()
+
+        self.watchdog.cancel()
+
         log.debug('got all parts, enough to build a tx')
         self.nonrespondants = list(self.active_orders.keys())
 
@@ -237,10 +238,9 @@ class CoinJoinTX(object):
                 tx_signed = False
         if not tx_signed:
             return
-        self.end_timeout_thread = True
-        self.all_responded = True
-        with self.timeout_lock:
-            self.timeout_lock.notify()
+
+        self.watchdog.cancel()
+
         log.debug('all makers have sent their signatures')
         for index, ins in enumerate(self.latest_tx['ins']):
             # remove placeholders
@@ -294,7 +294,7 @@ class CoinJoinTX(object):
         # so the caller can handle it in their own way, notable for sweeping
         # where simply replacing the makers wont work
         if not self.choose_orders_recover:
-            self.end_timeout_thread = True
+
             if self.finishcallback is not None:
                 self.finishcallback(self)
             return
@@ -321,40 +321,59 @@ class CoinJoinTX(object):
         else:
             log.debug('nonresponse to !sig')
             # nonresponding to !sig, have to restart tx from the beginning
-            self.end_timeout_thread = True
             if self.finishcallback is not None:
                 self.finishcallback(self)
                 # finishcallback will check if self.all_responded is True and will know it came from here
 
-    class TimeoutThread(object):
+    class Watchdog(object):
 
         def __init__(self, cjtx):
             self.cjtx = cjtx
+            self.watchdog = None
 
-        def run(self):
-            log.debug(('started timeout thread for coinjoin of amount {} to '
-                       'addr {}').format(self.cjtx.cj_amount,
-                                         self.cjtx.my_cj_addr))
+        def times_up(self):
+            self.watchdog = None
+            log.debug('CJTX Timeout: Makers didnt respond')
+            # todo: in the multithreaded version, it grabs a lock
+            self.cjtx.recover_from_nonrespondants()
 
-            # how the threading to check for nonresponding makers works like
-            # this there is a Condition object in a loop, call cond.wait(
-            # timeout) after it returns, check a boolean to see if if the
-            # messages have arrived
+        def cancel(self):
+            self.watchdog.cancel()
+            self.watchdog = None
 
-            while not self.cjtx.end_timeout_thread:
-                log.debug('waiting for all replies.. timeout={:d}'.format(
-                        jm_single().maker_timeout_sec))
-                with self.cjtx.timeout_lock:
-                    self.cjtx.timeout_lock.wait(jm_single().maker_timeout_sec)
-                if self.cjtx.all_responded:
-                    log.debug(('timeout thread woken by notify(), '
-                               'makers responded in time'))
-                    self.cjtx.all_responded = False
-                else:
-                    log.debug('timeout thread woken by timeout, '
-                              'makers didnt respond')
-                    with self.cjtx.timeout_thread_lock:
-                        self.cjtx.recover_from_nonrespondants()
+        def start(self):
+            if self.watchdog:
+                self.watchdog.cancel()
+
+            self.watchdog = reactor.callLater(
+                    jm_single().maker_timeout_sec, self.times_up)
+
+            # def run(self):
+        #     log.debug(('cjtx timeout thread for coinjoin of amount {} to '
+        #                'addr {}').format(self.cjtx.cj_amount,
+        #                                  self.cjtx.my_cj_addr))
+        #
+        #     # how the threading to check for nonresponding makers works like
+        #     # this there is a Condition object in a loop, call cond.wait(
+        #     # timeout) after it returns, check a boolean to see if if the
+        #     # messages have arrived
+        #
+        #     while not self.cjtx.end_timeout_thread:
+        #         log.debug('CJTX waiting for  replies.. timeout={:d}'.format(
+        #                 jm_single().maker_timeout_sec))
+        #         with self.cjtx.timeout_lock:
+        #             self.cjtx.timeout_lock.wait(jm_single().maker_timeout_sec)
+        #         if self.cjtx.all_responded:
+        #             log.debug(('timeout thread woken by notify(), '
+        #                        'makers responded in time'))
+        #             self.cjtx.all_responded = False
+        #         else:
+        #             log.debug('timeout thread woken by timeout, '
+        #                       'makers didnt respond')
+        #             with self.cjtx.timeout_thread_lock:
+        #                 self.cjtx.recover_from_nonrespondants()
+        #
+        #     # Basically, this is a watchdog timer
 
 
 class CoinJoinerPeer(object):
@@ -551,12 +570,10 @@ class Taker(OrderbookWatch):
                     ' not established. TODO: send rejection message').format
             log.debug(fmt(nick))
             return
-        with self.cjtx.timeout_thread_lock:
-            self.cjtx.recv_txio(nick, utxo_list, cj_pub, change_addr)
+        self.cjtx.recv_txio(nick, utxo_list, cj_pub, change_addr)
 
     def on_sig(self, nick, sig):
-        with self.cjtx.timeout_thread_lock:
-            self.cjtx.add_signature(nick, sig)
+        self.cjtx.add_signature(nick, sig)
 
 
 # this stuff copied and slightly modified from pybitcointools
