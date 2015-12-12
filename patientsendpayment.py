@@ -120,7 +120,7 @@ class PatientSendPayment(Maker, Taker):
             log.debug('not enough money left, have to wait until tx confirms')
             return [0], []
 
-    def on_tx_confirmed(self, cjorder, confirmations, txid, balance):
+    def on_tx_confirmed(self, cjorder, confirmations, txid):
         if len(self.orderlist) == 0:
             order = {'oid': 0,
                      'ordertype': 'absorder',

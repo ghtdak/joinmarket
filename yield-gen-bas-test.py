@@ -4,9 +4,11 @@ from __future__ import absolute_import, print_function
 import datetime
 import os
 import time
+
+import sys
 from collections import defaultdict
 
-from twisted.internet import task, reactor
+from twisted.internet import reactor
 
 import bitcoin
 import joinmarket as jm
@@ -18,8 +20,6 @@ from joinmarket.jsonrpc import tb_stack_set
 
 txfee = 1000
 cjfee = '0.002'  # 0.2% fee
-jm.jm_single().nickname = jm.random_nick()
-nickserv_password = 'nimDid[Quoc6'
 
 # minimum size is such that you always net profit at least 20% of the miner fee
 minsize = int(1.2 * txfee / float(cjfee))
@@ -31,10 +31,11 @@ log = jm.get_log()
 class YieldGenerator(jm.Maker):
     statement_file = os.path.join('logs', 'yigen-statement.csv')
 
-    def __init__(self, msgchan, wallet):
-        super(YieldGenerator, self).__init__(msgchan, wallet)
+    def __init__(self, binst, msgchan, wallet, block_instance):
+        super(YieldGenerator, self).__init__(binst, msgchan, wallet)
         self.tx_unconfirm_timestamp = {}
         self.income_statement = None
+        self.block_instance = block_instance
 
     def log_statement(self, data):
         if jm.get_network() == 'testnet':
@@ -68,7 +69,7 @@ class YieldGenerator(jm.Maker):
         order = {'oid': 0,
                  'ordertype': 'relorder',
                  'minsize': minsize,
-                 'maxsize': mix_balance[max_mix] - jm.jm_single().DUST_THRESHOLD,
+                 'maxsize': (mix_balance[max_mix] - jm.DUST_THRESHOLD),
                  'txfee': txfee,
                  'cjfee': cjfee}
         return [order]
@@ -94,12 +95,12 @@ class YieldGenerator(jm.Maker):
         my_total_in = sum([va['value'] for va in utxos.values()])
         real_cjfee = jm.calc_cj_fee(cjorder.ordertype, cjorder.cjfee, amount)
         change_value = my_total_in - amount - cjorder.txfee + real_cjfee
-        if change_value <= jm.jm_single().DUST_THRESHOLD:
+        if change_value <= jm.DUST_THRESHOLD:
             log.debug(('change value={} below dust threshold, '
                        'finding new utxos').format(change_value))
             try:
                 utxos = self.wallet.select_utxos(
-                        mixdepth, amount + jm.jm_single().DUST_THRESHOLD)
+                        mixdepth, amount + self.block_instance.DUST_THRESHOLD)
             except Exception:
                 log.debug('dont have the required UTXOs to make a '
                           'output above the dust threshold, quitting')
@@ -137,47 +138,60 @@ class YieldGenerator(jm.Maker):
         return self.on_tx_unconfirmed(cjorder, txid, None)
 
 
-# class Monitor(object):
-#     def __init__(self):
-#         self.callgraph = None
-#         reactor.callLater(30, self.doboth)
-#
-#     def doboth(self):
-#         self.makegraph()
-#         self.printgraph()
-#
-#     def makegraph(self):
-#         """
-#         build call graph
-#         """
-#         self.callgraph = defaultdict(set)
-#         for tb in tb_stack_set:
-#             for i in range(len(tb) - 1):
-#                 self.callgraph[tb[i]] = tb[i+1]  # from- > to
-#             # self.callgraph[tb[-1]] = 'terminal'
-#
-#     def printgraph(self):
-#
-# m = Monitor()
+class Monitor(object):
+    def __init__(self):
+        self.callgraph = None
+        reactor.callLater(120, self.doboth)
 
-def calltrace():
-    for t in tb_stack_set:
-        log.debug(str(t))
+    def doboth(self):
+        log.debug('Building Callgraph')
+        self.makegraph()
+        self.printgraph()
 
-reactor.callLater(120, calltrace)
+    def makegraph(self):
+        """
+        build call graph
+        """
+        self.callgraph = defaultdict(set)
+        for tb in tb_stack_set:
+            for i in range(len(tb) - 1):
+                self.callgraph[tb[i]].add(tb[i+1])  # from- > to
+            # self.callgraph[tb[-1]] = 'terminal'
 
-# def monitor():
-#     log.debug('tick')
-#
-# l = task.LoopingCall(monitor)
-# l.start(5, now=False)
+    def printgraph(self):
+        s = sorted([((p.split('/')[-1], l, m),  v) for (p, l, m), v in
+                    self.callgraph.items()],
+                   key=lambda x: (x[0][0], x[0][1]))
+        out = ['\n']
+        for (pth, ln, mth), v in s:
+            fn = pth.split('/')[-1]
+            out.append('{:>30} ----- {:7d}: {:<40}'.format(fn, ln, mth))
+            for _pth, _ln, _mth in v:
+                _fn = _pth.split('/')[-1]
+                out.append('{:>30}       {:7d}: {:<40}'.format(_fn, _ln, _mth))
+
+        log.debug('\n'.join(out))
+
+
+monitor = Monitor()
+
 
 def main():
-    jm.load_program_config()
+
+    # def calltrace():
+    #     for t in tb_stack_set:
+    #         log.debug(str(t))
+    #
+    # reactor.callLater(120, calltrace)
+
+    block_instance = jm.BlockInstance()
+
+    block_instance.nickname = jm.random_nick()
+    nickserv_password = 'nimDid[Quoc6'
 
     # todo: for testing... remove me!!
 
-    if isinstance(jm.jm_single().bc_interface, jm.BlockrInterface):
+    if isinstance(block_instance.get_bci(), jm.BlockrInterface):
         c = ('\nYou are running a yield generator by polling the blockr.io '
              'website. This is quite bad for privacy. That site is owned by '
              'coinbase.com Also your bot will run faster and more efficently, '
@@ -198,6 +212,7 @@ def main():
     #put 10 coins into the first receive address
     #to allow that bot to start.
     wallets = make_wallets(
+            block_instance,
             2, wallet_structures=[[1, 0, 0, 0, 0], [1, 0, 0, 0, 0]],
             mean_amt=10)
 
@@ -216,25 +231,16 @@ def main():
     # seed = sys.argv[1]
     # -----------------------------------------------------
 
-    wallet = jm.Wallet(seed, max_mix_depth=mix_levels)
+    wallet = jm.Wallet(block_instance, seed, max_mix_depth=mix_levels)
 
-    jm.jm_single().bc_interface.sync_wallet(wallet)
-
-    # nickname is set way above
-    # nickname
+    block_instance.get_bci().sync_wallet(wallet)
 
     log.debug('starting yield generator')
 
-    # irc = jm.IRCMessageChannel(
-    #         jm.jm_single().nickname,
-    #         realname='btcint=' + jm.jm_single().config.get(
-    #                 "BLOCKCHAIN", "blockchain_source"),
-    #         password=nickserv_password)
-
-    nickname = jm.jm_single().nickname
+    nickname = block_instance.nickname
     log.info("starting irc thingy with nick: {}".format(nickname))
 
-    realname = realname='btcint=' + jm.jm_single().config.get(
+    realname = realname='btcint=' + jm.config.get(
             "BLOCKCHAIN", "blockchain_source")
     irc = build_irc_communicator(
             nickname,
@@ -243,7 +249,7 @@ def main():
 
     log.info('irc thingy launched')
 
-    maker = YieldGenerator(irc, wallet)
+    maker = YieldGenerator(block_instance, irc, wallet, block_instance)
 
     try:
         log.debug('Reactor Run - nick: {}'.format(nickname))
@@ -260,3 +266,4 @@ def main():
 if __name__ == "__main__":
     main()
     log.info('yield-gen-bas-test done')
+    sys.exit(0)

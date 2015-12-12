@@ -8,12 +8,11 @@ import sqlite3
 import sys
 from decimal import InvalidOperation, Decimal
 
-from twisted.internet import reactor
-
 import bitcoin as btc
-from joinmarket.configure import jm_single, get_p2pk_vbyte
+from joinmarket.configure import get_p2pk_vbyte, maker_timeout_sec
 from joinmarket.enc_wrapper import init_keypair, as_init_encryption, init_pubkey
 from joinmarket.support import get_log, calc_cj_fee
+from twisted.internet import reactor
 
 log = get_log()
 
@@ -22,17 +21,13 @@ class CoinJoinTX(object):
     # soon the taker argument will be removed and just be replaced by wallet
     # or some other interface
     def __init__(self,
-                 msgchan,
-                 wallet,
-                 db,
+                 taker_sibling,
                  cj_amount,
                  orders,
                  input_utxos,
                  my_cj_addr,
                  my_change_addr,
                  total_txfee,
-                 finishcallback,
-                 choose_orders_recover,
                  auth_addr=None):
         """
         if my_change is None then there wont be a change address
@@ -42,18 +37,23 @@ class CoinJoinTX(object):
         log.debug('starting cj to {} with change '
                   'at {}'.format(my_change_addr, my_change_addr))
 
-        # parameters
-        self.msgchan = msgchan
-        self.wallet = wallet
-        self.db = db
+        self.taker_sibling = taker_sibling
+        self.taker = self.taker_sibling.taker
+
+        # this was the only action by start_cj its kinda different
+        self.taker.cjtx = self
+
+        # todo: lazy lazy.  remove this
+        self.msgchan = self.taker.msgchan
+        self.db = self.taker.db
+        self.wallet = self.taker.wallet
+
         self.cj_amount = cj_amount
         self.active_orders = dict(orders)
         self.input_utxos = input_utxos
-        self.finishcallback = finishcallback
         self.total_txfee = total_txfee
         self.my_cj_addr = my_cj_addr
         self.my_change_addr = my_change_addr
-        self.choose_orders_recover = choose_orders_recover
         self.auth_addr = auth_addr
 
         self.all_responded = False
@@ -111,7 +111,10 @@ class CoinJoinTX(object):
         order = self.db.execute('SELECT ordertype, txfee, cjfee FROM '
                                 'orderbook WHERE oid=? AND counterparty=?',
                                 (self.active_orders[nick], nick)).fetchone()
-        utxo_data = jm_single().bc_interface.query_utxo_set(self.utxos[nick])
+
+        # todo: this is getting a bit verbose
+        bci = self.taker.block_instance.get_bci()
+        utxo_data = bci.query_utxo_set(self.utxos[nick])
         if None in utxo_data:
             log.debug(('ERROR outputs unconfirmed or already spent. '
                        'utxo_data={}').format(pprint.pformat(utxo_data)))
@@ -121,15 +124,19 @@ class CoinJoinTX(object):
 
         # ignore this message, eventually the timeout thread will recover
         total_input = sum([d['value'] for d in utxo_data])
+
         real_cjfee = calc_cj_fee(order['ordertype'], order['cjfee'],
                                  self.cj_amount)
+
         self.outputs.append({'address': change_addr,
                              'value': total_input - self.cj_amount - order[
                                  'txfee'] + real_cjfee})
+
         fmt = ('fee breakdown for {} totalin={:d} '
                'cjamount={:d} txfee={:d} realcjfee={:d}').format
         log.debug(fmt(nick, total_input, self.cj_amount,
                       order['txfee'], real_cjfee))
+
         cj_addr = btc.pubtoaddr(cj_pub, get_p2pk_vbyte())
         self.outputs.append({'address': cj_addr, 'value': self.cj_amount})
         self.cjfee_total += real_cjfee
@@ -155,6 +162,7 @@ class CoinJoinTX(object):
                'changevalue={:d}').format
         log.debug(fmt(my_total_in, my_txfee, self.maker_txfee_contributions,
                       self.cjfee_total, my_change_value))
+
         if self.my_change_addr is None:
             if my_change_value != 0 and abs(my_change_value) != 1:
                 # seems you wont always get exactly zero because of integer
@@ -205,7 +213,7 @@ class CoinJoinTX(object):
                 continue
             utxo[ctr] = [index, utxo_for_checking]
             ctr += 1
-        utxo_data = jm_single().bc_interface.query_utxo_set(
+        utxo_data = self.taker.block_instance.bc_interface.query_utxo_set(
                 [x[1] for x in utxo.values()])
 
         # insert signatures
@@ -246,8 +254,7 @@ class CoinJoinTX(object):
             # remove placeholders
             if ins['script'] == 'deadbeef':
                 ins['script'] = ''
-        if self.finishcallback is not None:
-            self.finishcallback(self)
+            self.taker_sibling.finishcallback(self)
 
     def coinjoin_address(self):
         if self.my_cj_addr:
@@ -280,7 +287,7 @@ class CoinJoinTX(object):
         # TODO send to a random maker or push myself
         # TODO need to check whether the other party sent it
         # self.msgchan.push_tx(self.active_orders.keys()[0], txhex)
-        self.txid = jm_single().bc_interface.pushtx(tx)
+        self.txid = self.taker.block_instance.get_bci().pushtx(tx)
         if self.txid is None:
             log.debug('unable to pushtx')
 
@@ -290,39 +297,46 @@ class CoinJoinTX(object):
 
     def recover_from_nonrespondants(self):
         log.debug('nonresponding makers = ' + str(self.nonrespondants))
+
         # if there is no choose_orders_recover then end and call finishcallback
         # so the caller can handle it in their own way, notable for sweeping
         # where simply replacing the makers wont work
-        if not self.choose_orders_recover:
 
-            if self.finishcallback is not None:
-                self.finishcallback(self)
+        # this is new
+
+        if not self.taker_sibling.does_recover():
+            self.taker_sibling.finishcallback(self)
             return
 
         if self.latest_tx is None:
             # nonresponding to !fill, recover by finding another maker
             log.debug('nonresponse to !fill')
+
             for nr in self.nonrespondants:
                 del self.active_orders[nr]
-            new_orders, new_makers_fee = self.choose_orders_recover(
-                    self.cj_amount, len(self.nonrespondants),
-                    self.nonrespondants,
-                    self.active_orders.keys())
+
+            new_orders, new_makers_fee = \
+                self.taker_sibling.choose_orders_recover(
+                        self.cj_amount, len(self.nonrespondants),
+                        self.nonrespondants,
+                        self.active_orders.keys())
+
             for nick, order in new_orders.iteritems():
                 self.active_orders[nick] = order
+
             self.nonrespondants = list(new_orders.keys())
+
             log.debug(('new active_orders = {} \nnew nonrespondants = '
                        '{}').format(
                     pprint.pformat(self.active_orders),
                     pprint.pformat(self.nonrespondants)))
 
-            self.msgchan.fill_orders(new_orders, self.cj_amount,
-                                     self.kp.hex_pk())
+            self.msgchan.fill_orders(
+                    new_orders, self.cj_amount, self.kp.hex_pk())
         else:
             log.debug('nonresponse to !sig')
             # nonresponding to !sig, have to restart tx from the beginning
-            if self.finishcallback is not None:
-                self.finishcallback(self)
+            self.taker_sibling.finishcallback(self)
                 # finishcallback will check if self.all_responded is True and will know it came from here
 
     class Watchdog(object):
@@ -350,63 +364,19 @@ class CoinJoinTX(object):
             self.cjtx.all_responded = False
 
             self.watchdog = reactor.callLater(
-                    jm_single().maker_timeout_sec, self.times_up)
-
-            # def run(self):
-        #     log.debug(('cjtx timeout thread for coinjoin of amount {} to '
-        #                'addr {}').format(self.cjtx.cj_amount,
-        #                                  self.cjtx.my_cj_addr))
-        #
-        #     # how the threading to check for nonresponding makers works like
-        #     # this there is a Condition object in a loop, call cond.wait(
-        #     # timeout) after it returns, check a boolean to see if if the
-        #     # messages have arrived
-        #
-        #     while not self.cjtx.end_timeout_thread:
-        #         log.debug('CJTX waiting for  replies.. timeout={:d}'.format(
-        #                 jm_single().maker_timeout_sec))
-        #         with self.cjtx.timeout_lock:
-        #             self.cjtx.timeout_lock.wait(jm_single().maker_timeout_sec)
-        #         if self.cjtx.all_responded:
-        #             log.debug(('timeout thread woken by notify(), '
-        #                        'makers responded in time'))
-        #             self.cjtx.all_responded = False
-        #         else:
-        #             log.debug('timeout thread woken by timeout, '
-        #                       'makers didnt respond')
-        #             with self.cjtx.timeout_thread_lock:
-        #                 self.cjtx.recover_from_nonrespondants()
-        #
-        #     # Basically, this is a watchdog timer
-
+                    maker_timeout_sec, self.times_up)
 
 class CoinJoinerPeer(object):
-    def __init__(self, msgchan):
+    def __init__(self, block_instance, msgchan):
+        self.block_instance = block_instance
         self.msgchan = msgchan
         self.msgchan.set_coinjoiner_peer(self)
 
     def get_crypto_box_from_nick(self, nick):
         raise Exception()
 
-    @staticmethod
-    def on_set_topic(newtopic):
-        chunks = newtopic.split('|')
-        for msg in chunks[1:]:
-            try:
-                msg = msg.strip()
-                params = msg.split(' ')
-                min_version = int(params[0])
-                max_version = int(params[1])
-                alert = msg[msg.index(params[1]) + len(params[1]):].strip()
-            except (ValueError, IndexError):
-                continue
-            if min_version < jm_single().JM_VERSION < max_version:
-                log.error('=' * 60)
-                log.error('JOINMARKET ALERT')
-                log.error(alert)
-                log.error('=' * 60)
-                # todo: is this right?
-                jm_single().joinmarket_alert = alert
+    def on_set_topic(self, *args, **kwargs):
+        pass
 
     def on_welcome(self, *args, **kwargs):
         pass
@@ -458,8 +428,8 @@ class CoinJoinerPeer(object):
 
 
 class OrderbookWatch(CoinJoinerPeer):
-    def __init__(self, msgchan):
-        super(OrderbookWatch, self).__init__(msgchan)
+    def __init__(self, block_instance, msgchan):
+        super(OrderbookWatch, self).__init__(block_instance, msgchan)
 
         con = sqlite3.connect(":memory:", check_same_thread=False)
         con.row_factory = sqlite3.Row
@@ -525,11 +495,12 @@ class OrderbookWatch(CoinJoinerPeer):
 
 # assume this only has one open cj tx at a time
 class Taker(OrderbookWatch):
-    def __init__(self, msgchan):
-        OrderbookWatch.__init__(self, msgchan)
+    def __init__(self, block_instance, msgchan):
+        OrderbookWatch.__init__(self, block_instance, msgchan)
         msgchan.cjpeer = self
         self.cjtx = None
         self.maker_pks = {}
+        self.sibling = None
         # TODO have a list of maker's nick we're coinjoining with, so
         # that some other guy doesnt send you confusing stuff
 
@@ -541,26 +512,6 @@ class Taker(OrderbookWatch):
             log.debug('something wrong, no crypto object, nick=' + nick +
                       ', message will be dropped')
             return None
-
-    def start_cj(self,
-                 wallet,
-                 cj_amount,
-                 orders,
-                 input_utxos,
-                 my_cj_addr,
-                 my_change_addr,
-                 total_txfee,
-                 finishcallback=None,
-                 choose_orders_recover=None,
-                 auth_addr=None):
-        self.cjtx = CoinJoinTX(
-                self.msgchan, wallet, self.db, cj_amount, orders,
-                input_utxos, my_cj_addr, my_change_addr,
-                total_txfee, finishcallback,
-                choose_orders_recover, auth_addr)
-
-    def on_error(self):
-        pass  # TODO implement
 
     def on_pubkey(self, nick, maker_pubkey):
         self.cjtx.start_encryption(nick, maker_pubkey)
@@ -575,32 +526,6 @@ class Taker(OrderbookWatch):
 
     def on_sig(self, nick, sig):
         self.cjtx.add_signature(nick, sig)
-
-
-# this stuff copied and slightly modified from pybitcointools
-def donation_address(cjtx):
-    reusable_donation_pubkey = ('02be838257fbfddabaea03afbb9f16e852'
-                                '9dfe2de921260a5c46036d97b5eacf2a')
-
-    donation_utxo_data = cjtx.input_utxos.iteritems().next()
-    global donation_utxo
-    donation_utxo = donation_utxo_data[0]
-    privkey = cjtx.wallet.get_key_from_addr(donation_utxo_data[1]['address'])
-    # tx without our inputs and outputs
-    tx = btc.mktx(cjtx.utxo_tx, cjtx.outputs)
-    # address = privtoaddr(privkey)
-    # signing_tx = signature_form(tx, 0, mk_pubkey_script(address), SIGHASH_ALL)
-    msghash = btc.bin_txhash(tx, btc.SIGHASH_ALL)
-    # generate unpredictable k
-    global sign_k
-    sign_k = btc.deterministic_generate_k(msghash, privkey)
-    c = btc.sha256(btc.multiply(reusable_donation_pubkey, sign_k))
-    sender_pubkey = btc.add_pubkeys(
-            reusable_donation_pubkey, btc.multiply(
-                    btc.G, c))
-    sender_address = btc.pubtoaddr(sender_pubkey, get_p2pk_vbyte())
-    log.debug('sending coins to ' + sender_address)
-    return sender_address
 
 
 def sign_donation_tx(tx, i, priv):
@@ -626,3 +551,48 @@ def sign_donation_tx(tx, i, priv):
     txobj = btc.deserialize(tx)
     txobj["ins"][i]["script"] = btc.serialize_script([sig, pub])
     return btc.serialize(txobj)
+
+# this stuff copied and slightly modified from pybitcointools
+def donation_address(cjtx):
+    reusable_donation_pubkey = ('02be838257fbfddabaea03afbb9f16e852'
+                                '9dfe2de921260a5c46036d97b5eacf2a')
+
+    donation_utxo_data = cjtx.input_utxos.iteritems().next()
+    global donation_utxo
+    donation_utxo = donation_utxo_data[0]
+    privkey = cjtx.wallet.get_key_from_addr(donation_utxo_data[1]['address'])
+    # tx without our inputs and outputs
+    tx = btc.mktx(cjtx.utxo_tx, cjtx.outputs)
+    # address = privtoaddr(privkey)
+    # signing_tx = signature_form(tx, 0, mk_pubkey_script(address), SIGHASH_ALL)
+    msghash = btc.bin_txhash(tx, btc.SIGHASH_ALL)
+    # generate unpredictable k
+    global sign_k
+    sign_k = btc.deterministic_generate_k(msghash, privkey)
+    c = btc.sha256(btc.multiply(reusable_donation_pubkey, sign_k))
+    sender_pubkey = btc.add_pubkeys(
+            reusable_donation_pubkey, btc.multiply(
+                    btc.G, c))
+    sender_address = btc.pubtoaddr(sender_pubkey,
+                                   get_p2pk_vbyte())
+    log.debug('sending coins to ' + sender_address)
+    return sender_address
+
+class TakerSibling(object):
+    def __init__(self, taker):
+        self.taker = taker
+
+    def choose_orders_recover(
+            self, cj_amount, makercount, nonrespondants=None,
+            active_nicks=None):
+        pass
+
+    def finishcallback(self, coinjointx):
+        pass
+
+    def does_recover(self):
+        """
+        not enitirely sure.  the coinjointx code has an option...
+        :return:
+        """
+        return True

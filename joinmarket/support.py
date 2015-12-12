@@ -26,6 +26,9 @@ observer.start()
 
 # log.startLogging(sys.stdout)
 
+# todo: I'm not sure I understand exactly why this is or isn't needed
+logging.getLogger('twisted').addHandler(logging.NullHandler())
+
 logFormatter = logging.Formatter(
         "%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
 log = logging.getLogger('joinmarket')
@@ -44,12 +47,15 @@ def get_log():
     """
     return log
 
-def system_shutdown(reason):
-    log.error('Shutdown: {}'.format(reason))
+def system_shutdown(errno, reason='none given'):
 
-    traceback.print_stack()
+    if errno:
+        log.error('Unhappy Shutdown: {:d} {}'.format(errno, reason))
+        traceback.print_stack()
+    else:
+        log.info('Normal Shutdown')
+
     reactor.stop()
-    sys.exit(0)
 
 def sleepGenerator(seconds):
     """

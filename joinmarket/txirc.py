@@ -4,7 +4,7 @@
 import base64
 import random
 
-from joinmarket.configure import jm_single, get_config_irc_channel
+from joinmarket.configure import get_config_irc_channel, config
 from joinmarket.enc_wrapper import encrypt_encode, decode_decrypt
 from joinmarket.jsonrpc import JsonRpcError
 from joinmarket.support import get_log, chunks, sleepGenerator, system_shutdown
@@ -218,9 +218,11 @@ class CommSuper(object):
 
     def __init__(self):
         self.coinjoinerpeer = None
+        self.block_instance = None
 
     def set_coinjoiner_peer(self, cj):
         self.coinjoinerpeer = cj
+        self.block_instance = cj.block_instance  # shortcut
 
     def run(self):
         pass
@@ -276,6 +278,8 @@ class IRC_Market(CommSuper):
             password = None
         self.given_password = password
 
+        # todo: things like errno need to be documented
+        self.errno=0
         self.channel = channel
         # self.channel = get_config_irc_channel()
 
@@ -314,7 +318,8 @@ class IRC_Market(CommSuper):
         reactor.callWhenRunning(reactor_running)
         reactor.run()
 
-    def shutdown(self):
+    def shutdown(self, errno=-1):
+        self.errno = errno
         log.debug('SHUTDOWN Called: Death Imminent')
         # todo: disconnection policy
         # disconnect will cause connectionLost which stops the reactor
@@ -358,7 +363,7 @@ class IRC_Market(CommSuper):
             log.debug('IRC connection lost: {}'.format(reason))
             self.coinjoinerpeer.on_disconnect(reason)
             # todo: I'm making policy to shut down
-            system_shutdown(reason)
+            system_shutdown(self.errno, reason)
         except Exception as e:
             log.exception(e)
             self.shutdown()
@@ -490,7 +495,7 @@ class IRC_Market(CommSuper):
             self.send(nick, m + trailer)
 
     def check_for_orders(self, nick, _chunks):
-        if _chunks[0] in jm_single().ordername_list:
+        if _chunks[0] in self.block_instance.ordername_list:
             try:
                 counterparty = nick
                 oid = _chunks[1]
@@ -774,7 +779,6 @@ def build_irc_communicator(
         password=None):
 
     # from IRC_blah constructor
-    config = jm_single().config
     serverport = (config.get("MESSAGING", "host"),
                        int(config.get("MESSAGING", "port")))
     socks5_host = config.get("MESSAGING", "socks5_host")

@@ -4,16 +4,11 @@ from __future__ import absolute_import, print_function
 import sys
 from optparse import OptionParser
 
-from joinmarket import Taker, load_program_config
-from joinmarket import Wallet, BitcoinCoreWallet
-from joinmarket import get_log, choose_sweep_orders, choose_orders, \
-    pick_order, cheapest_order_choose, weighted_order_choose, debug_dump_object
-from joinmarket import random_nick
-from joinmarket import validate_address, jm_single
-from joinmarket.txirc import build_irc_communicator
 from twisted.internet import reactor
 
-log = get_log()
+import joinmarket as jm
+
+log = jm.get_log()
 
 
 def check_high_fee(total_fee_pc):
@@ -30,11 +25,14 @@ def check_high_fee(total_fee_pc):
 
 # thread which does the buy-side algorithm
 # chooses which coinjoins to initiate and when
-class PaymentThread(object):
+class PaymentThread(jm.TakerSibling):
     def __init__(self, taker):
+        super(PaymentThread, self).__init__(taker)
         self.daemon = True
-        self.taker = taker
         self.ignored_makers = []
+
+    def start(self):
+        reactor.callLater(self.taker.waittime, self.create_tx)
 
     def create_tx(self):
         log.debug('sendpayment: create_tx called')
@@ -45,22 +43,23 @@ class PaymentThread(object):
         if counterparty_count < self.taker.makercount:
             log.info('{:d} of {:d} not enough counterparties to fill order, '
                      'ending'.format(counterparty_count, self.taker.makercount))
-            self.taker.msgchan.shutdown()
+            self.taker.msgchan.shutdown(0)
             return
 
         utxos = None
         orders = None
         cjamount = 0
         change_addr = None
-        choose_orders_recover = None
         if self.taker.amount == 0:
             utxos = self.taker.wallet.get_utxos_by_mixdepth()[
                 self.taker.mixdepth]
             total_value = sum([va['value'] for va in utxos.values()])
-            orders, cjamount = choose_sweep_orders(
+
+            orders, cjamount = jm.choose_sweep_orders(
                     self.taker.db, total_value, self.taker.txfee,
                     self.taker.makercount, self.taker.chooseOrdersFunc,
                     self.ignored_makers)
+
             if not self.taker.answeryes:
                 total_cj_fee = total_value - cjamount - self.taker.txfee
                 log.debug('total cj fee = ' + str(total_cj_fee))
@@ -69,7 +68,7 @@ class PaymentThread(object):
                     100.0 * total_fee_pc))) + '%')
                 check_high_fee(total_fee_pc)
                 if raw_input('send with these orders? (y/n):')[0] != 'y':
-                    self.taker.msgchan.shutdown()
+                    self.taker.msgchan.shutdown(0)
                     return
         else:
             orders, total_cj_fee = self.sendpayment_choose_orders(
@@ -84,65 +83,74 @@ class PaymentThread(object):
                                                    total_amount)
             cjamount = self.taker.amount
             change_addr = self.taker.wallet.get_change_addr(self.taker.mixdepth)
-            choose_orders_recover = self.sendpayment_choose_orders
 
-        self.taker.start_cj(self.taker.wallet, cjamount, orders, utxos,
-                            self.taker.destaddr, change_addr, self.taker.txfee,
-                            self.finishcallback, choose_orders_recover)
+        # self.taker.start_cj(self.taker.wallet, cjamount, orders, utxos,
+        #                     self.taker.destaddr, change_addr, self.taker.txfee,
+        #                     self.finishcallback, choose_orders_recover)
+        # instead, do...
+
+        jm.CoinJoinTX(self, cjamount, orders, utxos, self.taker.destaddr,
+                      change_addr, self.taker.txfee)
+
 
     def finishcallback(self, coinjointx):
         log.debug('sendpayment->finishcallback: {}'.format(coinjointx))
         if coinjointx.all_responded:
             coinjointx.self_sign_and_push()
             log.debug('created fully signed tx, ending')
-            self.taker.msgchan.shutdown()
+            # self.taker.msgchan.shutdown(0)
             return
         self.ignored_makers += coinjointx.nonrespondants
         log.debug('recreating the tx, ignored_makers='.format(
                 self.ignored_makers))
         reactor.callLater(2.0, self.create_tx)
 
-    def sendpayment_choose_orders(self,
-                                  cj_amount,
-                                  makercount,
-                                  nonrespondants=None,
-                                  active_nicks=None):
+    def sendpayment_choose_orders(
+            self, cj_amount, makercount,
+            nonrespondants=None, active_nicks=None):
+
         if nonrespondants is None:
             nonrespondants = []
         if active_nicks is None:
             active_nicks = []
+
         self.ignored_makers += nonrespondants
-        orders, total_cj_fee = choose_orders(
+
+        orders, total_cj_fee = jm.choose_orders(
                 self.taker.db, cj_amount, makercount,
                 self.taker.chooseOrdersFunc,
                 self.ignored_makers + active_nicks)
+
         if not orders:
             return None, 0
+
         log.info('chosen orders to fill {} totalcjfee={}'.format(
             orders, total_cj_fee))
+
         if not self.taker.answeryes:
             if len(self.ignored_makers) > 0:
                 noun = 'total'
             else:
                 noun = 'additional'
+
             total_fee_pc = 1.0 * total_cj_fee / cj_amount
             log.debug(noun + ' coinjoin fee = ' + str(float('%.3g' % (
                 100.0 * total_fee_pc))) + '%')
             check_high_fee(total_fee_pc)
+
             if raw_input('send with these orders? (y/n):')[0] != 'y':
                 log.debug('ending')
-                self.taker.msgchan.shutdown()
+                self.taker.msgchan.shutdown(0)
                 return None, -1
+
         return orders, total_cj_fee
 
-    def start(self):
-        reactor.callLater(self.taker.waittime, self.create_tx)
 
-
-class SendPayment(Taker):
-    def __init__(self, msgchan, wallet, destaddr, amount, makercount, txfee,
+class SendPayment(jm.Taker):
+    def __init__(self, binst, msgchan, wallet, destaddr, amount,
+                 makercount, txfee,
                  waittime, mixdepth, answeryes, chooseOrdersFunc):
-        Taker.__init__(self, msgchan)
+        super(SendPayment, self).__init__(binst, msgchan)
         self.wallet = wallet
         self.destaddr = destaddr
         self.amount = amount
@@ -152,11 +160,12 @@ class SendPayment(Taker):
         self.mixdepth = mixdepth
         self.answeryes = answeryes
         self.chooseOrdersFunc = chooseOrdersFunc
+        self.taker_sibling = PaymentThread(self)
 
     def on_welcome(self):
+        jm.Taker.on_welcome(self)
         log.debug('on_welcome: {}'.format(__name__))
-        Taker.on_welcome(self)
-        PaymentThread(self).start()
+        self.taker_sibling.start()
 
 
 def main():
@@ -238,44 +247,45 @@ def main():
     amount = int(args[1])
     destaddr = args[2]
 
-    load_program_config()
-    addr_valid, errormsg = validate_address(destaddr)
+    # load_program_config()
+
+    block_inst = jm.BlockInstance()
+
+    addr_valid, errormsg = jm.validate_address(destaddr)
     if not addr_valid:
         log.info('ERROR: Address invalid. ' + errormsg)
         return
 
     chooseOrdersFunc = None
     if options.pickorders and amount != 0:  # cant use for sweeping
-        chooseOrdersFunc = pick_order
+        chooseOrdersFunc = jm.pick_order
     elif options.choosecheapest:
-        chooseOrdersFunc = cheapest_order_choose
+        chooseOrdersFunc = jm.cheapest_order_choose
     else:  # choose randomly (weighted)
-        chooseOrdersFunc = weighted_order_choose
+        chooseOrdersFunc = jm.weighted_order_choose
 
-    jm_single().nickname = random_nick()
+    block_inst.nickname = jm.random_nick()
 
     log.debug('starting sendpayment')
 
     if not options.userpcwallet:
-        wallet = Wallet(wallet_name, options.mixdepth + 1)
+        wallet = jm.Wallet(block_inst, wallet_name, options.mixdepth + 1)
     else:
-        wallet = BitcoinCoreWallet(fromaccount=wallet_name)
-    jm_single().bc_interface.sync_wallet(wallet)
+        wallet = jm.BitcoinCoreWallet(block_inst, fromaccount=wallet_name)
+    block_inst.get_bci().sync_wallet(wallet)
 
-    # irc = IRCMessageChannel(jm_single().nickname)
+    irc = jm.build_irc_communicator(block_inst.nickname)
 
-    irc = build_irc_communicator(jm_single().nickname)
-
-    taker = SendPayment(irc, wallet, destaddr, amount, options.makercount,
-                        options.txfee, options.waittime, options.mixdepth,
-                        options.answeryes, chooseOrdersFunc)
+    taker = SendPayment(block_inst, irc, wallet, destaddr, amount,
+                        options.makercount, options.txfee, options.waittime,
+                        options.mixdepth, options.answeryes, chooseOrdersFunc)
     try:
         log.debug('starting irc')
         irc.run()
     except:
         log.debug('CRASHING, DUMPING EVERYTHING')
-        debug_dump_object(wallet, ['addr_cache', 'keys', 'wallet_name', 'seed'])
-        debug_dump_object(taker)
+        jm.debug_dump_object(wallet, ['addr_cache', 'keys', 'wallet_name', 'seed'])
+        jm.debug_dump_object(taker)
         import traceback
         log.debug(traceback.format_exc())
 
@@ -283,3 +293,4 @@ def main():
 if __name__ == "__main__":
     main()
     log.info('sendpayment: done')
+    sys.exit(0)

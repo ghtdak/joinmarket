@@ -3,16 +3,12 @@ from __future__ import absolute_import
 
 '''Some helper functions for testing'''
 
-import sys
 import os
 import binascii
 import random
 import subprocess
 
-data_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-sys.path.insert(0, os.path.join(data_dir))
-
-from joinmarket import jm_single, Wallet, get_log
+from joinmarket import Wallet, get_log
 from joinmarket.support import chunks
 
 log = get_log()
@@ -50,28 +46,31 @@ def local_command(command, bg=False, redirect=''):
         return subprocess.check_output(command)
 
 
-def make_wallets(n, wallet_structures=None, mean_amt=1, sdev_amt=0):
-    """n: number of wallets to be created
-       wallet_structure: array of n arrays , each subarray
-       specifying the number of addresses to be populated with coins
-       at each depth (for now, this will only populate coins into 'receive' addresses)
-       mean_amt: the number of coins (in btc units) in each address as above
-       sdev_amt: if randomness in amouts is desired, specify here.
-       Returns: a dict of dicts of form {0:{'seed':seed,'wallet':Wallet object},1:..,}"""
+def make_wallets(binst, n, wallet_structures=None, mean_amt=1, sdev_amt=0):
+    """
+    binst: BlockInstance
+    n: number of wallets to be created
+   wallet_structure: array of n arrays , each subarray
+   specifying the number of addresses to be populated with coins
+   at each depth (for now, this will only populate coins into 'receive' addresses)
+   mean_amt: the number of coins (in btc units) in each address as above
+   sdev_amt: if randomness in amouts is desired, specify here.
+   Returns: a dict of dicts of form {0:{'seed':seed,'wallet':Wallet object},1:..,}
+   """
     if len(wallet_structures) != n:
         raise Exception("Number of wallets doesn't match wallet structures")
     seeds = chunks(binascii.hexlify(os.urandom(15 * n)), n)
     wallets = {}
     for i in range(n):
         wallets[i] = {'seed': seeds[i],
-                      'wallet': Wallet(seeds[i],
-                                              max_mix_depth=5)}
+                      'wallet': Wallet(binst, seeds[i], max_mix_depth=5)}
+
         for j in range(5):
             for k in range(wallet_structures[i][j]):
                 deviation = sdev_amt * random.random()
                 amt = mean_amt - sdev_amt / 2.0 + deviation
                 if amt < 0: amt = 0.001
-                jm_single().bc_interface.grab_coins(
+                binst.get_bci().grab_coins(
                     wallets[i]['wallet'].get_receive_addr(j), amt)
     return wallets
 

@@ -15,13 +15,15 @@ import subprocess
 from twisted.web import server as twisted_server
 from twisted.web import resource as twisted_resource
 from twisted.internet import defer, task, reactor
+from twisted.internet.protocol import DatagramProtocol
 import treq
 
 import bitcoin as btc
 
+
 from joinmarket.jsonrpc import JsonRpcConnectionError
-from joinmarket.configure import get_p2pk_vbyte, jm_single
 from joinmarket.support import get_log, chunks, system_shutdown
+from joinmarket.configure import config, get_p2pk_vbyte
 
 log = get_log()
 
@@ -69,8 +71,8 @@ def is_index_ahead_of_cache(wallet, mix_depth, forchange):
 class BlockchainInterface(object):
     __metaclass__ = abc.ABCMeta
 
-    def __init__(self):
-        pass
+    def __init__(self, block_instance):
+        self.block_instance = block_instance
 
     def sync_wallet(self, wallet):
         self.sync_addresses(wallet)
@@ -111,8 +113,8 @@ class BlockchainInterface(object):
 class BlockrInterface(BlockchainInterface):
     BLOCKR_MAX_ADDR_REQ_COUNT = 20
 
-    def __init__(self, testnet=False):
-        super(BlockrInterface, self).__init__()
+    def __init__(self, block_instance, testnet=False):
+        super(BlockrInterface, self).__init__(block_instance)
 
         # see bci.py in bitcoin module
         self.network = 'testnet' if testnet else 'btc'
@@ -216,7 +218,8 @@ class BlockrInterface(BlockchainInterface):
             tx_output_set = set([(sv['script'], sv['value'])
                                  for sv in txd['outs']])
             output_addresses = [
-                btc.script_to_address(scrval[0], get_p2pk_vbyte())
+                btc.script_to_address(scrval[0],
+                                      self.block_instance.get_p2pk_vbyte())
                 for scrval in tx_output_set]
 
             log.debug('txoutset=' + pprint.pformat(tx_output_set))
@@ -401,7 +404,7 @@ class BlockrInterface(BlockchainInterface):
 
 
 # noinspection PyMissingConstructor
-class NotifyHttpServer(twisted_resource.Resource):
+class NotifyHttpServer(twisted_resource.Resource, DatagramProtocol):
     isLeaf = True
     # def __init__(self, request, client_address, base_server):
     #     self.btcinterface = base_server.btcinterface
@@ -411,11 +414,28 @@ class NotifyHttpServer(twisted_resource.Resource):
         self.btcinterface = btcinterface
         self.using_port = None
 
+    def startProtocol(self):
+        """
+        Called after protocol has started listening.
+        """
+        # Set the TTL>1 so multicast will cross router hops:
+        # self.transport.setTTL(5)
+        # Join a specific multicast group:
+        self.transport.joinGroup("228.0.0.5")
+
+    def datagramReceived(self, datagram, address):
+        log.debug('multicast receive: {}'.format(datagram))
+        self.process(datagram)
+
     def render_GET(self, request):
+        log.debug('url received: {}'.format(request.uri))
+        # self.process(request.uri)
+        self.transport.write(request.uri, ('228.0.0.5', 8005))
+        return ''
+
+    def process(self, path):
 
         pages = ('/walletnotify?', '/alertnotify?')
-
-        path = request.uri
 
         if path.startswith('/walletnotify?'):
             txid = path[len(pages[0]):]
@@ -461,20 +481,21 @@ class NotifyHttpServer(twisted_resource.Resource):
                     log.debug('ran confirmfun')
 
         elif path.startswith('/alertnotify?'):
-            jm_single().core_alert = urllib.unquote(path[len(pages[1]):])
-            log.debug('Got an alert!\nMessage=' + jm_single().core_alert)
+            # todo: I got rid of the core_alert thing... rearchitect!!
+            core_alert = urllib.unquote(path[len(pages[1]):])
+            log.debug('Got an alert!\nMessage=' + core_alert)
 
-        url = 'http://localhost:{:d}{}'.format(self.using_port + 1, path)
 
-        log.debug('NotifyHttpServer notify: {}'.format(url))
 
-        treq.get(url)
+        # url = 'http://localhost:{:d}{}'.format(self.using_port + 1, path)
+        #
+        # log.debug('NotifyHttpServer notify: {}'.format(url))
+        #
+        # treq.get(url)
 
         # todo: spawning curl.  we can do this differently
         # os.system('curl -sI --connect-timeout 1 http://localhost:' + str(
         #         self.base_server.server_address[1] + 1) + path)
-
-        return ''
 
 
 # class BitcoinCoreNotifyThread(threading.Thread):
@@ -509,8 +530,8 @@ class NotifyHttpServer(twisted_resource.Resource):
 # TODO must add the tx addresses as watchonly if case we ever broadcast a tx
 # with addresses not belonging to us
 class BitcoinCoreInterface(BlockchainInterface):
-    def __init__(self, jsonRpc, network):
-        super(BitcoinCoreInterface, self).__init__()
+    def __init__(self, block_instance, jsonRpc, network):
+        super(BitcoinCoreInterface, self).__init__(block_instance)
         self.jsonRpc = jsonRpc
 
         blockchainInfo = self.jsonRpc.call("getblockchaininfo", [])
@@ -541,7 +562,7 @@ class BitcoinCoreInterface(BlockchainInterface):
                   ' addresses into account ' + wallet_name)
         for addr in addr_list:
             self.rpc('importaddress', [addr, wallet_name, False])
-        if jm_single().config.get(
+        if config.get(
                 "BLOCKCHAIN", "blockchain_source") != 'regtest':
             system_shutdown('restart Bitcoin Core with -rescan if you\'re '
                             'recovering an existing wallet from backup seed\n'
@@ -569,7 +590,8 @@ class BitcoinCoreInterface(BlockchainInterface):
 
         for privkey_list in wallet.imported_privkeys.values():
             for privkey in privkey_list:
-                imported_addr = btc.privtoaddr(privkey, get_p2pk_vbyte())
+                imported_addr = btc.privtoaddr(
+                        privkey, self.block_instance.get_p2pk_vbyte())
                 wallet_addr_list.append(imported_addr)
         imported_addr_list = self.rpc('getaddressesbyaccount', [wallet_name])
         if not set(wallet_addr_list).issubset(set(imported_addr_list)):
@@ -652,11 +674,10 @@ class BitcoinCoreInterface(BlockchainInterface):
                 continue
             if u['address'] not in wallet.addr_cache:
                 continue
-            wallet.unspent[u['txid'] + ':' + str(u[
-                                                     'vout'])] = {
+
+            wallet.unspent[u['txid'] + ':' + str(u['vout'])] = {
                 'address': u['address'],
-                'value':
-                    int(Decimal(str(u['amount'])) * Decimal('1e8'))}
+                'value': int(Decimal(str(u['amount'])) * Decimal('1e8'))}
         et = time.time()
         log.debug('bitcoind sync_unspent took ' + str((et - st)) + 'sec')
 
@@ -666,7 +687,6 @@ class BitcoinCoreInterface(BlockchainInterface):
         self.http_server = twisted_server.Site(srv)
         notify_host = 'localhost'
         notify_port = 62602  # defaults
-        config = jm_single().config
         if 'notify_host' in config.options("BLOCKCHAIN"):
             notify_host = config.get("BLOCKCHAIN", "notify_host").strip()
         if 'notify_port' in config.options("BLOCKCHAIN"):
@@ -693,7 +713,8 @@ class BitcoinCoreInterface(BlockchainInterface):
 
         one_addr_imported = False
         for outs in txd['outs']:
-            addr = btc.script_to_address(outs['script'], get_p2pk_vbyte())
+            addr = btc.script_to_address(
+                    outs['script'], get_p2pk_vbyte())
             if self.rpc('getaccount', [addr]) != '':
                 one_addr_imported = True
                 break
@@ -729,8 +750,9 @@ class BitcoinCoreInterface(BlockchainInterface):
 # to be instantiated after network is up
 # with > 100 blocks.
 class RegtestBitcoinCoreInterface(BitcoinCoreInterface):
-    def __init__(self, jsonRpc):
-        super(RegtestBitcoinCoreInterface, self).__init__(jsonRpc, 'regtest')
+    def __init__(self, block_instance, jsonRpc):
+        super(RegtestBitcoinCoreInterface, self).__init__(
+                block_instance, jsonRpc, 'regtest')
 
     def pushtx(self, txhex):
         ret = super(RegtestBitcoinCoreInterface, self).pushtx(txhex)

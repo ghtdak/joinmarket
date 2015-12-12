@@ -5,8 +5,10 @@ import base64
 import pprint
 
 import bitcoin as btc
-from joinmarket import IRCMessageChannel
-from joinmarket.configure import get_p2pk_vbyte, load_program_config, jm_single
+# from joinmarket import IRCMessageChannel
+# from joinmarket.configure import get_p2pk_vbyte, load_program_config, jm_single
+from joinmarket.txirc import build_irc_communicator
+from joinmarket.configure import DUST_THRESHOLD, get_p2pk_vbyte, BlockInstance
 from joinmarket.enc_wrapper import init_keypair, as_init_encryption, init_pubkey
 from joinmarket.support import get_log, calc_cj_fee, debug_dump_object, \
     system_shutdown
@@ -24,7 +26,7 @@ class CoinJoinOrder(object):
         self.maker = maker
         self.oid = oid
         self.cj_amount = amount
-        if self.cj_amount <= jm_single().DUST_THRESHOLD:
+        if self.cj_amount <= DUST_THRESHOLD:
             self.maker.msgchan.send_error(nick, 'amount below dust threshold')
         # the btc pubkey of the utxo that the taker plans to use as input
         self.taker_pk = taker_pk
@@ -56,7 +58,7 @@ class CoinJoinOrder(object):
         import pprint
         log.debug('maker utxos = ' + pprint.pformat(self.utxos))
         utxo_list = self.utxos.keys()
-        utxo_data = jm_single().bc_interface.query_utxo_set(utxo_list)
+        utxo_data = self.maker.block_instance.get_bci().query_utxo_set(utxo_list)
         if None in utxo_data:
             system_shutdown('wrongly using an already spent utxo. '
                             'utxo_data = '.format(pprint.pformat(utxo_data)))
@@ -114,7 +116,7 @@ class CoinJoinOrder(object):
                                              'script'].decode('hex')))
         # len(sigs) > 0 guarenteed since i did verify_unsigned_tx()
 
-        jm_single().bc_interface.add_tx_notify(
+        self.maker.block_instance.get_bci().add_tx_notify(
                 self.tx, self.unconfirm_callback,
                 self.confirm_callback, self.cj_addr)
         log.debug('sending sigs ' + str(sigs))
@@ -131,7 +133,7 @@ class CoinJoinOrder(object):
         self.maker.modify_orders(to_cancel, to_announce)
 
     def confirm_callback(self, txd, txid, confirmations):
-        jm_single().bc_interface.sync_unspent(self.maker.wallet)
+        self.maker.block_instance.get_bci().sync_unspent(self.maker.wallet)
         log.debug('tx in a block')
         log.debug('earned = ' + str(self.real_cjfee - self.txfee))
         to_cancel, to_announce = self.maker.on_tx_confirmed(self, confirmations,
@@ -142,7 +144,7 @@ class CoinJoinOrder(object):
         tx_utxo_set = set(ins['outpoint']['hash'] + ':' + str(
                 ins['outpoint']['index']) for ins in txd['ins'])
         # complete authentication: check the tx input uses the authing pubkey
-        input_utxo_data = jm_single().bc_interface.query_utxo_set(
+        input_utxo_data = self.maker.block_instance.get_bci().query_utxo_set(
                 list(tx_utxo_set))
 
         if None in input_utxo_data:
@@ -192,8 +194,8 @@ class CJMakerOrderError(StandardError):
 
 
 class Maker(CoinJoinerPeer):
-    def __init__(self, msgchan, wallet):
-        CoinJoinerPeer.__init__(self, msgchan)
+    def __init__(self, block_instance, msgchan, wallet):
+        CoinJoinerPeer.__init__(self, block_instance, msgchan)
         msgchan.cjpeer = self
 
         self.active_orders = {}
@@ -234,7 +236,7 @@ class Maker(CoinJoinerPeer):
 
     def on_push_tx(self, nick, txhex):
         log.debug('received txhex from ' + nick + ' to push\n' + txhex)
-        txid = jm_single().bc_interface.pushtx(txhex)
+        txid = self.block_instance.get_bci().pushtx(txhex)
         log.debug('pushed tx ' + str(txid))
         if txid is None:
             self.msgchan.send_error(nick, 'Unable to push tx')
@@ -370,12 +372,12 @@ def main():
         1
     ]  # btc.sha256('dont use brainwallets except for holding testnet coins')
 
-    load_program_config()
-    wallet = Wallet(seed, max_mix_depth=5)
-    jm_single().bc_interface.sync_wallet(wallet)
+    binst = BlockInstance().load()
+    wallet = Wallet(binst, seed, max_mix_depth=5)
+    binst.get_bci().sync_wallet(wallet)
 
-    irc = IRCMessageChannel(nickname)
-    maker = Maker(irc, wallet)
+    irc = build_irc_communicator(nickname)
+    maker = Maker(binst, irc, wallet)
     try:
         log.info('connecting to irc')
         irc.run()

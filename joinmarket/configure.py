@@ -25,59 +25,6 @@ fileHandler = logging.FileHandler(
 fileHandler.setFormatter(logFormatter)
 log.addHandler(fileHandler)
 
-class AttributeDict(object):
-    """
-    A class to convert a nested Dictionary into an object with key-values
-    accessibly using attribute notation (AttributeDict.attribute) instead of
-    key notation (Dict["key"]). This class recursively sets Dicts to objects,
-    allowing you to recurse down nested dicts (like: AttributeDict.attr.attr)
-    """
-
-    def __init__(self, **entries):
-        self.add_entries(**entries)
-
-    def add_entries(self, **entries):
-        for key, value in entries.items():
-            if type(value) is dict:
-                self.__dict__[key] = AttributeDict(**value)
-            else:
-                self.__dict__[key] = value
-
-    def __setattr__(self, name, value):
-        if name == 'nickname' and value:
-            fileHandler = logging.FileHandler(
-                    'logs/{}.log'.format(value))
-            fileHandler.setFormatter(logFormatter)
-            log.addHandler(fileHandler)
-            log.info('{} log starts'.format(value))
-
-        super(AttributeDict, self).__setattr__(name, value)
-
-
-    def __getitem__(self, key):
-        """
-        Provides dict-style access to attributes
-        """
-        return getattr(self, key)
-
-
-global_singleton = AttributeDict()
-global_singleton.JM_VERSION = 2
-global_singleton.nickname = None
-global_singleton.DUST_THRESHOLD = 2730
-global_singleton.bc_interface = None
-global_singleton.ordername_list = ['absorder', 'relorder']
-global_singleton.maker_timeout_sec = 30
-global_singleton.core_alert = None
-global_singleton.joinmarket_alert = None
-global_singleton.debug_silence = False
-global_singleton.config = SafeConfigParser()
-global_singleton.config_location = 'joinmarket.cfg'
-
-
-def jm_single():
-    return global_singleton
-
 # FIXME: Add rpc_* options here in the future!
 required_options = {'BLOCKCHAIN': ['blockchain_source', 'network'],
                     'MESSAGING': ['host', 'channel', 'port']}
@@ -118,19 +65,46 @@ maker_timeout_sec = 30
 merge_algorithm = default
 """
 
+config = SafeConfigParser()
+config_location = 'joinmarket.cfg'
+
+loadedFiles = config.read(
+        [config_location])
+# Create default config file if not found
+if len(loadedFiles) != 1:
+    config.readfp(io.BytesIO(defaultconfig))
+    with open(config_location, "w") as configfile:
+        configfile.write(defaultconfig)
+
+# check for sections
+for s in required_options:
+    if s not in config.sections():
+        raise Exception("Config file does not contain "
+                        "the required section: " + s)
+# then check for specific options
+for k, v in required_options.iteritems():
+    for o in v:
+        if o not in config.options(k):
+            raise Exception("Config file does not contain "
+                            "the required option: " + o)
+
+try:
+    maker_timeout_sec = config.getint(
+            'MESSAGING', 'maker_timeout_sec')
+except NoOptionError:
+    log.debug('maker_timeout_sec not found in .cfg file, '
+              'using default value')
 
 def get_config_irc_channel():
-    channel = '#' + global_singleton.config.get("MESSAGING", "channel")
+    channel = '#' + config.get("MESSAGING", "channel")
     # todo: this isn't right, at least from the testing I was doing
     # if get_network() == 'testnet':
     #     channel += '-test'
     return channel
 
-
 def get_network():
     """Returns network name"""
-    return global_singleton.config.get("BLOCKCHAIN", "network")
-
+    return config.get("BLOCKCHAIN", "network")
 
 def get_p2sh_vbyte():
     if get_network() == 'testnet':
@@ -138,13 +112,11 @@ def get_p2sh_vbyte():
     else:
         return 0x05
 
-
 def get_p2pk_vbyte():
     if get_network() == 'testnet':
         return 0x6f
     else:
         return 0x00
-
 
 def validate_address(addr):
     try:
@@ -156,69 +128,64 @@ def validate_address(addr):
     return True, 'address validated'
 
 
-def load_program_config():
-    loadedFiles = global_singleton.config.read(
-            [global_singleton.config_location])
-    # Create default config file if not found
-    if len(loadedFiles) != 1:
-        global_singleton.config.readfp(io.BytesIO(defaultconfig))
-        with open(global_singleton.config_location, "w") as configfile:
-            configfile.write(defaultconfig)
 
-    # check for sections
-    for s in required_options:
-        if s not in global_singleton.config.sections():
-            raise Exception(
-                    "Config file does not contain the required section: " + s)
-    # then check for specific options
-    for k, v in required_options.iteritems():
-        for o in v:
-            if o not in global_singleton.config.options(k):
-                raise Exception(
-                        "Config file does not contain the required option: " + o)
-
-    try:
-        global_singleton.maker_timeout_sec = global_singleton.config.getint(
-                'MESSAGING', 'maker_timeout_sec')
-    except NoOptionError:
-        log.debug('maker_timeout_sec not found in .cfg file, '
-                  'using default value')
-
-    # configure the interface to the blockchain on startup
-    global_singleton.bc_interface = get_blockchain_interface_instance(
-            global_singleton.config)
+# todo: this should be in config
+DUST_THRESHOLD = 2730
+maker_timeout_sec = 30
 
 
-def get_blockchain_interface_instance(_config):
+
+def _get_blockchain_interface_instance(binst):
     # todo: refactor joinmarket module to get rid of loops
     # importing here is necessary to avoid import loops
     from joinmarket.blockchaininterface import BitcoinCoreInterface, \
         RegtestBitcoinCoreInterface, BlockrInterface
     from joinmarket.blockchaininterface import CliJsonRpc
 
-    source = _config.get("BLOCKCHAIN", "blockchain_source")
+    source = config.get("BLOCKCHAIN", "blockchain_source")
     network = get_network()
     testnet = network == 'testnet'
     if source == 'bitcoin-rpc':
-        rpc_host = _config.get("BLOCKCHAIN", "rpc_host")
-        rpc_port = _config.get("BLOCKCHAIN", "rpc_port")
-        rpc_user = _config.get("BLOCKCHAIN", "rpc_user")
-        rpc_password = _config.get("BLOCKCHAIN", "rpc_password")
+        rpc_host = config.get("BLOCKCHAIN", "rpc_host")
+        rpc_port = config.get("BLOCKCHAIN", "rpc_port")
+        rpc_user = config.get("BLOCKCHAIN", "rpc_user")
+        rpc_password = config.get("BLOCKCHAIN", "rpc_password")
         rpc = JsonRpc(rpc_host, rpc_port, rpc_user, rpc_password)
-        bc_interface = BitcoinCoreInterface(rpc, network)
+        bc_interface = BitcoinCoreInterface(binst, rpc, network)
     elif source == 'json-rpc':
-        bitcoin_cli_cmd = _config.get("BLOCKCHAIN", "bitcoin_cli_cmd").split(' ')
+        bitcoin_cli_cmd = config.get("BLOCKCHAIN",
+                                          "bitcoin_cli_cmd").split(' ')
         rpc = CliJsonRpc(bitcoin_cli_cmd, testnet)
-        bc_interface = BitcoinCoreInterface(rpc, network)
+        bc_interface = BitcoinCoreInterface(binst, rpc, network)
     elif source == 'regtest':
-        rpc_host = _config.get("BLOCKCHAIN", "rpc_host")
-        rpc_port = _config.get("BLOCKCHAIN", "rpc_port")
-        rpc_user = _config.get("BLOCKCHAIN", "rpc_user")
-        rpc_password = _config.get("BLOCKCHAIN", "rpc_password")
+        rpc_host = config.get("BLOCKCHAIN", "rpc_host")
+        rpc_port = config.get("BLOCKCHAIN", "rpc_port")
+        rpc_user = config.get("BLOCKCHAIN", "rpc_user")
+        rpc_password = config.get("BLOCKCHAIN", "rpc_password")
         rpc = JsonRpc(rpc_host, rpc_port, rpc_user, rpc_password)
-        bc_interface = RegtestBitcoinCoreInterface(rpc)
+        bc_interface = RegtestBitcoinCoreInterface(binst, rpc)
     elif source == 'blockr':
-        bc_interface = BlockrInterface(testnet)
+        bc_interface = BlockrInterface(binst, testnet)
     else:
         raise ValueError("Invalid blockchain source")
     return bc_interface
+
+
+class BlockInstance(object):
+    def __init__(self):
+        self.JM_VERSION = 2
+        self.nickname = None
+        self.bc_interface = None
+        self.ordername_list = ['absorder', 'relorder']
+        self.core_alert = None
+        self.joinmarket_alert = None
+        self.debug_silence = False
+        self._load_program_config()
+
+    def get_bci(self):
+        return self.bc_interface
+
+    def _load_program_config(self):
+
+        # configure the interface to the blockchain on startup
+        self.bc_interface = _get_blockchain_interface_instance(self)
