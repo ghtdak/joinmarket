@@ -3,7 +3,7 @@ from __future__ import absolute_import, print_function
 import logging
 
 from .support import get_log, calc_cj_fee, debug_dump_object, \
-    choose_sweep_orders, choose_orders, \
+    choose_sweep_orders, choose_orders, nick_logging,\
     pick_order, cheapest_order_choose, weighted_order_choose, \
     rand_norm_array, rand_pow_array, rand_exp_array, system_shutdown
 from .enc_wrapper import decode_decrypt, encrypt_encode, get_pubkey

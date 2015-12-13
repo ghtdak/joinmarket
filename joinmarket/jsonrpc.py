@@ -1,24 +1,30 @@
 from __future__ import absolute_import, print_function
-# Copyright (C) 2013,2015 by Daniel Kraft <d@domob.eu>
-# Copyright (C) 2014 by phelix / blockchained.com
-#
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
+
+import treq
+from twisted.internet import defer
+
+"""
+Copyright (C) 2013,2015 by Daniel Kraft <d@domob.eu>
+Copyright (C) 2014 by phelix / blockchained.com
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
 
 import base64
 import httplib
@@ -34,8 +40,8 @@ tb_stack_set = set()
 
 class JsonRpcError(Exception):
     """
-  The called method returned an error in the JSON-RPC response.
-  """
+    The called method returned an error in the JSON-RPC response.
+    """
 
     def __init__(self, obj):
         self.code = obj["code"]
@@ -44,19 +50,19 @@ class JsonRpcError(Exception):
 
 class JsonRpcConnectionError(Exception):
     """
-  Error thrown when the RPC connection itself failed.  This means
-  that the server is either down or the connection settings
-  are wrong.
-  """
+    Error thrown when the RPC connection itself failed.  This means
+    that the server is either down or the connection settings
+    are wrong.
+    """
 
     pass
 
 
-class JsonRpc(object):
+class Json1(object):
     """
-  Simple implementation of a JSON-RPC client that is used
-  to connect to Bitcoin.
-  """
+    Simple implementation of a JSON-RPC client that is used
+    to connect to Bitcoin.
+    """
 
     def __init__(self, host, port, user, password):
         self.host = host
@@ -73,6 +79,7 @@ class JsonRpc(object):
     with the connection (not JSON-RPC itself), an exception is raised.
     """
 
+        # todo: call stack monitoring
         tb_stack_set.add(tuple(x[:-1] for x in traceback.extract_stack()))
 
         headers = {"User-Agent": "joinmarket",
@@ -130,3 +137,34 @@ class JsonRpc(object):
             raise JsonRpcError(response["error"])
 
         return response["result"]
+
+
+class Json2(object):
+
+    def __init__(self, host, port, user, password):
+        self.url='http://{}:{:d}'.format(host, port)
+        self.authstr = "%s:%s" % (user, password)
+        self.authtup = (user, password)
+
+        self.currentId = 1
+
+    @defer.inlineCallbacks
+    def post(self, method='getinfo', params=None):
+
+        if not params:
+            params = []
+
+        request = json.dumps({"method": method, "params": params,
+                              "id": self.currentId})
+
+        headers = {"User-Agent": "joinmarket",
+                   "Content-Type": "application/json",
+                   "Accept": "application/json"}
+        headers["Authorization"] = "Basic %s" % base64.b64encode(self.authstr)
+
+        r = yield treq.post(self.url, data=request, headers=headers)
+        self.currentId += 1
+        j = yield r.json()
+
+
+JsonRpc = Json1

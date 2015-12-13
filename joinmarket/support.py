@@ -68,6 +68,12 @@ def sleepGenerator(seconds):
     reactor.callLater(seconds, d.callback, seconds)
     return d
 
+def nick_logging(nick):
+    fileHandler = logging.FileHandler(
+            'logs/{}.log'.format(nick))
+    fileHandler.setFormatter(logFormatter)
+    log.addHandler(fileHandler)
+    log.info('{} log starts'.format(nick))
 
 
 def rand_norm_array(mu, sigma, n):

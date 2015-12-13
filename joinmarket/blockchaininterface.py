@@ -402,36 +402,24 @@ class BlockrInterface(BlockchainInterface):
                                'script': vout['extras']['script']})
         return result
 
-
-# noinspection PyMissingConstructor
-class NotifyHttpServer(twisted_resource.Resource, DatagramProtocol):
-    isLeaf = True
-    # def __init__(self, request, client_address, base_server):
-    #     self.btcinterface = base_server.btcinterface
-    #     self.base_server = base_server
+class MultiCast(DatagramProtocol):
 
     def __init__(self, btcinterface):
         self.btcinterface = btcinterface
-        self.using_port = None
+        reactor.listenMulticast(8005, self, listenMultiple=True)
 
     def startProtocol(self):
-        """
-        Called after protocol has started listening.
-        """
         # Set the TTL>1 so multicast will cross router hops:
-        # self.transport.setTTL(5)
-        # Join a specific multicast group:
+        self.transport.setTTL(5)
         self.transport.joinGroup("228.0.0.5")
+        log.debug('Multicast startProtocol')
+
+    def writeDatagram(self, datagram):
+        self.transport.write(datagram, ('228.0.0.5', 8005))
 
     def datagramReceived(self, datagram, address):
-        log.debug('multicast receive: {}'.format(datagram))
         self.process(datagram)
-
-    def render_GET(self, request):
-        log.debug('url received: {}'.format(request.uri))
-        # self.process(request.uri)
-        self.transport.write(request.uri, ('228.0.0.5', 8005))
-        return ''
+        log.debug('multicast receive: {}'.format(datagram))
 
     def process(self, path):
 
@@ -485,8 +473,6 @@ class NotifyHttpServer(twisted_resource.Resource, DatagramProtocol):
             core_alert = urllib.unquote(path[len(pages[1]):])
             log.debug('Got an alert!\nMessage=' + core_alert)
 
-
-
         # url = 'http://localhost:{:d}{}'.format(self.using_port + 1, path)
         #
         # log.debug('NotifyHttpServer notify: {}'.format(url))
@@ -496,6 +482,25 @@ class NotifyHttpServer(twisted_resource.Resource, DatagramProtocol):
         # todo: spawning curl.  we can do this differently
         # os.system('curl -sI --connect-timeout 1 http://localhost:' + str(
         #         self.base_server.server_address[1] + 1) + path)
+
+
+# noinspection PyMissingConstructor
+class NotifyHttpServer(twisted_resource.Resource):
+
+    isLeaf = True
+
+    def __init__(self, btcinterface):
+        log.debug('firing up http and multicast')
+        self.btcinterface = btcinterface
+        self.using_port = None
+        # launch multicast
+        self.multicast = MultiCast(btcinterface)
+
+    def render_GET(self, request):
+        log.debug('url received: {}'.format(request.uri))
+        self.multicast.writeDatagram(request.uri)
+        return ''
+
 
 
 # class BitcoinCoreNotifyThread(threading.Thread):

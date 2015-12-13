@@ -3,20 +3,18 @@ from __future__ import absolute_import, print_function
 
 import datetime
 import os
-import time
-
 import sys
+import time
 from collections import defaultdict
-
-from twisted.internet import reactor
+import cPickle as pickle
 
 import bitcoin
 import joinmarket as jm
-
-from joinmarket.txirc import build_irc_communicator
-from joinmarket.test.commontest import make_wallets
-
 from joinmarket.jsonrpc import tb_stack_set
+from joinmarket.test.commontest import make_wallets
+from twisted.internet import reactor
+
+# from joinmarket.jsonrpc import tb_stack_set
 
 txfee = 1000
 cjfee = '0.002'  # 0.2% fee
@@ -139,41 +137,16 @@ class YieldGenerator(jm.Maker):
 
 
 class Monitor(object):
-    def __init__(self):
+    def __init__(self, delay):
         self.callgraph = None
-        reactor.callLater(120, self.doboth)
+        reactor.callLater(delay, self.pickleStats)
 
-    def doboth(self):
-        log.debug('Building Callgraph')
-        self.makegraph()
-        self.printgraph()
+    def pickleStats(self):
+        with open('logs/callstats.pickle', 'wb') as f:
+            pickle.dump(tb_stack_set, f, -1)
+        log.debug('callgraph pickle dumped')
 
-    def makegraph(self):
-        """
-        build call graph
-        """
-        self.callgraph = defaultdict(set)
-        for tb in tb_stack_set:
-            for i in range(len(tb) - 1):
-                self.callgraph[tb[i]].add(tb[i+1])  # from- > to
-            # self.callgraph[tb[-1]] = 'terminal'
-
-    def printgraph(self):
-        s = sorted([((p.split('/')[-1], l, m),  v) for (p, l, m), v in
-                    self.callgraph.items()],
-                   key=lambda x: (x[0][0], x[0][1]))
-        out = ['\n']
-        for (pth, ln, mth), v in s:
-            fn = pth.split('/')[-1]
-            out.append('{:>30} ----- {:7d}: {:<40}'.format(fn, ln, mth))
-            for _pth, _ln, _mth in v:
-                _fn = _pth.split('/')[-1]
-                out.append('{:>30}       {:7d}: {:<40}'.format(_fn, _ln, _mth))
-
-        log.debug('\n'.join(out))
-
-
-monitor = Monitor()
+monitor = Monitor(120)
 
 
 def main():
@@ -186,7 +159,8 @@ def main():
 
     block_instance = jm.BlockInstance()
 
-    block_instance.nickname = jm.random_nick()
+    block_instance.nickname = nick = jm.random_nick()
+    jm.nick_logging(nick)
     nickserv_password = 'nimDid[Quoc6'
 
     # todo: for testing... remove me!!
@@ -240,12 +214,9 @@ def main():
     nickname = block_instance.nickname
     log.info("starting irc thingy with nick: {}".format(nickname))
 
-    realname = realname='btcint=' + jm.config.get(
-            "BLOCKCHAIN", "blockchain_source")
-    irc = build_irc_communicator(
-            nickname,
-            realname=realname,
-            password=nickserv_password)
+    realname = 'btcint=' + jm.config.get("BLOCKCHAIN", "blockchain_source")
+    irc = jm.build_irc_communicator(nickname, realname=realname,
+                                 password=nickserv_password)
 
     log.info('irc thingy launched')
 

@@ -4,6 +4,7 @@ from __future__ import absolute_import, print_function
 import sys
 from optparse import OptionParser
 
+from joinmarket.test.commontest import make_wallets
 from twisted.internet import reactor
 
 import joinmarket as jm
@@ -23,7 +24,7 @@ def check_high_fee(total_fee_pc):
         log.info('\n'.join(['=' * 60] * 3))
 
 
-# thread which does the buy-side algorithm
+# callback sibling which does the buy-side algorithm
 # chooses which coinjoins to initiate and when
 class PaymentThread(jm.TakerSibling):
     def __init__(self, taker):
@@ -43,12 +44,9 @@ class PaymentThread(jm.TakerSibling):
         if counterparty_count < self.taker.makercount:
             log.info('{:d} of {:d} not enough counterparties to fill order, '
                      'ending'.format(counterparty_count, self.taker.makercount))
-            self.taker.msgchan.shutdown(0)
+            # self.taker.msgchan.shutdown(0)
             return
 
-        utxos = None
-        orders = None
-        cjamount = 0
         change_addr = None
         if self.taker.amount == 0:
             utxos = self.taker.wallet.get_utxos_by_mixdepth()[
@@ -264,7 +262,8 @@ def main():
     else:  # choose randomly (weighted)
         chooseOrdersFunc = jm.weighted_order_choose
 
-    block_inst.nickname = jm.random_nick()
+    block_inst.nickname = nick = jm.random_nick()
+    jm.nick_logging(nick)
 
     log.debug('starting sendpayment')
 
