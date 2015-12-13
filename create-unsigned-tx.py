@@ -27,6 +27,7 @@ log = get_log()
 # thread which does the buy-side algorithm
 # chooses which coinjoins to initiate and when
 class PaymentThread(object):
+
     def __init__(self, taker):
         self.daemon = True
         self.taker = taker
@@ -34,8 +35,7 @@ class PaymentThread(object):
 
     def create_tx(self):
         crow = self.taker.db.execute(
-                'SELECT COUNT(DISTINCT counterparty) FROM orderbook;'
-        ).fetchone()
+            'SELECT COUNT(DISTINCT counterparty) FROM orderbook;').fetchone()
 
         counterparty_count = crow['COUNT(DISTINCT counterparty)']
         counterparty_count -= len(self.ignored_makers)
@@ -50,9 +50,9 @@ class PaymentThread(object):
         if self.taker.cjamount == 0:
             total_value = sum([va['value'] for va in utxos.values()])
             orders, cjamount = choose_sweep_orders(
-                    self.taker.db, total_value, self.taker.options.txfee,
-                    self.taker.options.makercount, self.taker.chooseOrdersFunc,
-                    self.ignored_makers)
+                self.taker.db, total_value, self.taker.options.txfee,
+                self.taker.options.makercount, self.taker.chooseOrdersFunc,
+                self.ignored_makers)
             if not self.taker.options.answeryes:
                 total_cj_fee = total_value - cjamount - self.taker.options.txfee
                 log.debug('total cj fee = ' + str(total_cj_fee))
@@ -66,10 +66,10 @@ class PaymentThread(object):
                     return
         else:
             orders, total_cj_fee = self.sendpayment_choose_orders(
-                    self.taker.cjamount, self.taker.options.makercount)
+                self.taker.cjamount, self.taker.options.makercount)
             if not orders:
                 log.debug(
-                        'ERROR not enough liquidity in the orderbook, exiting')
+                    'ERROR not enough liquidity in the orderbook, exiting')
                 return
             total_amount = self.taker.cjamount + total_cj_fee + \
                            self.taker.options.txfee
@@ -90,7 +90,7 @@ class PaymentThread(object):
             tx = btc.serialize(coinjointx.latest_tx)
             for index, ins in enumerate(coinjointx.latest_tx['ins']):
                 utxo = ins['outpoint']['hash'] + ':' + str(ins['outpoint'][
-                                                               'index'])
+                    'index'])
                 if utxo != self.taker.auth_utxo:
                     continue
                 addr = coinjointx.input_utxos[utxo]['address']
@@ -101,8 +101,8 @@ class PaymentThread(object):
             self.taker.msgchan.shutdown()
             return
         self.ignored_makers += coinjointx.nonrespondants
-        log.debug(
-                'recreating the tx, ignored_makers=' + str(self.ignored_makers))
+        log.debug('recreating the tx, ignored_makers=' + str(
+            self.ignored_makers))
         self.create_tx()
 
     def sendpayment_choose_orders(self,
@@ -116,13 +116,12 @@ class PaymentThread(object):
             nonrespondants = []
         self.ignored_makers += nonrespondants
         orders, total_cj_fee = choose_orders(
-                self.taker.db, cj_amount, makercount,
-                self.taker.chooseOrdersFunc,
-                self.ignored_makers + active_nicks)
+            self.taker.db, cj_amount, makercount, self.taker.chooseOrdersFunc,
+            self.ignored_makers + active_nicks)
         if not orders:
             return None, 0
         log.info('chosen orders to fill ' + str(orders) + ' totalcjfee=' + str(
-                total_cj_fee))
+            total_cj_fee))
         if not self.taker.options.answeryes:
             if len(self.ignored_makers) > 0:
                 noun = 'total'
@@ -145,6 +144,7 @@ class PaymentThread(object):
 
 
 class CreateUnsignedTx(takermodule.Taker):
+
     def __init__(self, msgchan, wallet, auth_utxo, cjamount, destaddr,
                  changeaddr, utxo_data, options, chooseOrdersFunc):
         takermodule.Taker.__init__(self, msgchan)
@@ -164,63 +164,60 @@ class CreateUnsignedTx(takermodule.Taker):
 
 def main():
     parser = OptionParser(
-            usage='usage: %prog [options] [auth utxo] [cjamount] [cjaddr] ['
-                  'changeaddr] [utxos..]',
-            description=('Creates an unsigned coinjoin transaction. Outputs '
-                         'a partially signed transaction hex string. The user '
-                         'must sign their inputs independently and broadcast '
-                         'them. The JoinMarket protocol requires the taker to '
-                         'have a single p2pk UTXO input to use to '
-                         'authenticate the  encrypted messages. For this '
-                         'reason you must pass auth utxo and the '
-                         'corresponding private key'))
+        usage='usage: %prog [options] [auth utxo] [cjamount] [cjaddr] ['
+        'changeaddr] [utxos..]',
+        description=('Creates an unsigned coinjoin transaction. Outputs '
+                     'a partially signed transaction hex string. The user '
+                     'must sign their inputs independently and broadcast '
+                     'them. The JoinMarket protocol requires the taker to '
+                     'have a single p2pk UTXO input to use to '
+                     'authenticate the  encrypted messages. For this '
+                     'reason you must pass auth utxo and the '
+                     'corresponding private key'))
 
     # for cjamount=0 do a sweep, and ignore change address
+    parser.add_option('-f',
+                      '--txfee',
+                      action='store',
+                      type='int',
+                      dest='txfee',
+                      default=10000,
+                      help='total miner fee in satoshis, default=10000')
     parser.add_option(
-            '-f',
-            '--txfee',
-            action='store',
-            type='int',
-            dest='txfee',
-            default=10000,
-            help='total miner fee in satoshis, default=10000')
+        '-w',
+        '--wait-time',
+        action='store',
+        type='float',
+        dest='waittime',
+        help='wait time in seconds to allow orders to arrive, default=5',
+        default=5)
+    parser.add_option('-N',
+                      '--makercount',
+                      action='store',
+                      type='int',
+                      dest='makercount',
+                      help='how many makers to coinjoin with, default=2',
+                      default=2)
     parser.add_option(
-            '-w',
-            '--wait-time',
-            action='store',
-            type='float',
-            dest='waittime',
-            help='wait time in seconds to allow orders to arrive, default=5',
-            default=5)
+        '-C',
+        '--choose-cheapest',
+        action='store_true',
+        dest='choosecheapest',
+        default=False,
+        help='override weightened offers picking and choose cheapest')
     parser.add_option(
-            '-N',
-            '--makercount',
-            action='store',
-            type='int',
-            dest='makercount',
-            help='how many makers to coinjoin with, default=2',
-            default=2)
-    parser.add_option(
-            '-C',
-            '--choose-cheapest',
-            action='store_true',
-            dest='choosecheapest',
-            default=False,
-            help='override weightened offers picking and choose cheapest')
-    parser.add_option(
-            '-P',
-            '--pick-orders',
-            action='store_true',
-            dest='pickorders',
-            default=False,
-            help=
-            'manually pick which orders to take. doesn\'t work while sweeping.')
-    parser.add_option(
-            '--yes',
-            action='store_true',
-            dest='answeryes',
-            default=False,
-            help='answer yes to everything')
+        '-P',
+        '--pick-orders',
+        action='store_true',
+        dest='pickorders',
+        default=False,
+        help=
+        'manually pick which orders to take. doesn\'t work while sweeping.')
+    parser.add_option('--yes',
+                      action='store_true',
+                      dest='answeryes',
+                      default=False,
+                      help='answer yes to everything')
     # TODO implement parser.add_option('-n', '--no-network',
     # action='store_true', dest='nonetwork', default=False, help='dont query
     # the blockchain interface, instead user must supply value of UTXOs on '
@@ -260,8 +257,8 @@ def main():
         utxo_data[utxo] = {'address': data['address'], 'value': data['value']}
     auth_privkey = raw_input('input private key for ' + utxo_data[auth_utxo][
         'address'] + ' :')
-    if utxo_data[auth_utxo]['address'] != btc.privtoaddr(
-            auth_privkey, get_p2pk_vbyte()):
+    if utxo_data[auth_utxo]['address'] != btc.privtoaddr(auth_privkey,
+                                                         get_p2pk_vbyte()):
         log.info('ERROR: privkey does not match auth utxo')
         return
 

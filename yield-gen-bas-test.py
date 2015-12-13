@@ -26,6 +26,7 @@ mix_levels = 5
 
 log = jm.get_log()
 
+
 class YieldGenerator(jm.Maker):
     statement_file = os.path.join('logs', 'yigen-statement.csv')
 
@@ -48,10 +49,9 @@ class YieldGenerator(jm.Maker):
         jm.Maker.on_welcome(self)
         if not os.path.isfile(self.statement_file):
             self.log_statement(
-                    ['timestamp', 'cj amount/satoshi', 'my input count',
-                     'my input value/satoshi', 'cjfee/satoshi',
-                     'earned/satoshi',
-                     'confirm time/min', 'notes'])
+                ['timestamp', 'cj amount/satoshi', 'my input count',
+                 'my input value/satoshi', 'cjfee/satoshi', 'earned/satoshi',
+                 'confirm time/min', 'notes'])
 
         timestamp = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
         self.log_statement([timestamp, '', '', '', '', '', '', 'Connected'])
@@ -98,7 +98,7 @@ class YieldGenerator(jm.Maker):
                        'finding new utxos').format(change_value))
             try:
                 utxos = self.wallet.select_utxos(
-                        mixdepth, amount + self.block_instance.DUST_THRESHOLD)
+                    mixdepth, amount + self.block_instance.DUST_THRESHOLD)
             except Exception:
                 log.debug('dont have the required UTXOs to make a '
                           'output above the dust threshold, quitting')
@@ -128,15 +128,15 @@ class YieldGenerator(jm.Maker):
         else:
             confirm_time = 0
         timestamp = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
-        self.log_statement(
-                [timestamp, cjorder.cj_amount, len(cjorder.utxos),
-                 sum([av['value'] for av in cjorder.utxos.values()]),
-                 cjorder.real_cjfee, cjorder.real_cjfee - cjorder.txfee,
-                 round(confirm_time / 60.0, 2), ''])
+        self.log_statement([timestamp, cjorder.cj_amount, len(
+            cjorder.utxos), sum([av['value'] for av in cjorder.utxos.values(
+            )]), cjorder.real_cjfee, cjorder.real_cjfee - cjorder.txfee, round(
+                confirm_time / 60.0, 2), ''])
         return self.on_tx_unconfirmed(cjorder, txid, None)
 
 
 class Monitor(object):
+
     def __init__(self, delay):
         self.callgraph = None
         reactor.callLater(delay, self.pickleStats)
@@ -145,6 +145,7 @@ class Monitor(object):
         with open('logs/callstats.pickle', 'wb') as f:
             pickle.dump(tb_stack_set, f, -1)
         log.debug('callgraph pickle dumped')
+
 
 monitor = Monitor(120)
 
@@ -185,10 +186,10 @@ def main():
     #create 2 new random wallets.
     #put 10 coins into the first receive address
     #to allow that bot to start.
-    wallets = make_wallets(
-            block_instance,
-            2, wallet_structures=[[1, 0, 0, 0, 0], [1, 0, 0, 0, 0]],
-            mean_amt=10)
+    wallets = make_wallets(block_instance,
+                           2,
+                           wallet_structures=[[1, 0, 0, 0, 0], [1, 0, 0, 0, 0]],
+                           mean_amt=10)
 
     seed = str(wallets[0]['seed'])
 
@@ -199,7 +200,7 @@ def main():
         os.urandom(32), jm.get_p2pk_vbyte())
 
     for i in range(m):
-        print('python','sendpayment.py','--yes','-N','1',
+        print('python', 'sendpayment.py', '--yes', '-N', '1',
               wallets[1]['seed'], str(amt), dest_address)
 
     # seed = sys.argv[1]
@@ -215,8 +216,9 @@ def main():
     log.info("starting irc thingy with nick: {}".format(nickname))
 
     realname = 'btcint=' + jm.config.get("BLOCKCHAIN", "blockchain_source")
-    irc = jm.build_irc_communicator(nickname, realname=realname,
-                                 password=nickserv_password)
+    irc = jm.build_irc_communicator(nickname,
+                                    realname=realname,
+                                    password=nickserv_password)
 
     log.info('irc thingy launched')
 

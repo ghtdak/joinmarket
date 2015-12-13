@@ -1,7 +1,6 @@
 from __future__ import absolute_import, print_function
 
 import sys
-
 """
 Random functions - replacing some NumPy features
 NOTE THESE ARE NEITHER CRYPTOGRAPHICALLY SECURE
@@ -30,7 +29,7 @@ observer.start()
 logging.getLogger('twisted').addHandler(logging.NullHandler())
 
 logFormatter = logging.Formatter(
-        "%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
+    "%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
 log = logging.getLogger('joinmarket')
 log.setLevel(logging.DEBUG)
 
@@ -40,12 +39,14 @@ log.addHandler(consoleHandler)
 
 log.info('logger started')
 
+
 def get_log():
     """
     provides joinmarket logging instance
     :return: log instance
     """
     return log
+
 
 def system_shutdown(errno, reason='none given'):
 
@@ -56,6 +57,7 @@ def system_shutdown(errno, reason='none given'):
         log.info('Normal Shutdown')
 
     reactor.stop()
+
 
 def sleepGenerator(seconds):
     """
@@ -68,9 +70,9 @@ def sleepGenerator(seconds):
     reactor.callLater(seconds, d.callback, seconds)
     return d
 
+
 def nick_logging(nick):
-    fileHandler = logging.FileHandler(
-            'logs/{}.log'.format(nick))
+    fileHandler = logging.FileHandler('logs/{}.log'.format(nick))
     fileHandler.setFormatter(logFormatter)
     log.addHandler(fileHandler)
     log.info('{} log starts'.format(nick))
@@ -89,7 +91,7 @@ def rand_exp_array(lamda, n):
 def rand_pow_array(power, n):
     # rather crude in that uses a uniform sample which is a multiple of 1e-4
     # for basis of formula, see: http://mathworld.wolfram.com/RandomNumber.html
-    return [y ** (1.0 / power)
+    return [y**(1.0 / power)
             for y in [x * 0.0001 for x in random.sample(
                 xrange(10000), n)]]
 
@@ -109,7 +111,6 @@ def rand_weighted_choice(n, p_arr):
     cum_pr = [sum(p_arr[:i + 1]) for i in xrange(len(p_arr))]
     r = random.random()
     return sorted(cum_pr + [r]).index(r)
-
 
 # End random functions
 
@@ -198,8 +199,8 @@ def calc_cj_fee(ordertype, cjfee, cj_amount):
     if ordertype == 'absorder':
         real_cjfee = int(cjfee)
     elif ordertype == 'relorder':
-        real_cjfee = int(
-                (Decimal(cjfee) * Decimal(cj_amount)).quantize(Decimal(1)))
+        real_cjfee = int((Decimal(cjfee) * Decimal(cj_amount)).quantize(Decimal(
+            1)))
     else:
         raise RuntimeError('unknown order type: ' + str(ordertype))
     return real_cjfee
@@ -248,7 +249,8 @@ def pick_order(orders, n, feekey):
     log.info("Considered orders:")
     for o in orders:
         i += 1
-        log.info("    %2d. %20s, CJ fee: %6d, tx fee: %6d" % (i, o[0], o[2], o[3]))
+        log.info("    %2d. %20s, CJ fee: %6d, tx fee: %6d" %
+                 (i, o[0], o[2], o[3]))
     pickedOrderIndex = -1
     if i == 0:
         log.info("Only one possible pick, picking it.")
@@ -270,8 +272,8 @@ def choose_orders(db, cj_amount, n, chooseOrdersBy, ignored_makers=None):
     if ignored_makers is None:
         ignored_makers = []
     sqlorders = db.execute('SELECT * FROM orderbook;').fetchall()
-    orders = [(o['counterparty'], o['oid'], calc_cj_fee(
-            o['ordertype'], o['cjfee'], cj_amount), o['txfee'])
+    orders = [(o['counterparty'], o['oid'],
+               calc_cj_fee(o['ordertype'], o['cjfee'], cj_amount), o['txfee'])
               for o in sqlorders
               if o['minsize'] <= cj_amount <= o['maxsize'] and o[
                   'counterparty'] not in ignored_makers]
@@ -283,11 +285,10 @@ def choose_orders(db, cj_amount, n, chooseOrdersBy, ignored_makers=None):
     counterparties = set([o[0] for o in orders])
     if n > len(counterparties):
         log.debug(('ERROR not enough liquidity in the orderbook n=%d '
-                   'suitable-counterparties=%d amount=%d totalorders=%d')
-                  % (n, len(counterparties), cj_amount, len(orders)))
+                   'suitable-counterparties=%d amount=%d totalorders=%d') %
+                  (n, len(counterparties), cj_amount, len(orders)))
         # TODO handle not enough liquidity better, maybe an Exception
         return None, 0
-
     """
     restrict to one order per counterparty, choose the one with the lowest
     cjfee this is done in advance of the order selection algo, so applies to
@@ -295,8 +296,10 @@ def choose_orders(db, cj_amount, n, chooseOrdersBy, ignored_makers=None):
     """
     if chooseOrdersBy != pick_order:
         orders = sorted(
-                dict((v[0], v) for v in sorted(
-                        orders, key=feekey, reverse=True)).values(), key=feekey)
+            dict((v[0], v) for v in sorted(orders,
+                                           key=feekey,
+                                           reverse=True)).values(),
+            key=feekey)
     else:
         orders = sorted(orders,
                         key=feekey)  # sort from smallest to biggest cj fee
@@ -307,7 +310,7 @@ def choose_orders(db, cj_amount, n, chooseOrdersBy, ignored_makers=None):
     for i in range(n):
         chosen_order = chooseOrdersBy(orders, n, feekey)
         orders = [o for o in orders if o[0] != chosen_order[0]
-                  ]  # remove all orders from that same counterparty
+                 ]  # remove all orders from that same counterparty
         chosen_orders.append(chosen_order)
         total_cj_fee += chosen_order[2]
     log.debug('chosen orders = \n' + '\n'.join([str(o) for o in chosen_orders]))
@@ -346,8 +349,8 @@ def choose_sweep_orders(db,
             elif order[0]['ordertype'] == 'relorder':
                 sumrelfee += Decimal(order[0]['cjfee'])
             else:
-                raise RuntimeError('unknown order type: {}'.format(
-                        order[0]['ordertype']))
+                raise RuntimeError('unknown order type: {}'.format(order[0][
+                    'ordertype']))
 
         my_txfee = max(total_txfee - sumtxfee_contribution, 0)
         cjamount = (total_input_value - my_txfee - sumabsfee) / (1 + sumrelfee)
@@ -355,7 +358,7 @@ def choose_sweep_orders(db,
         return cjamount, int(sumabsfee + sumrelfee * cjamount)
 
     log.debug('choosing sweep orders for total_input_value = ' + str(
-            total_input_value))
+        total_input_value))
     sqlorders = db.execute('SELECT * FROM orderbook WHERE minsize <= ?;',
                            (total_input_value,)).fetchall()
     orderkeys = ['counterparty', 'oid', 'ordertype', 'minsize', 'maxsize',
@@ -392,7 +395,7 @@ def choose_sweep_orders(db,
                 o
                 for o in available_orders
                 if o[0]['counterparty'] != chosen_order[0]['counterparty']
-                ]
+            ]
             chosen_orders.append(chosen_order)
         # calc cj_amount and check its in range
         cj_amount, total_fee = calc_zero_change_cj_amount(chosen_orders)

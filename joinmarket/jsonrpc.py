@@ -1,8 +1,9 @@
 from __future__ import absolute_import, print_function
 
+from collections import deque
+
 import treq
 from twisted.internet import defer
-
 """
 Copyright (C) 2013,2015 by Daniel Kraft <d@domob.eu>
 Copyright (C) 2014 by phelix / blockchained.com
@@ -58,7 +59,7 @@ class JsonRpcConnectionError(Exception):
     pass
 
 
-class Json1(object):
+class JsonRpc(object):
     """
     Simple implementation of a JSON-RPC client that is used
     to connect to Bitcoin.
@@ -67,9 +68,16 @@ class Json1(object):
     def __init__(self, host, port, user, password):
         self.host = host
         self.port = port
-        self.authstr = "%s:%s" % (user, password)
-
+        self.authstr = '{}:{}'.format(user, password)
+        self.headers = {'User-Agent': 'joinmarket',
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'}
+        self.headers['Authorization'] = 'Basic {}'.format(base64.b64encode(
+            self.authstr))
+        self.url = 'http://{}:{}'.format(host, port)
         self.queryId = 1
+        self.asyncQ = deque()
+        self.asyncCount = 0
 
     def queryHTTP(self, obj):
         """
@@ -82,22 +90,17 @@ class Json1(object):
         # todo: call stack monitoring
         tb_stack_set.add(tuple(x[:-1] for x in traceback.extract_stack()))
 
-        headers = {"User-Agent": "joinmarket",
-                   "Content-Type": "application/json",
-                   "Accept": "application/json"}
-        headers["Authorization"] = "Basic %s" % base64.b64encode(self.authstr)
-
         body = json.dumps(obj)
 
         try:
             conn = httplib.HTTPConnection(self.host, self.port)
-            conn.request("POST", "", body, headers)
+            conn.request("POST", "", body, self.headers)
             response = conn.getresponse()
 
             if response.status == 401:
                 conn.close()
                 raise JsonRpcConnectionError(
-                        "authentication for JSON-RPC failed")
+                    "authentication for JSON-RPC failed")
 
             # All of the codes below are 'fine' from a JSON-RPC point of view.
             if response.status not in [200, 404, 500]:
@@ -112,10 +115,47 @@ class Json1(object):
         except JsonRpcConnectionError as exc:
             raise exc
         except Exception as exc:
-            raise JsonRpcConnectionError("JSON-RPC connection failed. Err:" +
-                                         repr(exc))
+            raise JsonRpcConnectionError(
+                "JSON-RPC connection failed. Err: {}".format(exc))
 
-    def call(self, method, params):
+    @defer.inlineCallbacks
+    def post_defer(self, obj):
+        """
+
+        :param obj:
+        :return:
+        """
+        try:
+            self.asyncCount += 1
+
+            body = json.dumps(obj)
+
+            response = yield treq.post(self.url,
+                                       data=body,
+                                       headers=self.headers)
+
+            if response.code not in [200, 404, 500]:
+                log.error('Unknown error in JsonRpc - post-defer: {}'.format(
+                    response.code))
+
+            # todo: for debugging.  Can be done with a single call
+            content = yield response.content()
+
+            js = json.loads(content)
+        except Exception as e:
+            log.debug('json conversion exception: {}'.format(content))
+        else:
+            # log.debug('json conversion success: {}'.format(js))
+            if js['id'] != obj['id']:
+                log.error('jsonrpc post_defer invalid id returned by query')
+
+        # todo: deal with exceptions properly
+
+            defer.returnValue(js)
+        finally:
+            self.asyncCount -= 1
+
+    def call(self, method, params, immediate=False):
         """
     Call a method over JSON-RPC.
     """
@@ -124,47 +164,44 @@ class Json1(object):
         self.queryId += 1
 
         request = {"method": method, "params": params, "id": currentId}
-        response = self.queryHTTP(request)
 
-        if response["id"] != currentId:
-            log.debug('jsonrpc: {}'.format(response))
-            raise JsonRpcConnectionError("invalid id returned by query")
+        if not immediate:
+            response = self.queryHTTP(request)
 
-        if response["error"] is not None:
-            # todo: could be a warning or error
-            log.warning(response["error"])
-            log.debug('jsonrpc: {}'.format(response))
-            raise JsonRpcError(response["error"])
+            if response["id"] != currentId:
+                log.debug('jsonrpc: {}'.format(response))
+                raise JsonRpcConnectionError("invalid id returned by query")
 
-        return response["result"]
+            if response["error"] is not None:
+                # todo: could be a warning or error
+                log.warning(response["error"])
+                log.debug('jsonrpc: {}'.format(response))
+                raise JsonRpcError(response["error"])
 
+            return response["result"]
 
-class Json2(object):
+        else:
+            return self.queuePost(request)
 
-    def __init__(self, host, port, user, password):
-        self.url='http://{}:{:d}'.format(host, port)
-        self.authstr = "%s:%s" % (user, password)
-        self.authtup = (user, password)
+    def intercept(self, response, calld):
+        if len(self.asyncQ) > 0:
+            request, nd = self.asyncQ.popleft()
+            rd = self.post_defer(request)
+            rd.addCallback(self.intercept, nd)
 
-        self.currentId = 1
+        self.asyncCount -= 1
+        calld.callback(response)
 
-    @defer.inlineCallbacks
-    def post(self, method='getinfo', params=None):
+    def queuePost(self, request):
 
-        if not params:
-            params = []
+        nd = defer.Deferred()
 
-        request = json.dumps({"method": method, "params": params,
-                              "id": self.currentId})
+        if self.asyncCount == 0:
+            rd = self.post_defer(request)
+            rd.addCallback(self.intercept, nd)
+        else:
+            self.asyncQ.append((request, nd))
 
-        headers = {"User-Agent": "joinmarket",
-                   "Content-Type": "application/json",
-                   "Accept": "application/json"}
-        headers["Authorization"] = "Basic %s" % base64.b64encode(self.authstr)
+        self.asyncCount += 1
 
-        r = yield treq.post(self.url, data=request, headers=headers)
-        self.currentId += 1
-        j = yield r.json()
-
-
-JsonRpc = Json1
+        return nd

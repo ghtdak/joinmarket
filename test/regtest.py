@@ -1,6 +1,5 @@
 #! /usr/bin/env python
 from __future__ import absolute_import
-
 """Some helper functions for testing"""
 
 import os
@@ -18,7 +17,6 @@ from joinmarket import load_program_config, jm_single
 from joinmarket import get_p2pk_vbyte, get_log
 
 log = get_log()
-
 """
 Just some random thoughts to motivate possible tests;
 almost none of this has really been done:
@@ -57,8 +55,8 @@ class Join2PTests(unittest.TestCase):
     def run_simple_send(self, n, m):
         #start yield generator with wallet1
         yigen_proc = local_command(
-            ['python', 'yield-gen-bas-test.py',
-             str(self.wallets[0]['seed'])], bg=True)
+            ['python', 'yield-gen-bas-test.py', str(self.wallets[0]['seed'])],
+            bg=True)
 
         # A significant delay is needed to wait for the yield generator to
         # sync its wallet
@@ -66,13 +64,12 @@ class Join2PTests(unittest.TestCase):
 
         #run a single sendpayment call with wallet2
         amt = n * 100000000  #in satoshis
-        dest_address = btc.privkey_to_address(
-            os.urandom(32), get_p2pk_vbyte())
+        dest_address = btc.privkey_to_address(os.urandom(32), get_p2pk_vbyte())
         try:
             for i in range(m):
-                sp_proc = local_command(
-                        ['python','sendpayment.py','--yes','-N','1',
-                         self.wallets[1]['seed'], str(amt), dest_address])
+                sp_proc = local_command(['python', 'sendpayment.py', '--yes',
+                                         '-N', '1', self.wallets[1][
+                                             'seed'], str(amt), dest_address])
         except subprocess.CalledProcessError, e:
             if yigen_proc:
                 yigen_proc.terminate()
@@ -86,8 +83,8 @@ class Join2PTests(unittest.TestCase):
         received = jm_single().bc_interface.get_received_by_addr(
             [dest_address], None)['data'][0]['balance']
         if received != amt * m:
-            log.debug('received was: ' + str(received) + ' but amount was: '
-                         + str(amt))
+            log.debug('received was: ' + str(received) + ' but amount was: ' +
+                      str(amt))
             return False
         return True
 
@@ -103,10 +100,9 @@ class JoinNPTests(unittest.TestCase):
         #put 10 coins into the first receive address
         #to allow that bot to start.
         wallet_structures = [[1, 0, 0, 0, 0]] * 3
-        self.wallets = make_wallets(
-            3,
-            wallet_structures=wallet_structures,
-            mean_amt=10)
+        self.wallets = make_wallets(3,
+                                    wallet_structures=wallet_structures,
+                                    mean_amt=10)
         #the sender is wallet (n+1), i.e. index wallets[n]
 
     def test_n_partySend(self):
@@ -116,8 +112,9 @@ class JoinNPTests(unittest.TestCase):
         yigen_procs = []
         for i in range(self.n):
             ygp = local_command(
-                    ['python','yield-gen-bas-test.py',
-                     str(self.wallets[i]['seed'])], bg=True)
+                ['python', 'yield-gen-bas-test.py',
+                 str(self.wallets[i]['seed'])],
+                bg=True)
             time.sleep(2)  #give it a chance
             yigen_procs.append(ygp)
 
@@ -126,12 +123,11 @@ class JoinNPTests(unittest.TestCase):
 
         #run a single sendpayment call
         amt = 100000000  #in satoshis
-        dest_address = btc.privkey_to_address(
-            os.urandom(32), get_p2pk_vbyte())
+        dest_address = btc.privkey_to_address(os.urandom(32), get_p2pk_vbyte())
         try:
-            sp_proc = local_command(
-                    ['python','sendpayment.py','--yes','-N', str(self.n),
-                     self.wallets[self.n]['seed'], str(amt), dest_address])
+            sp_proc = local_command(['python', 'sendpayment.py', '--yes', '-N',
+                                     str(self.n), self.wallets[self.n][
+                                         'seed'], str(amt), dest_address])
         except subprocess.CalledProcessError, e:
             for ygp in yigen_procs:
                 ygp.kill()

@@ -1,6 +1,5 @@
 #! /usr/bin/env python
 from __future__ import absolute_import
-
 '''Wallet functionality tests.'''
 
 import sys
@@ -17,6 +16,7 @@ from joinmarket import load_program_config
 from joinmarket import get_log
 
 log = get_log()
+
 
 class TestWalletCreation(unittest.TestCase):
 

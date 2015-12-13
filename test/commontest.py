@@ -1,6 +1,5 @@
 #! /usr/bin/env python
 from __future__ import absolute_import
-
 '''Some helper functions for testing'''
 
 import os
@@ -12,7 +11,6 @@ from joinmarket import Wallet, get_log
 from joinmarket.support import chunks
 
 log = get_log()
-
 '''This code is intended to provide
 subprocess startup cross-platform with
 some useful options; it could do with
@@ -63,7 +61,9 @@ def make_wallets(binst, n, wallet_structures=None, mean_amt=1, sdev_amt=0):
     wallets = {}
     for i in range(n):
         wallets[i] = {'seed': seeds[i],
-                      'wallet': Wallet(binst, seeds[i], max_mix_depth=5)}
+                      'wallet': Wallet(binst,
+                                       seeds[i],
+                                       max_mix_depth=5)}
 
         for j in range(5):
             for k in range(wallet_structures[i][j]):

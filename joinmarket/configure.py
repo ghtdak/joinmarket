@@ -14,14 +14,11 @@ from joinmarket.support import get_log
 
 log = get_log()
 
-
-logFormatter = logging.Formatter(
-        ('%(asctime)s [%(threadName)-12.12s] '
-         '[%(levelname)-5.5s]  %(message)s'))
+logFormatter = logging.Formatter(('%(asctime)s [%(threadName)-12.12s] '
+                                  '[%(levelname)-5.5s]  %(message)s'))
 
 # todo: before the nick is set, we don't grab stuff.  rearchitect!!!
-fileHandler = logging.FileHandler(
-        'logs/{}.log'.format('everything'))
+fileHandler = logging.FileHandler('logs/{}.log'.format('everything'))
 fileHandler.setFormatter(logFormatter)
 log.addHandler(fileHandler)
 
@@ -68,8 +65,7 @@ merge_algorithm = default
 config = SafeConfigParser()
 config_location = 'joinmarket.cfg'
 
-loadedFiles = config.read(
-        [config_location])
+loadedFiles = config.read([config_location])
 # Create default config file if not found
 if len(loadedFiles) != 1:
     config.readfp(io.BytesIO(defaultconfig))
@@ -89,11 +85,11 @@ for k, v in required_options.iteritems():
                             "the required option: " + o)
 
 try:
-    maker_timeout_sec = config.getint(
-            'MESSAGING', 'maker_timeout_sec')
+    maker_timeout_sec = config.getint('MESSAGING', 'maker_timeout_sec')
 except NoOptionError:
     log.debug('maker_timeout_sec not found in .cfg file, '
               'using default value')
+
 
 def get_config_irc_channel():
     channel = '#' + config.get("MESSAGING", "channel")
@@ -102,9 +98,11 @@ def get_config_irc_channel():
     #     channel += '-test'
     return channel
 
+
 def get_network():
     """Returns network name"""
     return config.get("BLOCKCHAIN", "network")
+
 
 def get_p2sh_vbyte():
     if get_network() == 'testnet':
@@ -112,11 +110,13 @@ def get_p2sh_vbyte():
     else:
         return 0x05
 
+
 def get_p2pk_vbyte():
     if get_network() == 'testnet':
         return 0x6f
     else:
         return 0x00
+
 
 def validate_address(addr):
     try:
@@ -127,12 +127,9 @@ def validate_address(addr):
         return False, 'Wrong address version. Testnet/mainnet confused?'
     return True, 'address validated'
 
-
-
 # todo: this should be in config
 DUST_THRESHOLD = 2730
 maker_timeout_sec = 30
-
 
 
 def _get_blockchain_interface_instance(binst):
@@ -153,8 +150,7 @@ def _get_blockchain_interface_instance(binst):
         rpc = JsonRpc(rpc_host, rpc_port, rpc_user, rpc_password)
         bc_interface = BitcoinCoreInterface(binst, rpc, network)
     elif source == 'json-rpc':
-        bitcoin_cli_cmd = config.get("BLOCKCHAIN",
-                                          "bitcoin_cli_cmd").split(' ')
+        bitcoin_cli_cmd = config.get("BLOCKCHAIN", "bitcoin_cli_cmd").split(' ')
         rpc = CliJsonRpc(bitcoin_cli_cmd, testnet)
         bc_interface = BitcoinCoreInterface(binst, rpc, network)
     elif source == 'regtest':
@@ -172,6 +168,7 @@ def _get_blockchain_interface_instance(binst):
 
 
 class BlockInstance(object):
+
     def __init__(self):
         self.JM_VERSION = 2
         self.nickname = None

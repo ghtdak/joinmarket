@@ -7,7 +7,6 @@ from joinmarket.support import rand_weighted_choice
 data_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
 
-
 try:
     import matplotlib.pyplot as plt
     import numpy as np
