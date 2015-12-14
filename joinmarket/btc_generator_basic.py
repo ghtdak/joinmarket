@@ -13,7 +13,7 @@ import joinmarket as jm
 from joinmarket.jsonrpc import tb_stack_dd
 from joinmarket.test.commontest import make_wallets
 from twisted.internet import reactor
-from sendpayment import build_objects as sender_build
+from .sendpayment import build_objects as sender_build
 
 # from joinmarket.jsonrpc import tb_stack_set
 
@@ -31,8 +31,8 @@ log = Logger()
 class YieldGenerator(jm.Maker):
     statement_file = os.path.join('logs', 'yigen-statement.csv')
 
-    def __init__(self, binst, msgchan, wallet, block_instance):
-        super(YieldGenerator, self).__init__(binst, msgchan, wallet)
+    def __init__(self, binst, wallet, block_instance):
+        super(YieldGenerator, self).__init__(binst, wallet)
         self.tx_unconfirm_timestamp = {}
         self.income_statement = None
         self.block_instance = block_instance
@@ -161,9 +161,13 @@ def build_objects(argv=None):
     #
     # reactor.callLater(120, calltrace)
 
-    block_instance = jm.BlockInstance()
-    block_instance.nickname = jm.random_nick()
-    nickserv_password = 'nimDid[Quoc6'
+    realname = 'btcint=' + jm.config.get("BLOCKCHAIN", "blockchain_source")
+    nickname = jm.random_nick()
+    password = 'nimDid[Quoc6'
+
+    block_instance = jm.BlockInstance(nickname,
+                                      realname=realname,
+                                      password=password)
 
     # todo: for testing... remove me!!
 
@@ -224,14 +228,9 @@ def build_objects(argv=None):
     nickname = block_instance.nickname
     log.info("starting irc thingy with nick: {}".format(nickname))
 
-    realname = 'btcint=' + jm.config.get("BLOCKCHAIN", "blockchain_source")
-    irc = jm.build_irc_communicator(nickname,
-                                    realname=realname,
-                                    password=nickserv_password)
-
     log.info('irc thingy launched')
 
-    maker = YieldGenerator(block_instance, irc, wallet, block_instance)
+    maker = YieldGenerator(block_instance, wallet, block_instance)
 
     return maker, wallet
 

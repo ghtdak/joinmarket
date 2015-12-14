@@ -4,12 +4,10 @@ import io
 
 import sys
 from ConfigParser import SafeConfigParser, NoOptionError
-from twisted.internet import reactor
 import bitcoin as btc
 from twisted.logger import Logger, textFileLogObserver, globalLogPublisher, \
     jsonFileLogObserver
 from joinmarket.jsonrpc import JsonRpc
-from .txirc import build_irc_communicator
 
 # config = SafeConfigParser()
 # config_location = 'joinmarket.cfg'
@@ -141,71 +139,3 @@ DUST_THRESHOLD = 2730
 maker_timeout_sec = 30
 
 
-def _get_blockchain_interface_instance(binst):
-    # todo: refactor joinmarket module to get rid of loops
-    # importing here is necessary to avoid import loops
-    from joinmarket.blockchaininterface import BitcoinCoreInterface, \
-        RegtestBitcoinCoreInterface, BlockrInterface
-    from joinmarket.blockchaininterface import CliJsonRpc
-
-    source = config.get("BLOCKCHAIN", "blockchain_source")
-    network = get_network()
-    testnet = network == 'testnet'
-    if source == 'bitcoin-rpc':
-        rpc_host = config.get("BLOCKCHAIN", "rpc_host")
-        rpc_port = config.get("BLOCKCHAIN", "rpc_port")
-        rpc_user = config.get("BLOCKCHAIN", "rpc_user")
-        rpc_password = config.get("BLOCKCHAIN", "rpc_password")
-        rpc = JsonRpc(rpc_host, rpc_port, rpc_user, rpc_password)
-        bc_interface = BitcoinCoreInterface(binst, rpc, network)
-    elif source == 'json-rpc':
-        bitcoin_cli_cmd = config.get("BLOCKCHAIN", "bitcoin_cli_cmd").split(' ')
-        rpc = CliJsonRpc(bitcoin_cli_cmd, testnet)
-        bc_interface = BitcoinCoreInterface(binst, rpc, network)
-    elif source == 'regtest':
-        rpc_host = config.get("BLOCKCHAIN", "rpc_host")
-        rpc_port = config.get("BLOCKCHAIN", "rpc_port")
-        rpc_user = config.get("BLOCKCHAIN", "rpc_user")
-        rpc_password = config.get("BLOCKCHAIN", "rpc_password")
-        rpc = JsonRpc(rpc_host, rpc_port, rpc_user, rpc_password)
-        bc_interface = RegtestBitcoinCoreInterface(binst, rpc)
-    elif source == 'blockr':
-        bc_interface = BlockrInterface(binst, testnet)
-    else:
-        raise ValueError("Invalid blockchain source")
-    return bc_interface
-
-
-class BlockInstance(object):
-
-    instances = []
-
-    def __init__(self, nickname,
-                 username='username',
-                 realname='realname',
-                 password=None):
-
-        BlockInstance.instances.append(self)
-        self.JM_VERSION = 2
-        self.nickname = nickname
-        self.bc_interface = None
-        self.ordername_list = ['absorder', 'relorder']
-        self.core_alert = None
-        self.joinmarket_alert = None
-        self.debug_silence = False
-        self._load_program_config()
-        self.irc = build_irc_communicator(self, username, realname, password)
-
-    @staticmethod
-    def reactorDeath():
-        log.debug('reactor shutting down')
-
-    def get_bci(self):
-        return self.bc_interface
-
-    def _load_program_config(self):
-
-        # configure the interface to the blockchain on startup
-        self.bc_interface = _get_blockchain_interface_instance(self)
-
-reactor.addSystemEventTrigger('before', 'shutdown', BlockInstance.reactorDeath)

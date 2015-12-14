@@ -7,9 +7,9 @@ import traceback
 
 from twisted.logger import Logger
 
-from joinmarket.configure import get_config_irc_channel, config
+from joinmarket.configure import get_config_irc_channel, config, get_network
 from joinmarket.enc_wrapper import encrypt_encode, decode_decrypt
-from joinmarket.jsonrpc import JsonRpcError
+from joinmarket.jsonrpc import JsonRpcError, JsonRpc
 from joinmarket.support import chunks, sleepGenerator, system_shutdown
 from twisted.internet import defer, reactor, protocol
 from twisted.internet.endpoints import TCP4ClientEndpoint
@@ -23,6 +23,10 @@ log.debug('Twisted Logging Starts in txirc')
 
 
 class txIRC_Client(irc.IRCClient, object):
+
+    # lineRate is a class variable in the superclass used to limit
+    # messages / second
+    lineRate = 1
 
     def __init__(self, irc_market, nickname, password, hostname):
         self.irc_market = irc_market
@@ -283,8 +287,8 @@ class IRC_Market(CommSuper):
         super(IRC_Market, self).__init__()
 
         self.block_instance = block_instance
-        self.given_nick = block_instance.given_nick
-        self.nick = block_instance.given_nick
+        self.given_nick = block_instance.nickname
+        self.nick = block_instance.nickname
         self.userrealname = (username, realname)
         if password and len(password) == 0:
             password = None
@@ -339,7 +343,7 @@ class IRC_Market(CommSuper):
         self.connector.disconnect()
 
     def send(self, send_to, msg):
-        log.debug('send: {} {:d}: {}'.format(send_to, len(msg), msg))
+        log.debug('send: {} {:d}: {}...'.format(send_to, len(msg), msg[:40]))
         omsg = 'PRIVMSG %s :' % (send_to,) + msg
         self.tx_irc_client.sendLine(omsg.encode('ascii'))
 
@@ -738,14 +742,9 @@ class LogBotFactory(protocol.ClientFactory):
     #     log.info('IRC connection lost: {}'.format(reason))
     #     connector.connect()
     #
-    # def clientConnectionFailed(self, connector, reason):
-    #     log.info("IRC connection failed: {}".format(reason))
 
-    # todo: all this in config
-
-    # ght_cred = {'nickname': 'anutxhg',
-    #             'password': '',
-    #             'hostname': '6dvj6v5imhny3anf.onion'}
+    def clientConnectionFailed(self, connector, reason):
+        log.info("IRC connection failed: {}".format(reason))
 
 
 ght_cred = {'nickname': 'anutxhg', 'password': '', 'hostname': 'localhost'}
@@ -789,39 +788,99 @@ def localhost_nosec():
     return reactor.connectTCP('localhost', 6667, factory)
 
 
-def build_irc_communicator(block_instance,
-                           username='username',
-                           realname='realname',
-                           password=None):
+class BlockInstance(object):
 
-    # from IRC_blah constructor
-    serverport = (config.get("MESSAGING", "host"),
-                  int(config.get("MESSAGING", "port")))
-    socks5_host = config.get("MESSAGING", "socks5_host")
-    socks5_port = int(config.get("MESSAGING", "socks5_port"))
+    # todo: we need to do the instance collection thing
+    instances = []
 
-    # todo: channel set in too many places.  Should be only one
-    channel = get_config_irc_channel()
+    def __init__(self, nickname,
+                 username='username',
+                 realname='realname',
+                 password=None):
 
-    irc_market = IRC_Market(channel,
-                            block_instance,
-                            username=username,
-                            realname=realname,
-                            password=password)
+        BlockInstance.instances.append(self)
+        self.JM_VERSION = 2
+        self.nickname = nickname
+        self.bc_interface = None
+        self.ordername_list = ['absorder', 'relorder']
+        self._load_program_config()
+        self.irc = self.build_irc_communicator(
+                username, realname, password)
 
-    # todo: hack password
-    cr = {'irc_market': irc_market,
-          'nickname': block_instance.nickname,
-          'password': 'nimDid[Quoc6',
-          'hostname': 'nowhere.com'}
+    def get_bci(self):
+        return self.bc_interface
 
-    factory = LogBotFactory(channel, cr)
+    def _load_program_config(self):
 
-    # todo: hack!!!
-    serverport = ('192.168.1.200', 6667)
+        self.bc_interface = self._get_blockchain_interface_instance()
 
-    connector = reactor.connectTCP(serverport[0], serverport[1], factory)
+    def build_irc_communicator(self,
+                               username='username',
+                               realname='realname',
+                               password=None):
 
-    irc_market.set_tcp_connector(connector)
+        # from IRC_blah constructor
+        # serverport = (config.get("MESSAGING", "host"),
+        #               int(config.get("MESSAGING", "port")))
+        # socks5_host = config.get("MESSAGING", "socks5_host")
+        # socks5_port = int(config.get("MESSAGING", "socks5_port"))
 
-    return irc_market
+        # todo: channel set in too many places.  Should be only one
+        channel = get_config_irc_channel()
+
+        irc_market = IRC_Market(
+                channel, self, username=username, realname=realname,
+                password=password)
+
+        # todo: hack password
+        cr = {'irc_market': irc_market,
+              'nickname': self.nickname,
+              'password': 'nimDid[Quoc6',
+              'hostname': 'nowhere.com'}
+
+        factory = LogBotFactory(channel, cr)
+
+        # todo: hack!!!
+        serverport = ('192.168.1.200', 6667)
+
+        connector = reactor.connectTCP(serverport[0], serverport[1], factory)
+
+        irc_market.set_tcp_connector(connector)
+
+        return irc_market
+
+    def _get_blockchain_interface_instance(self):
+        # todo: refactor joinmarket module to get rid of loops
+        # importing here is necessary to avoid import loops
+        from joinmarket.blockchaininterface import BitcoinCoreInterface, \
+            RegtestBitcoinCoreInterface, BlockrInterface
+        from joinmarket.blockchaininterface import CliJsonRpc
+
+        source = config.get("BLOCKCHAIN", "blockchain_source")
+        network = get_network()
+        testnet = network == 'testnet'
+        if source == 'bitcoin-rpc':
+            rpc_host = config.get("BLOCKCHAIN", "rpc_host")
+            rpc_port = config.get("BLOCKCHAIN", "rpc_port")
+            rpc_user = config.get("BLOCKCHAIN", "rpc_user")
+            rpc_password = config.get("BLOCKCHAIN", "rpc_password")
+            rpc = JsonRpc(rpc_host, rpc_port, rpc_user, rpc_password)
+            bc_interface = BitcoinCoreInterface(self, rpc, network)
+        elif source == 'json-rpc':
+            bitcoin_cli_cmd = config.get("BLOCKCHAIN", "bitcoin_cli_cmd").split(' ')
+            rpc = CliJsonRpc(bitcoin_cli_cmd, testnet)
+            bc_interface = BitcoinCoreInterface(self, rpc, network)
+        elif source == 'regtest':
+            rpc_host = config.get("BLOCKCHAIN", "rpc_host")
+            rpc_port = config.get("BLOCKCHAIN", "rpc_port")
+            rpc_user = config.get("BLOCKCHAIN", "rpc_user")
+            rpc_password = config.get("BLOCKCHAIN", "rpc_password")
+            rpc = JsonRpc(rpc_host, rpc_port, rpc_user, rpc_password)
+            bc_interface = RegtestBitcoinCoreInterface(self, rpc)
+        elif source == 'blockr':
+            bc_interface = BlockrInterface(self, testnet)
+        else:
+            raise ValueError("Invalid blockchain source")
+        return bc_interface
+
+

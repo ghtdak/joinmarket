@@ -524,21 +524,3 @@ def build_objects(argv=None):
     irc = jm.build_irc_communicator(block_instance.nickname)
     tumbler = Tumbler(block_instance, irc, wallet, tx_list, options)
     return wallet, tumbler
-
-def main(wallet, tumbler):
-    try:
-        log.debug('connecting to irc')
-        reactor.run()
-    except:
-        log.debug('CRASHING, DUMPING EVERYTHING')
-        jm.debug_dump_object(wallet, ['addr_cache', 'keys', 'seed'])
-        jm.debug_dump_object(tumbler)
-        jm.debug_dump_object(tumbler.cjtx)
-        import traceback
-        log.debug(traceback.format_exc())
-
-
-if __name__ == "__main__":
-    wallet, tumbler = build_objects()
-    main(wallet, tumbler)
-    print('done')

@@ -368,10 +368,10 @@ class CoinJoinTX(object):
 
 class CoinJoinerPeer(object):
 
-    def __init__(self, block_instance, msgchan):
+    def __init__(self, block_instance):
         self.block_instance = block_instance
-        self.msgchan = msgchan
-        self.msgchan.set_coinjoiner_peer(self)
+        # todo: lazy.  refactor!!!
+        self.msgchan = self.block_instance.msgchan
 
     def get_crypto_box_from_nick(self, nick):
         raise Exception()
@@ -430,8 +430,8 @@ class CoinJoinerPeer(object):
 
 class OrderbookWatch(CoinJoinerPeer):
 
-    def __init__(self, block_instance, msgchan):
-        super(OrderbookWatch, self).__init__(block_instance, msgchan)
+    def __init__(self, block_instance):
+        super(OrderbookWatch, self).__init__(block_instance)
 
         con = sqlite3.connect(":memory:", check_same_thread=False)
         con.row_factory = sqlite3.Row
@@ -499,9 +499,8 @@ class OrderbookWatch(CoinJoinerPeer):
 # assume this only has one open cj tx at a time
 class Taker(OrderbookWatch):
 
-    def __init__(self, block_instance, msgchan):
-        OrderbookWatch.__init__(self, block_instance, msgchan)
-        msgchan.cjpeer = self
+    def __init__(self, block_instance):
+        OrderbookWatch.__init__(self, block_instance)
         self.cjtx = None
         self.maker_pks = {}
         self.sibling = None

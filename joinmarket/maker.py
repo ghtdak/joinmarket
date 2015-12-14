@@ -9,8 +9,8 @@ from twisted.logger import Logger
 import bitcoin as btc
 # from joinmarket import IRCMessageChannel
 # from joinmarket.configure import get_p2pk_vbyte, load_program_config, jm_single
-from joinmarket.txirc import build_irc_communicator
-from joinmarket.configure import DUST_THRESHOLD, get_p2pk_vbyte, BlockInstance
+from joinmarket.txirc import build_irc_communicator, BlockInstance
+from joinmarket.configure import DUST_THRESHOLD, get_p2pk_vbyte
 from joinmarket.enc_wrapper import init_keypair, as_init_encryption, init_pubkey
 from joinmarket.support import calc_cj_fee, debug_dump_object, \
     system_shutdown
@@ -199,9 +199,8 @@ class CJMakerOrderError(StandardError):
 
 class Maker(CoinJoinerPeer):
 
-    def __init__(self, block_instance, msgchan, wallet):
-        CoinJoinerPeer.__init__(self, block_instance, msgchan)
-        msgchan.cjpeer = self
+    def __init__(self, block_instance, wallet):
+        CoinJoinerPeer.__init__(self, block_instance)
 
         self.active_orders = {}
         self.wallet = wallet
