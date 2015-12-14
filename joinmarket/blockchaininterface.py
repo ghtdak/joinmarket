@@ -573,6 +573,7 @@ class BitcoinCoreInterface(BlockchainInterface):
             self.rpc('importaddress',
                      [addr, wallet_name, False],
                      immediate=True)
+        log.debug('done importing - async possible')
         if config.get("BLOCKCHAIN", "blockchain_source") != 'regtest':
             system_shutdown('restart Bitcoin Core with -rescan if you\'re '
                             'recovering an existing wallet from backup seed\n'
@@ -739,10 +740,14 @@ class BitcoinCoreInterface(BlockchainInterface):
 
     def pushtx(self, txhex):
         try:
-            return self.rpc('sendrawtransaction', [txhex])
+            # we don't need to wait for the return of this RPC.  Evaluate
+            # locally and return after an immediate invocation
+            self.rpc('sendrawtransaction', [txhex], immediate=True)
+            return btc.txhash(txhex)
         except JsonRpcConnectionError:
             return None
 
+    # noinspection PyTypeChecker
     def query_utxo_set(self, txout):
         if not isinstance(txout, list):
             txout = [txout]

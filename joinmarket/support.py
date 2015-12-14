@@ -1,6 +1,9 @@
 from __future__ import absolute_import, print_function
 
 import sys
+
+import io
+
 """
 Random functions - replacing some NumPy features
 NOTE THESE ARE NEITHER CRYPTOGRAPHICALLY SECURE
@@ -18,7 +21,7 @@ from decimal import Decimal
 from math import exp
 
 from twisted.internet import defer, reactor
-from twisted.logger import Logger
+from twisted.logger import Logger, eventsFromJSONLogFile
 
 log = Logger()
 
@@ -48,6 +51,14 @@ log.info('logger started')
 #     :return: log instance
 #     """
 #     return log
+
+def loggerMath():
+    """
+    Found this sitting around in the Twisted Howto module.  Very interesting
+    :return:
+    """
+    for event in eventsFromJSONLogFile(io.open("logs/log.json")):
+        print(sum(event["values"]))
 
 
 def system_shutdown(errno, reason='none given'):

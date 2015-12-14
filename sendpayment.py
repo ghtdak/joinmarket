@@ -171,7 +171,10 @@ class SendPayment(jm.Taker):
         self.taker_sibling.start()
 
 
-def build_objects(argv=sys.argv):
+def build_objects(argv=None):
+    if argv is None:
+        argv = sys.argv[1:]
+
     parser = OptionParser(
             usage=('usage: %prog [options] [wallet file / fromaccount] '
                    '[amount] [destaddr]'),
@@ -285,10 +288,12 @@ def build_objects(argv=sys.argv):
                         options.mixdepth, options.answeryes, chooseOrdersFunc)
     return taker, wallet
 
-def run_reactor(taker, wallet):
+def main():
     try:
         log.debug('starting irc')
+        taker, wallet = build_objects()
         reactor.run()
+        return 0
     except:
         log.debug('CRASHING, DUMPING EVERYTHING')
         jm.debug_dump_object(wallet, ['addr_cache', 'keys', 'wallet_name',
@@ -296,10 +301,8 @@ def run_reactor(taker, wallet):
         jm.debug_dump_object(taker)
         import traceback
         log.debug(traceback.format_exc())
+        return -1
 
 
 if __name__ == "__main__":
-    taker, wallet = build_objects()
-    run_reactor(taker, wallet)
-    log.info('sendpayment: done')
-    sys.exit(0)
+    sys.exit(main())

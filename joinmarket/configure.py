@@ -6,13 +6,20 @@ import sys
 from ConfigParser import SafeConfigParser, NoOptionError
 from twisted.internet import reactor
 import bitcoin as btc
+from twisted.logger import Logger, textFileLogObserver, globalLogPublisher, \
+    jsonFileLogObserver
 from joinmarket.jsonrpc import JsonRpc
-from twisted.logger import Logger, textFileLogObserver, globalLogPublisher
+from .txirc import build_irc_communicator
 
 # config = SafeConfigParser()
 # config_location = 'joinmarket.cfg'
 
 globalLogPublisher.addObserver(textFileLogObserver(sys.stdout))
+# noinspection PyTypeChecker
+globalLogPublisher.addObserver(jsonFileLogObserver(
+        io.open("logs/log.json", "a")))
+
+
 log = Logger()
 log.info('log started')
 
@@ -173,16 +180,21 @@ class BlockInstance(object):
 
     instances = []
 
-    def __init__(self):
+    def __init__(self, nickname,
+                 username='username',
+                 realname='realname',
+                 password=None):
+
         BlockInstance.instances.append(self)
         self.JM_VERSION = 2
-        self.nickname = None
+        self.nickname = nickname
         self.bc_interface = None
         self.ordername_list = ['absorder', 'relorder']
         self.core_alert = None
         self.joinmarket_alert = None
         self.debug_silence = False
         self._load_program_config()
+        self.irc = build_irc_communicator(self, username, realname, password)
 
     @staticmethod
     def reactorDeath():

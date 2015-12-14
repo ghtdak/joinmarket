@@ -1,5 +1,8 @@
 #! /usr/bin/env python
 from __future__ import absolute_import
+
+from twisted.logger import Logger
+
 """Some helper functions for testing"""
 
 import os
@@ -13,10 +16,9 @@ from .commontest import local_command, make_wallets
 
 import bitcoin as btc
 
-from joinmarket import load_program_config, jm_single
-from joinmarket import get_p2pk_vbyte, get_log
+import joinmarket as jm
 
-log = get_log()
+log = Logger()
 """
 Just some random thoughts to motivate possible tests;
 almost none of this has really been done:
@@ -47,12 +49,15 @@ class Join2PTests(unittest.TestCase):
         #create 2 new random wallets.
         #put 10 coins into the first receive address
         #to allow that bot to start.
-        self.wallets = make_wallets(
-            2,
-            wallet_structures=[[1, 0, 0, 0, 0], [1, 0, 0, 0, 0]],
+        self.wallets = make_wallets(2,
+            wallet_structures=[[1, 0, 0, 0, 0],
+                               [1, 0, 0, 0, 0]],
             mean_amt=10)
 
     def run_simple_send(self, n, m):
+        block_instance = jm.BlockInstance()
+        bc_interface = block_instance.get_bci()
+
         #start yield generator with wallet1
         yigen_proc = local_command(
             ['python', 'yield-gen-bas-test.py', str(self.wallets[0]['seed'])],
@@ -64,7 +69,7 @@ class Join2PTests(unittest.TestCase):
 
         #run a single sendpayment call with wallet2
         amt = n * 100000000  #in satoshis
-        dest_address = btc.privkey_to_address(os.urandom(32), get_p2pk_vbyte())
+        dest_address = btc.privkey_to_address(os.urandom(32), jm.get_p2pk_vbyte())
         try:
             for i in range(m):
                 sp_proc = local_command(['python', 'sendpayment.py', '--yes',
@@ -80,7 +85,7 @@ class Join2PTests(unittest.TestCase):
         if yigen_proc:
             yigen_proc.terminate()
 
-        received = jm_single().bc_interface.get_received_by_addr(
+        received = bc_interface.get_received_by_addr(
             [dest_address], None)['data'][0]['balance']
         if received != amt * m:
             log.debug('received was: ' + str(received) + ' but amount was: ' +

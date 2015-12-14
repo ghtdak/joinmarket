@@ -79,23 +79,30 @@ class JsonRpc(object):
         self.asyncCount = 0
         self.blockNew = 0
 
-    def treq_queryHttp(self, obj):
+    def treq_queryHTTP(self, obj):
         self.blockNew += 1
+        if self.asyncCount > 0:
+            log.debug('treq_queryHTTP blocking - Q size: {:d}'.format(
+                    self.asyncCount))
         while self.asyncCount > 0:
-            reactor.iterate()
+            reactor.runUntilCurrent()
+            reactor.doIteration(.001)
 
-        ret = None
-        def cb(r):
-            global ret
-            ret = r
+        ret_whatevername = []
+        def callMe(response):
+            if response:
+                ret_whatevername.append(response)
+            else:
+                ret_whatevername.append('')
 
         d = self.post_defer(obj)
-        d.addCallback(cb)
-
-        while ret is None:
-            reactor.iterate()
+        d.addCallback(callMe)
         self.blockNew -= 1
-        return ret
+
+        while len(ret_whatevername) == 0:
+            reactor.runUntilCurrent()
+            reactor.doIteration(.001)
+        return ret_whatevername.pop()
 
     def queryHTTP(self, obj):
         """
@@ -104,10 +111,6 @@ class JsonRpc(object):
     the resulting JSON object is returned.  In case of an error
     with the connection (not JSON-RPC itself), an exception is raised.
     """
-
-        # todo: call stack monitoring
-        # tb_stack_dd[tuple(x[:-1] for x in traceback.extract_stack())] += 1
-        tb_stack_dd[tuple(traceback.extract_stack())] += 1
 
         body = json.dumps(obj)
 
@@ -181,13 +184,16 @@ class JsonRpc(object):
 
     def call(self, method, params, immediate=False):
 
+        # todo: call stack monitoring
+        tb_stack_dd[tuple(traceback.extract_stack())] += 1
+
         currentId = self.queryId
         self.queryId += 1
 
         request = {"method": method, "params": params, "id": currentId}
 
         if not immediate:
-            response = self.queryHTTP(request)
+            response = self.treq_queryHTTP(request)
 
             if response["id"] != currentId:
                 print('jsonrpc: {}'.format(response))
@@ -217,7 +223,7 @@ class JsonRpc(object):
 
         nd = defer.Deferred()
 
-        if self.asyncCount <= 2 and self.blockNew == 0:
+        if self.asyncCount <= 5 and self.blockNew == 0:
             rd = self.post_defer(request)
             rd.addCallback(self.intercept, nd)
         else:

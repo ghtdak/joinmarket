@@ -276,14 +276,15 @@ class IRC_Market(CommSuper):
 
     def __init__(self,
                  channel,
-                 given_nick,
+                 block_instance,
                  username='username',
                  realname='realname',
                  password=None):
         super(IRC_Market, self).__init__()
 
-        self.given_nick = given_nick
-        self.nick = given_nick
+        self.block_instance = block_instance
+        self.given_nick = block_instance.given_nick
+        self.nick = block_instance.given_nick
         self.userrealname = (username, realname)
         if password and len(password) == 0:
             password = None
@@ -788,7 +789,7 @@ def localhost_nosec():
     return reactor.connectTCP('localhost', 6667, factory)
 
 
-def build_irc_communicator(given_nick,
+def build_irc_communicator(block_instance,
                            username='username',
                            realname='realname',
                            password=None):
@@ -803,14 +804,14 @@ def build_irc_communicator(given_nick,
     channel = get_config_irc_channel()
 
     irc_market = IRC_Market(channel,
-                            given_nick,
+                            block_instance,
                             username=username,
                             realname=realname,
                             password=password)
 
     # todo: hack password
     cr = {'irc_market': irc_market,
-          'nickname': given_nick,
+          'nickname': block_instance.nickname,
           'password': 'nimDid[Quoc6',
           'hostname': 'nowhere.com'}
 

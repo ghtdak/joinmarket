@@ -152,7 +152,9 @@ class Monitor(object):
 monitor = Monitor(120)
 
 
-def build_objects():
+def build_objects(argv=None):
+    if argv is None:
+        argv = sys.argv[1:]
 
     # def calltrace():
     #     for t in tb_stack_set:
@@ -161,9 +163,7 @@ def build_objects():
     # reactor.callLater(120, calltrace)
 
     block_instance = jm.BlockInstance()
-
-    block_instance.nickname = nick = jm.random_nick()
-    jm.nick_logging(nick)
+    block_instance.nickname = jm.random_nick()
     nickserv_password = 'nimDid[Quoc6'
 
     # todo: for testing... remove me!!
@@ -236,9 +236,10 @@ def build_objects():
 
     return maker, wallet
 
-def run_reactor(maker, wallet):
+def main():
     try:
         log.debug('Reactor Run')
+        maker, wallet = build_objects()
         reactor.run()
     except:
         log.debug('CRASHING, DUMPING EVERYTHING')
@@ -249,7 +250,4 @@ def run_reactor(maker, wallet):
 
 
 if __name__ == "__main__":
-    maker, wallet = build_objects()
-    run_reactor(maker, wallet)
-    log.info('yield-gen-bas-test done')
-    sys.exit(0)
+    sys.exit(main())
