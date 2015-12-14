@@ -1,4 +1,3 @@
-#! /usr/bin/env python
 from __future__ import absolute_import, print_function
 
 import datetime
@@ -236,18 +235,3 @@ def build_objects(argv=None):
 
     return maker, wallet
 
-def main():
-    try:
-        log.debug('Reactor Run')
-        maker, wallet = build_objects()
-        reactor.run()
-    except:
-        log.debug('CRASHING, DUMPING EVERYTHING')
-        jm.debug_dump_object(wallet, ['addr_cache', 'keys', 'seed'])
-        jm.debug_dump_object(maker)
-        import traceback
-        log.debug(traceback.format_exc())
-
-
-if __name__ == "__main__":
-    sys.exit(main())

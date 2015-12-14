@@ -287,22 +287,3 @@ def build_objects(argv=None):
                         options.makercount, options.txfee, options.waittime,
                         options.mixdepth, options.answeryes, chooseOrdersFunc)
     return taker, wallet
-
-def main():
-    try:
-        log.debug('starting irc')
-        taker, wallet = build_objects()
-        reactor.run()
-        return 0
-    except:
-        log.debug('CRASHING, DUMPING EVERYTHING')
-        jm.debug_dump_object(wallet, ['addr_cache', 'keys', 'wallet_name',
-                                      'seed'])
-        jm.debug_dump_object(taker)
-        import traceback
-        log.debug(traceback.format_exc())
-        return -1
-
-
-if __name__ == "__main__":
-    sys.exit(main())
