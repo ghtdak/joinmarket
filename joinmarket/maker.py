@@ -4,18 +4,20 @@ from __future__ import absolute_import, print_function
 import base64
 import pprint
 
+from twisted.logger import Logger
+
 import bitcoin as btc
 # from joinmarket import IRCMessageChannel
 # from joinmarket.configure import get_p2pk_vbyte, load_program_config, jm_single
 from joinmarket.txirc import build_irc_communicator
 from joinmarket.configure import DUST_THRESHOLD, get_p2pk_vbyte, BlockInstance
 from joinmarket.enc_wrapper import init_keypair, as_init_encryption, init_pubkey
-from joinmarket.support import get_log, calc_cj_fee, debug_dump_object, \
+from joinmarket.support import calc_cj_fee, debug_dump_object, \
     system_shutdown
 from joinmarket.taker import CoinJoinerPeer
 from joinmarket.wallet import Wallet
 
-log = get_log()
+log = Logger()
 
 
 class CoinJoinOrder(object):
@@ -56,7 +58,7 @@ class CoinJoinOrder(object):
             #  check nothing has messed up with the wallet code, remove this
             # code after a while
         import pprint
-        log.debug('maker utxos = ' + pprint.pformat(self.utxos))
+        # log.debug('maker utxos = ' + pprint.pformat(self.utxos))
         utxo_list = self.utxos.keys()
         utxo_data = self.maker.block_instance.get_bci().query_utxo_set(
             utxo_list)
@@ -80,7 +82,7 @@ class CoinJoinOrder(object):
 
         if not btc.ecdsa_verify(self.taker_pk, btc_sig, self.i_utxo_pubkey):
             # todo: says didn't match.  warning / info / error?
-            log.warning('signature didnt match pubkey and message')
+            log.warn('signature didnt match pubkey and message')
             return False
         # authorisation of taker passed
         # (but input utxo pubkey is checked in verify_unsigned_tx).
@@ -98,7 +100,7 @@ class CoinJoinOrder(object):
             self.tx = btc.deserialize(txhex)
         except IndexError as e:
             self.maker.msgchan.send_error(nick, 'malformed txhex. ' + repr(e))
-        log.debug('obtained tx\n' + pprint.pformat(self.tx))
+        # log.debug('obtained tx\n' + pprint.pformat(self.tx))
         goodtx, errmsg = self.verify_unsigned_tx(self.tx)
         if not goodtx:
             log.debug('not a good tx, reason=' + errmsg)
@@ -127,8 +129,8 @@ class CoinJoinOrder(object):
     def unconfirm_callback(self, txd, txid):
         removed_utxos = self.maker.wallet.remove_old_utxos(self.tx)
 
-        log.debug('saw tx on network, removed_utxos=\n{}'.format(pprint.pformat(
-            removed_utxos)))
+        # log.debug('saw tx on network, removed_utxos=\n{}'.format(pprint.pformat(
+        #     removed_utxos)))
         to_cancel, to_announce = self.maker.on_tx_unconfirmed(self, txid,
                                                               removed_utxos)
         self.maker.modify_orders(to_cancel, to_announce)
@@ -208,9 +210,8 @@ class Maker(CoinJoinerPeer):
 
     def get_crypto_box_from_nick(self, nick):
         if nick not in self.active_orders:
-            log.debug(
-                'wrong ordering of protocol events, no crypto object, nick=' +
-                nick)
+            log.debug('wrong ordering of protocol events, no crypto '
+                      'object, nick=' + nick)
             return None
         else:
             return self.active_orders[nick].crypto_box

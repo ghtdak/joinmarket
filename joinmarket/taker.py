@@ -8,13 +8,15 @@ import sqlite3
 import sys
 from decimal import InvalidOperation, Decimal
 
+from twisted.logger import Logger
+
 import bitcoin as btc
 from joinmarket.configure import get_p2pk_vbyte, maker_timeout_sec
 from joinmarket.enc_wrapper import init_keypair, as_init_encryption, init_pubkey
-from joinmarket.support import get_log, calc_cj_fee
+from joinmarket.support import calc_cj_fee
 from twisted.internet import reactor
 
-log = get_log()
+log = Logger()
 
 
 class CoinJoinTX(object):
@@ -117,8 +119,8 @@ class CoinJoinTX(object):
         bci = self.taker.block_instance.get_bci()
         utxo_data = bci.query_utxo_set(self.utxos[nick])
         if None in utxo_data:
-            log.debug(('ERROR outputs unconfirmed or already spent. '
-                       'utxo_data={}').format(pprint.pformat(utxo_data)))
+            # log.debug(('ERROR outputs unconfirmed or already spent. '
+            #            'utxo_data={}').format(pprint.pformat(utxo_data)))
             # when internal reviewing of makers is created, add it here to
             # immediately quit
             return
@@ -181,7 +183,7 @@ class CoinJoinTX(object):
         random.shuffle(self.utxo_tx)
         random.shuffle(self.outputs)
         tx = btc.mktx(self.utxo_tx, self.outputs)
-        log.debug('obtained tx\n' + pprint.pformat(btc.deserialize(tx)))
+        # log.debug('obtained tx\n' + pprint.pformat(btc.deserialize(tx)))
         self.msgchan.send_tx(self.active_orders.keys(), tx)
 
         self.latest_tx = btc.deserialize(tx)
@@ -324,10 +326,10 @@ class CoinJoinTX(object):
 
             self.nonrespondants = list(new_orders.keys())
 
-            log.debug(('new active_orders = {} \nnew nonrespondants = '
-                       '{}').format(
-                           pprint.pformat(self.active_orders), pprint.pformat(
-                               self.nonrespondants)))
+            # log.debug(('new active_orders = {} \nnew nonrespondants = '
+            #            '{}').format(
+            #                pprint.pformat(self.active_orders), pprint.pformat(
+            #                    self.nonrespondants)))
 
             self.msgchan.fill_orders(new_orders, self.cj_amount,
                                      self.kp.hex_pk())

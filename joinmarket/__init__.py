@@ -1,8 +1,10 @@
 from __future__ import absolute_import, print_function
 
-import logging
+from twisted.logger import Logger
+log = Logger()
 
-from .support import get_log, calc_cj_fee, debug_dump_object, \
+
+from .support import calc_cj_fee, debug_dump_object, \
     choose_sweep_orders, choose_orders, nick_logging,\
     pick_order, cheapest_order_choose, weighted_order_choose, \
     rand_norm_array, rand_pow_array, rand_exp_array, system_shutdown
@@ -21,14 +23,14 @@ from .configure import BlockInstance, config, get_network, maker_timeout_sec,\
 from .blockchaininterface import BlockrInterface
 # Set default logging handler to avoid "No handler found" warnings.
 
-try:
-    from logging import NullHandler
-except ImportError:
-
-    class NullHandler(logging.Handler):
-
-        def emit(self, record):
-            pass
-
-
-logging.getLogger(__name__).addHandler(NullHandler())
+# try:
+#     from logging import NullHandler
+# except ImportError:
+#
+#     class NullHandler(logging.Handler):
+#
+#         def emit(self, record):
+#             pass
+#
+#
+# logging.getLogger(__name__).addHandler(NullHandler())

@@ -3,11 +3,14 @@
 
 import base64
 import random
+import traceback
+
+from twisted.logger import Logger
 
 from joinmarket.configure import get_config_irc_channel, config
 from joinmarket.enc_wrapper import encrypt_encode, decode_decrypt
 from joinmarket.jsonrpc import JsonRpcError
-from joinmarket.support import get_log, chunks, sleepGenerator, system_shutdown
+from joinmarket.support import chunks, sleepGenerator, system_shutdown
 from twisted.internet import defer, reactor, protocol
 from twisted.internet.endpoints import TCP4ClientEndpoint
 from twisted.internet.ssl import ClientContextFactory
@@ -15,7 +18,7 @@ from twisted.words.protocols import irc
 from txsocksx.client import SOCKS5ClientEndpoint
 from txsocksx.tls import TLSWrapClientEndpoint
 
-log = get_log()
+log = Logger()
 log.debug('Twisted Logging Starts in txirc')
 
 
@@ -32,7 +35,7 @@ class txIRC_Client(irc.IRCClient, object):
         self.hostname = hostname
 
         # todo: build pong timeout watchdot
-        self.heartbeatinterval = 120
+        self.heartbeatinterval = 60
         self.heartbeattimeout = 30
 
     def set_irc_market(self, mkt):
@@ -353,7 +356,7 @@ class IRC_Market(CommSuper):
         try:
             self.coinjoinerpeer.on_welcome()
         except Exception as e:
-            log.exception(e)
+            log.error(traceback.format_exc())
             self.shutdown()
 
     def userJoined(self, user, channel):
@@ -364,7 +367,7 @@ class IRC_Market(CommSuper):
             log.debug('IRC connection made')
             self.coinjoinerpeer.on_connect(*args, **kwargs)
         except Exception as e:
-            log.exception(e)
+            log.error(traceback.format_exc())
             self.shutdown()
 
     def connectionLost(self, reason):
@@ -374,28 +377,28 @@ class IRC_Market(CommSuper):
             # todo: I'm making policy to shut down
             system_shutdown(self.errno, reason)
         except Exception as e:
-            log.exception(e)
+            log.error(traceback.format_exc())
             self.shutdown()
 
     def userLeft(self, *args, **kwargs):
         try:
             self.coinjoinerpeer.on_nick_leave(*args, **kwargs)
         except Exception as e:
-            log.exception(e)
+            log.error(traceback.format_exc())
             self.shutdown()
 
     def userRenamed(self, *args, **kwargs):
         try:
             self.coinjoinerpeer.on_nick_change(*args, **kwargs)
         except Exception as e:
-            log.exception(e)
+            log.error(traceback.format_exc())
             self.shutdown()
 
     def topicUpdated(self, *args, **kwargs):
         try:
             self.coinjoinerpeer.on_set_topic(*args, **kwargs)
         except Exception as e:
-            log.exception(e)
+            log.error(traceback.format_exc())
             self.shutdown()
 
     # OrderbookWatch callback
@@ -513,11 +516,11 @@ class IRC_Market(CommSuper):
                 maxsize = _chunks[3]
                 txfee = _chunks[4]
                 cjfee = _chunks[5]
-                self.coinjoinerpeer.on_order_seen(counterparty, oid, ordertype,
-                                                  minsize, maxsize, txfee,
-                                                  cjfee)
+                self.coinjoinerpeer.on_order_seen(
+                        counterparty, oid, ordertype, minsize, maxsize,
+                        txfee, cjfee)
             except IndexError as e:
-                log.exception(e)
+                log.error(traceback.format_exc())
                 log.debug('index error parsing chunks')
                 # TODO what now? just ignore iirc
             finally:
@@ -710,7 +713,7 @@ class IRC_Market(CommSuper):
         except JsonRpcError as e:
             log.debug(str(e))
         except Exception as e:
-            log.exception(e)
+            log.error(traceback.format_exc())
             self.shutdown()
 
 # -----------------------------------------------------

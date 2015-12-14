@@ -1,5 +1,8 @@
 #! /usr/bin/env python
 from __future__ import absolute_import
+
+from twisted.logger import Logger
+
 '''Some helper functions for testing'''
 
 import os
@@ -7,10 +10,10 @@ import binascii
 import random
 import subprocess
 
-from joinmarket import Wallet, get_log
+from joinmarket import Wallet
 from joinmarket.support import chunks
 
-log = get_log()
+log = Logger()
 '''This code is intended to provide
 subprocess startup cross-platform with
 some useful options; it could do with

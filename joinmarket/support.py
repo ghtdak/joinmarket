@@ -8,7 +8,7 @@ NOR PERFORMANT NOR HIGH PRECISION!
 Only for sampling purposes
 """
 
-import logging
+# import logging
 import pprint
 import random
 import traceback
@@ -18,34 +18,36 @@ from decimal import Decimal
 from math import exp
 
 from twisted.internet import defer, reactor
-from twisted.python import log as twisted_log
+from twisted.logger import Logger
 
-observer = twisted_log.PythonLoggingObserver()
-observer.start()
+log = Logger()
+
+# observer = twisted_log.PythonLoggingObserver()
+# observer.start()
 
 # log.startLogging(sys.stdout)
 
 # todo: I'm not sure I understand exactly why this is or isn't needed
-logging.getLogger('twisted').addHandler(logging.NullHandler())
-
-logFormatter = logging.Formatter(
-    "%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
-log = logging.getLogger('joinmarket')
-log.setLevel(logging.DEBUG)
-
-consoleHandler = logging.StreamHandler(stream=sys.stdout)
-consoleHandler.setFormatter(logFormatter)
-log.addHandler(consoleHandler)
+# logging.getLogger('twisted').addHandler(logging.NullHandler())
+#
+# logFormatter = logging.Formatter(
+#     "%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
+# log = logging.getLogger('joinmarket')
+# log.setLevel(logging.DEBUG)
+#
+# consoleHandler = logging.StreamHandler(stream=sys.stdout)
+# consoleHandler.setFormatter(logFormatter)
+# log.addHandler(consoleHandler)
 
 log.info('logger started')
 
 
-def get_log():
-    """
-    provides joinmarket logging instance
-    :return: log instance
-    """
-    return log
+# def get_log():
+#     """
+#     provides joinmarket logging instance
+#     :return: log instance
+#     """
+#     return log
 
 
 def system_shutdown(errno, reason='none given'):
@@ -72,10 +74,11 @@ def sleepGenerator(seconds):
 
 
 def nick_logging(nick):
-    fileHandler = logging.FileHandler('logs/{}.log'.format(nick))
-    fileHandler.setFormatter(logFormatter)
-    log.addHandler(fileHandler)
-    log.info('{} log starts'.format(nick))
+    pass
+    # fileHandler = logging.FileHandler('logs/{}.log'.format(nick))
+    # fileHandler.setFormatter(logFormatter)
+    # log.addHandler(fileHandler)
+    # log.info('{} log starts'.format(nick))
 
 
 def rand_norm_array(mu, sigma, n):

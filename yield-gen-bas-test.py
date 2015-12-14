@@ -5,14 +5,16 @@ import datetime
 import os
 import sys
 import time
-from collections import defaultdict
 import cPickle as pickle
+
+from twisted.logger import Logger
 
 import bitcoin
 import joinmarket as jm
-from joinmarket.jsonrpc import tb_stack_set
+from joinmarket.jsonrpc import tb_stack_dd
 from joinmarket.test.commontest import make_wallets
 from twisted.internet import reactor
+from sendpayment import build_objects as sender_build
 
 # from joinmarket.jsonrpc import tb_stack_set
 
@@ -24,7 +26,7 @@ minsize = int(1.2 * txfee / float(cjfee))
 
 mix_levels = 5
 
-log = jm.get_log()
+log = Logger()
 
 
 class YieldGenerator(jm.Maker):
@@ -143,14 +145,14 @@ class Monitor(object):
 
     def pickleStats(self):
         with open('logs/callstats.pickle', 'wb') as f:
-            pickle.dump(tb_stack_set, f, -1)
+            pickle.dump(tb_stack_dd, f, -1)
         log.debug('callgraph pickle dumped')
 
 
 monitor = Monitor(120)
 
 
-def main():
+def build_objects():
 
     # def calltrace():
     #     for t in tb_stack_set:
@@ -186,9 +188,9 @@ def main():
     #create 2 new random wallets.
     #put 10 coins into the first receive address
     #to allow that bot to start.
-    wallets = make_wallets(block_instance,
-                           2,
-                           wallet_structures=[[1, 0, 0, 0, 0], [1, 0, 0, 0, 0]],
+    wallets = make_wallets(block_instance, 2,
+                           wallet_structures=[[1, 0, 0, 0, 0],
+                                              [1, 0, 0, 0, 0]],
                            mean_amt=10)
 
     seed = str(wallets[0]['seed'])
@@ -199,11 +201,19 @@ def main():
     dest_address = bitcoin.privkey_to_address(
         os.urandom(32), jm.get_p2pk_vbyte())
 
-    for i in range(m):
-        print('python', 'sendpayment.py', '--yes', '-N', '1',
-              wallets[1]['seed'], str(amt), dest_address)
+    blobs = None
+    def launch_sender():
+        for _ in range(m):
+            sender_args = ['--yes', '-N', '1', str(wallets[1]['seed']),
+                           str(amt), dest_address]
+            log.debug('constructing sender, args: {}'.format(
+                    ' '.join(sender_args)))
+            blobs = sender_build(sender_args)
+            log.debug('numblobs: {}'.format(len(blobs)))  # stupid
 
-    # seed = sys.argv[1]
+    reactor.callLater(40, launch_sender)
+
+    # seed = argv[1]
     # -----------------------------------------------------
 
     wallet = jm.Wallet(block_instance, seed, max_mix_depth=mix_levels)
@@ -224,19 +234,22 @@ def main():
 
     maker = YieldGenerator(block_instance, irc, wallet, block_instance)
 
+    return maker, wallet
+
+def run_reactor(maker, wallet):
     try:
-        log.debug('Reactor Run - nick: {}'.format(nickname))
-        irc.run()
+        log.debug('Reactor Run')
+        reactor.run()
     except:
         log.debug('CRASHING, DUMPING EVERYTHING')
         jm.debug_dump_object(wallet, ['addr_cache', 'keys', 'seed'])
         jm.debug_dump_object(maker)
-        jm.debug_dump_object(irc)
         import traceback
         log.debug(traceback.format_exc())
 
 
 if __name__ == "__main__":
-    main()
+    maker, wallet = build_objects()
+    run_reactor(maker, wallet)
     log.info('yield-gen-bas-test done')
     sys.exit(0)

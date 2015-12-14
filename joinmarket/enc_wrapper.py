@@ -11,10 +11,11 @@ import base64
 import string
 import random
 
-from .support import get_log
+from twisted.logger import Logger
+
 from libnacl import public
 
-log = get_log()
+log = Logger()
 
 
 def init_keypair(fname=None):

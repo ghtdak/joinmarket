@@ -4,6 +4,8 @@ from __future__ import absolute_import, print_function
 import sys
 from optparse import OptionParser
 
+from twisted.logger import Logger
+
 from twisted.internet import reactor
 
 # data_dir = os.path.dirname(os.path.realpath(__file__))
@@ -21,7 +23,7 @@ from joinmarket import AbstractWallet, IRCMessageChannel, debug_dump_object
 import bitcoin as btc
 import sendpayment
 
-log = get_log()
+log = Logger()
 
 
 # thread which does the buy-side algorithm

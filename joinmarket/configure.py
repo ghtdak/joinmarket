@@ -1,26 +1,28 @@
 from __future__ import absolute_import, print_function
 
 import io
-import logging
 
+import sys
 from ConfigParser import SafeConfigParser, NoOptionError
-
+from twisted.internet import reactor
 import bitcoin as btc
 from joinmarket.jsonrpc import JsonRpc
-from joinmarket.support import get_log
+from twisted.logger import Logger, textFileLogObserver, globalLogPublisher
 
 # config = SafeConfigParser()
 # config_location = 'joinmarket.cfg'
 
-log = get_log()
+globalLogPublisher.addObserver(textFileLogObserver(sys.stdout))
+log = Logger()
+log.info('log started')
 
-logFormatter = logging.Formatter(('%(asctime)s [%(threadName)-12.12s] '
-                                  '[%(levelname)-5.5s]  %(message)s'))
-
+# logFormatter = logging.Formatter(('%(asctime)s [%(threadName)-12.12s] '
+#                                   '[%(levelname)-5.5s]  %(message)s'))
+#
 # todo: before the nick is set, we don't grab stuff.  rearchitect!!!
-fileHandler = logging.FileHandler('logs/{}.log'.format('everything'))
-fileHandler.setFormatter(logFormatter)
-log.addHandler(fileHandler)
+# fileHandler = logging.FileHandler('logs/{}.log'.format('everything'))
+# fileHandler.setFormatter(logFormatter)
+# log.addHandler(fileHandler)
 
 # FIXME: Add rpc_* options here in the future!
 required_options = {'BLOCKCHAIN': ['blockchain_source', 'network'],
@@ -169,7 +171,10 @@ def _get_blockchain_interface_instance(binst):
 
 class BlockInstance(object):
 
+    instances = []
+
     def __init__(self):
+        BlockInstance.instances.append(self)
         self.JM_VERSION = 2
         self.nickname = None
         self.bc_interface = None
@@ -179,6 +184,10 @@ class BlockInstance(object):
         self.debug_silence = False
         self._load_program_config()
 
+    @staticmethod
+    def reactorDeath():
+        log.debug('reactor shutting down')
+
     def get_bci(self):
         return self.bc_interface
 
@@ -186,3 +195,5 @@ class BlockInstance(object):
 
         # configure the interface to the blockchain on startup
         self.bc_interface = _get_blockchain_interface_instance(self)
+
+reactor.addSystemEventTrigger('before', 'shutdown', BlockInstance.reactorDeath)

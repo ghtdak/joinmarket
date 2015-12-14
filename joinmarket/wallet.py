@@ -7,16 +7,17 @@ from decimal import Decimal
 from getpass import getpass
 
 from ConfigParser import NoSectionError
+from twisted.logger import Logger
 
 import bitcoin as btc
 from joinmarket.blockchaininterface import BitcoinCoreInterface
 from joinmarket.configure import get_network, get_p2pk_vbyte, config
 from joinmarket.jsonrpc import JsonRpcError
 from joinmarket.slowaes import decryptData
-from joinmarket.support import get_log, select_gradual, select_greedy, \
+from joinmarket.support import select_gradual, select_greedy, \
     select_greediest, system_shutdown
 
-log = get_log()
+log = Logger()
 
 
 class AbstractWallet(object):
@@ -65,9 +66,9 @@ class AbstractWallet(object):
                     'value': addrval['value']}
                    for utxo, addrval in utxo_list.iteritems()]
         inputs = self.utxo_selector(unspent, amount)
-        log.debug('for mixdepth={} amount={} selected:'.format(mixdepth,
-                                                               amount))
-        log.debug(pprint.pformat(inputs))
+        log.debug('for mixdepth={} amount={} selected:'.format(
+                mixdepth, amount))
+        # log.debug('select_utxos: {}'.format(inputs))
         return dict([(i['utxo'], {'value': i['value'],
                                   'address': utxo_list[i['utxo']]['address']})
                      for i in inputs])
@@ -237,8 +238,8 @@ class Wallet(AbstractWallet):
                 continue
             removed_utxos[utxo] = self.unspent[utxo]
             del self.unspent[utxo]
-        log.debug('removed utxos, wallet now is \n' + pprint.pformat(
-            self.get_utxos_by_mixdepth()))
+        # log.debug('removed utxos, wallet now is \n{}'.format(
+        #     self.get_utxos_by_mixdepth()))
         self.spent_utxos += removed_utxos.keys()
         return removed_utxos
 
@@ -252,8 +253,8 @@ class Wallet(AbstractWallet):
             utxo = txid + ':' + str(index)
             added_utxos[utxo] = addrdict
             self.unspent[utxo] = addrdict
-        log.debug('added utxos, wallet now is \n' + pprint.pformat(
-            self.get_utxos_by_mixdepth()))
+        # log.debug('added utxos, wallet now is \n{}'.format(
+        #     self.get_utxos_by_mixdepth()))
         return added_utxos
 
     def get_utxos_by_mixdepth(self):
@@ -268,7 +269,7 @@ class Wallet(AbstractWallet):
             if mixdepth not in mix_utxo_list:
                 mix_utxo_list[mixdepth] = {}
             mix_utxo_list[mixdepth][utxo] = addrvalue
-        log.debug('get_utxos_by_mixdepth = \n' + pprint.pformat(mix_utxo_list))
+        # log.debug('get_utxos_by_mixdepth = \n{}'.format(mix_utxo_list))
         return mix_utxo_list
 
 

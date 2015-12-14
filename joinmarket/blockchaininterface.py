@@ -6,25 +6,30 @@ import pprint
 import random
 import re
 import time
+import traceback
 import urllib
 from decimal import Decimal
 
 # This can be removed once CliJsonRpc is gone.
 import subprocess
 
+import binascii
+
 from twisted.web import server as twisted_server
 from twisted.web import resource as twisted_resource
 from twisted.internet import defer, task, reactor
 from twisted.internet.protocol import DatagramProtocol
 import treq
+from txzmq import ZmqEndpoint, ZmqFactory, ZmqSubConnection
+from twisted.logger import Logger
 
 import bitcoin as btc
 
 from joinmarket.jsonrpc import JsonRpcConnectionError
-from joinmarket.support import get_log, chunks, system_shutdown
+from joinmarket.support import chunks, system_shutdown
 from joinmarket.configure import config, get_p2pk_vbyte
 
-log = get_log()
+log = Logger()
 
 
 class CliJsonRpc(object):
@@ -400,6 +405,33 @@ class BlockrInterface(BlockchainInterface):
                                'script': vout['extras']['script']})
         return result
 
+class JmZmq(object):
+    def __init__(self, btcinterface):
+        self.btcinterface = btcinterface
+        reactor.callLater(0.0, self.do_init)
+
+    def do_init(self):
+        try:
+            zf = ZmqFactory()
+            # todo: obviously,we need entries in the config
+            e = ZmqEndpoint('connect', 'tcp://192.168.1.200:28333')
+            s = ZmqSubConnection(zf, e)
+            s.subscribe('hashblock')
+            s.subscribe('hashtx')
+            s.subscribe('rawtx')
+            s.gotMessage = self.receive
+        except Exception as e:
+            log.error(traceback.format_exc())
+            # nobody to raise it to
+
+    def receive(self, *args):
+        msg, channel = args
+
+        if channel == 'hashtx' or channel == 'hashblock':
+            log.debug('{} | {}'.format(channel, binascii.hexlify(msg)))
+        elif channel == 'rawtx':
+            process_raw_tx(self.btcinterface, msg, btc.txhash(msg))
+
 
 class MultiCast(DatagramProtocol):
 
@@ -418,7 +450,6 @@ class MultiCast(DatagramProtocol):
 
     def datagramReceived(self, datagram, address):
         self.process(datagram)
-        log.debug('multicast receive: {}'.format(datagram))
 
     def process(self, path):
 
@@ -433,57 +464,51 @@ class MultiCast(DatagramProtocol):
             if not re.match('^[0-9a-fA-F]*$', tx):
                 log.debug('not a txhex')
                 return
-            txd = btc.deserialize(tx)
-            tx_output_set = set([(sv['script'], sv['value']) for sv in txd[
-                'outs']])
-
-            unconfirmfun, confirmfun = None, None
-            for tx_out, ucfun, cfun in self.btcinterface.txnotify_fun:
-                if tx_out == tx_output_set:
-                    unconfirmfun = ucfun
-                    confirmfun = cfun
-                    break
-            if unconfirmfun is None:
-                log.debug('txid=' + txid + ' not being listened for')
-            else:
-                # on rare occasions people spend their output without waiting
-                #  for a confirm
-                txdata = None
-                for n in range(len(txd['outs'])):
-                    txdata = self.btcinterface.rpc('gettxout', [txid, n, True])
-                    if txdata is not None:
-                        break
-                assert txdata is not None
-                if txdata['confirmations'] == 0:
-                    unconfirmfun(txd, txid)
-                    # TODO pass the total transfered amount value here somehow
-                    # wallet_name = self.get_wallet_name()
-                    # amount =
-                    # bitcoin-cli move wallet_name "" amount
-                    log.debug('ran unconfirmfun')
-                else:
-                    confirmfun(txd, txid, txdata['confirmations'])
-                    self.btcinterface.txnotify_fun.remove((tx_out, unconfirmfun,
-                                                           confirmfun))
-                    log.debug('ran confirmfun')
+            process_raw_tx(self.btcinterface, tx, txid)
 
         elif path.startswith('/alertnotify?'):
             # todo: I got rid of the core_alert thing... rearchitect!!
             core_alert = urllib.unquote(path[len(pages[1]):])
             log.debug('Got an alert!\nMessage=' + core_alert)
 
-        # url = 'http://localhost:{:d}{}'.format(self.using_port + 1, path)
-        #
-        # log.debug('NotifyHttpServer notify: {}'.format(url))
-        #
-        # treq.get(url)
 
-        # todo: spawning curl.  we can do this differently
-        # os.system('curl -sI --connect-timeout 1 http://localhost:' + str(
-        #         self.base_server.server_address[1] + 1) + path)
+def process_raw_tx(btcinterface, tx, txid):
+    txd = btc.deserialize(tx)
+    tx_output_set = set([(sv['script'], sv['value']) for sv in txd[
+        'outs']])
+
+    unconfirmfun, confirmfun = None, None
+    for tx_out, ucfun, cfun in btcinterface.txnotify_fun:
+        if tx_out == tx_output_set:
+            unconfirmfun = ucfun
+            confirmfun = cfun
+            break
+    if unconfirmfun is None:
+        log.debug('txid=' + txid + ' not being listened for')
+    else:
+        # on rare occasions people spend their output without waiting
+        #  for a confirm
+        txdata = None
+        for n in range(len(txd['outs'])):
+            txdata = btcinterface.rpc('gettxout', [txid, n, True])
+            if txdata is not None:
+                break
+        assert txdata is not None
+        if txdata['confirmations'] == 0:
+            unconfirmfun(txd, txid)
+            # TODO pass the total transfered amount value here somehow
+            # wallet_name = self.get_wallet_name()
+            # amount =
+            # bitcoin-cli move wallet_name "" amount
+            log.debug('ran unconfirmfun')
+        else:
+            confirmfun(txd, txid, txdata['confirmations'])
+            btcinterface.txnotify_fun.remove((tx_out, unconfirmfun,
+                                              confirmfun))
+            log.debug('ran confirmfun')
 
 
-        # noinspection PyMissingConstructor
+# noinspection PyMissingConstructor
 class NotifyHttpServer(twisted_resource.Resource):
 
     isLeaf = True
@@ -499,34 +524,6 @@ class NotifyHttpServer(twisted_resource.Resource):
         log.debug('url received: {}'.format(request.uri))
         self.multicast.writeDatagram(request.uri)
         return ''
-
-# class BitcoinCoreNotifyThread(threading.Thread):
-#     def __init__(self, btcinterface):
-#         threading.Thread.__init__(self)
-#         self.daemon = True
-#         self.btcinterface = btcinterface
-#
-#     def run(self):
-#         notify_host = 'localhost'
-#         notify_port = 62602  # defaults
-#         config = jm_single().config
-#         if 'notify_host' in config.options("BLOCKCHAIN"):
-#             notify_host = config.get("BLOCKCHAIN", "notify_host").strip()
-#         if 'notify_port' in config.options("BLOCKCHAIN"):
-#             notify_port = int(config.get("BLOCKCHAIN", "notify_port"))
-#         for inc in range(10):
-#             hostport = (notify_host, notify_port + inc)
-#             log.debug('BitcoinCoreNotifyThread hostport: {}:{:d}'.format(
-#                     notify_host, notify_port))
-#             try:
-#                 httpd = BaseHTTPServer.HTTPServer(hostport, NotifyHttpServer)
-#             except Exception:
-#                 continue
-#             httpd.btcinterface = self.btcinterface
-#             log.debug('started bitcoin core notify listening thread, host=' +
-#                       str(notify_host) + ' port=' + str(hostport[1]))
-#             httpd.serve_forever()
-#         log.debug('failed to bind for bitcoin core notify listening')
 
 
 # TODO must add the tx addresses as watchonly if case we ever broadcast a tx
@@ -545,6 +542,7 @@ class BitcoinCoreInterface(BlockchainInterface):
             raise Exception('wrong network configured')
 
         self.http_server = None
+        self.zmq_server = None
         self.txnotify_fun = []
         self.wallet_synced = False
 
@@ -561,8 +559,8 @@ class BitcoinCoreInterface(BlockchainInterface):
         :param immediate:
         :return:
         """
-        if method not in ['importaddress', 'walletpassphrase']:
-            log.debug('rpc: ' + method + " " + str(args))
+        # if method not in ['importaddress', 'walletpassphrase']:
+        #      log.debug('rpc: ' + method + " " + str(args))
         res = self.jsonRpc.call(method, args, immediate)
         if not immediate and isinstance(res, unicode):
             res = str(res)
@@ -723,8 +721,8 @@ class BitcoinCoreInterface(BlockchainInterface):
     def add_tx_notify(self, txd, unconfirmfun, confirmfun, notifyaddr):
         if not self.http_server:
             self.start_http_server()
-        #     self.notifythread = BitcoinCoreNotifyThread(self)
-        #     self.notifythread.start()
+        if not self.zmq_server:
+            self.zmq_server = JmZmq(self)
 
         one_addr_imported = False
         for outs in txd['outs']:
@@ -741,7 +739,7 @@ class BitcoinCoreInterface(BlockchainInterface):
 
     def pushtx(self, txhex):
         try:
-            return self.rpc('sendrawtransaction', [txhex], immediate=True)
+            return self.rpc('sendrawtransaction', [txhex])
         except JsonRpcConnectionError:
             return None
 

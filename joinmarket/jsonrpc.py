@@ -1,9 +1,14 @@
 from __future__ import absolute_import, print_function
 
-from collections import deque
+import base64
+import httplib
+import json
+import traceback
+from collections import defaultdict, deque
 
 import treq
-from twisted.internet import defer
+from twisted.internet import defer, reactor
+from twisted.logger import Logger
 """
 Copyright (C) 2013,2015 by Daniel Kraft <d@domob.eu>
 Copyright (C) 2014 by phelix / blockchained.com
@@ -27,16 +32,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-import base64
-import httplib
-import json
-import traceback
 
-from .support import get_log
+log = Logger()
 
-log = get_log()
-
-tb_stack_set = set()
+tb_stack_dd = defaultdict(int)
 
 
 class JsonRpcError(Exception):
@@ -78,6 +77,25 @@ class JsonRpc(object):
         self.queryId = 1
         self.asyncQ = deque()
         self.asyncCount = 0
+        self.blockNew = 0
+
+    def treq_queryHttp(self, obj):
+        self.blockNew += 1
+        while self.asyncCount > 0:
+            reactor.iterate()
+
+        ret = None
+        def cb(r):
+            global ret
+            ret = r
+
+        d = self.post_defer(obj)
+        d.addCallback(cb)
+
+        while ret is None:
+            reactor.iterate()
+        self.blockNew -= 1
+        return ret
 
     def queryHTTP(self, obj):
         """
@@ -88,9 +106,17 @@ class JsonRpc(object):
     """
 
         # todo: call stack monitoring
-        tb_stack_set.add(tuple(x[:-1] for x in traceback.extract_stack()))
+        # tb_stack_dd[tuple(x[:-1] for x in traceback.extract_stack())] += 1
+        tb_stack_dd[tuple(traceback.extract_stack())] += 1
 
         body = json.dumps(obj)
+
+        # black magic assist.  if there are async calls still queued, wait
+
+        self.blockNew += 1
+        while self.asyncCount > 0:
+            reactor.iterate()
+        self.blockNew -= 1
 
         try:
             conn = httplib.HTTPConnection(self.host, self.port)
@@ -120,11 +146,6 @@ class JsonRpc(object):
 
     @defer.inlineCallbacks
     def post_defer(self, obj):
-        """
-
-        :param obj:
-        :return:
-        """
         try:
             self.asyncCount += 1
 
@@ -144,21 +165,21 @@ class JsonRpc(object):
             js = json.loads(content)
         except Exception as e:
             log.debug('json conversion exception: {}'.format(content))
+            js = {'error':'error'}
         else:
             # log.debug('json conversion success: {}'.format(js))
             if js['id'] != obj['id']:
                 log.error('jsonrpc post_defer invalid id returned by query')
+                js = {'error':'error'}
 
         # todo: deal with exceptions properly
 
-            defer.returnValue(js)
         finally:
             self.asyncCount -= 1
+            defer.returnValue(js)
+
 
     def call(self, method, params, immediate=False):
-        """
-    Call a method over JSON-RPC.
-    """
 
         currentId = self.queryId
         self.queryId += 1
@@ -169,13 +190,13 @@ class JsonRpc(object):
             response = self.queryHTTP(request)
 
             if response["id"] != currentId:
-                log.debug('jsonrpc: {}'.format(response))
+                print('jsonrpc: {}'.format(response))
                 raise JsonRpcConnectionError("invalid id returned by query")
 
             if response["error"] is not None:
                 # todo: could be a warning or error
-                log.warning(response["error"])
-                log.debug('jsonrpc: {}'.format(response))
+                print(response["error"])
+                print('jsonrpc: {}'.format(response))
                 raise JsonRpcError(response["error"])
 
             return response["result"]
@@ -196,7 +217,7 @@ class JsonRpc(object):
 
         nd = defer.Deferred()
 
-        if self.asyncCount == 0:
+        if self.asyncCount <= 2 and self.blockNew == 0:
             rd = self.post_defer(request)
             rd.addCallback(self.intercept, nd)
         else:
