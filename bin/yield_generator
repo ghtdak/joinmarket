@@ -18,5 +18,5 @@ sys.path[:] = map(os.path.abspath, sys.path)
 
 sys.path.insert(0, os.path.abspath(os.getcwd()))
 
-from joinmarket.scripts.btc_generator import run
+from joinmarket.scripts.yield_generator import run
 run()

@@ -13,8 +13,6 @@ from decimal import Decimal
 # This can be removed once CliJsonRpc is gone.
 import subprocess
 
-import binascii
-
 from twisted.web import server as twisted_server
 from twisted.web import resource as twisted_resource
 from twisted.internet import defer, task, reactor
@@ -96,7 +94,7 @@ class BlockchainInterface(object):
         pass
 
     @abc.abstractmethod
-    def add_tx_notify(self, txd, d, unconfirmed, notifyaddr):
+    def add_tx_notify(self, txd, unconfirmfun, confirmfun, notifyaddr):
         """Invokes unconfirmfun and confirmfun when tx is seen on the network"""
         pass
 
@@ -207,7 +205,7 @@ class BlockrInterface(BlockchainInterface):
         log.debug('blockr sync_unspent took ' + str((self.last_sync_unspent - st
                                                     )) + 'sec')
 
-    def add_tx_notify(self, txd, d, unconfirmfun, notifyaddr):
+    def add_tx_notify(self, txd, unconfirmfun, confirmfun, notifyaddr):
         unconfirm_timeout = 10 * 60  # seconds
         unconfirm_poll_period = 5
         confirm_timeout = 2 * 60 * 60
@@ -233,7 +231,7 @@ class BlockrInterface(BlockchainInterface):
             log.debug('txoutset=' + pprint.pformat(tx_output_set))
             log.debug('outaddrs=' + ','.join(output_addresses))
 
-            def sleep(seconds):
+            def sleepGenerator(seconds):
                 d = defer.Deferred()
                 reactor.callLater(seconds, d.callback, seconds)
                 return d
@@ -244,7 +242,7 @@ class BlockrInterface(BlockchainInterface):
             while not unconfirmed_txid:
 
                 # time.sleep(unconfirm_poll_period)
-                yield sleep(unconfirm_poll_period)
+                yield sleepGenerator(unconfirm_poll_period)
 
                 if int(time.time()) - st > unconfirm_timeout:
                     log.debug('checking for unconfirmed tx timed out')
@@ -280,7 +278,7 @@ class BlockrInterface(BlockchainInterface):
 
                 # here for some race condition bullshit with blockr.io
                 # time.sleep(2)
-                yield sleep(2)
+                yield sleepGenerator(2)
 
                 blockr_url = 'https://' + blockr_domain
                 blockr_url += '.blockr.io/api/v1/tx/raw/'
@@ -312,7 +310,7 @@ class BlockrInterface(BlockchainInterface):
             confirmed_txhex = None
             while not confirmed_txid:
                 # time.sleep(confirm_poll_period)
-                yield sleep(confirm_poll_period)
+                yield sleepGenerator(confirm_poll_period)
 
                 if int(time.time()) - st > confirm_timeout:
                     log.debug('checking for confirmed tx timed out')
@@ -358,7 +356,7 @@ class BlockrInterface(BlockchainInterface):
                         confirmed_txid = txinfo['tx']['txid']
                         confirmed_txhex = str(txinfo['tx']['hex'])
                         break
-            d.callback(btc.deserialize(confirmed_txhex), confirmed_txid, 1)
+            # d.callback(btc.deserialize(confirmed_txhex), confirmed_txid, 1)
 
         # AsyncWebSucker returns a deferred.. but it doesn't matter because
         # nobody uses the return... magic!!!
@@ -429,9 +427,9 @@ class JmZmq(object):
     def receive(self, *args):
         msg, channel = args
 
-        if channel == 'hashtx' or channel == 'hashblock':
-            log.debug('{} | {}'.format(channel, binascii.hexlify(msg)))
-        elif channel == 'rawtx':
+        # if channel == 'hashtx' or channel == 'hashblock':
+        #     log.debug('{} | {}'.format(channel, binascii.hexlify(msg)))
+        if channel == 'rawtx':
             process_raw_tx(self.btcinterface, msg, btc.txhash(msg))
 
 
@@ -479,9 +477,7 @@ def process_raw_tx(btcinterface, tx, txid):
     tx_output_set = frozenset([(sv['script'], sv['value'])
                                for sv in txd['outs']])
 
-    if tx_output_set not in btcinterface.txnotify_fun:
-        log.debug('txid=' + txid + ' not being listened for')
-    else:
+    if tx_output_set in btcinterface.txnotify_fun:
         # on rare occasions people spend their output without waiting
         #  for a confirm
         txdata = None
@@ -490,18 +486,18 @@ def process_raw_tx(btcinterface, tx, txid):
             if txdata is not None:
                 break
         assert txdata is not None
-        d, unconfirmed = btcinterface.txnotify_fun[tx_output_set]
+        unconfirmfun, confirmfun = btcinterface.txnotify_fun[tx_output_set]
         if txdata['confirmations'] == 0:
-            unconfirmed(txd, txid)
+            unconfirmfun(txd, txid)
             # TODO pass the total transfered amount value here somehow
             # wallet_name = self.get_wallet_name()
             # amount =
             # bitcoin-cli move wallet_name "" amount
-            log.debug('ran unconfirmfun')
+            log.debug('unconfirmtx: {}'.format(txid))
         else:
-            d.callback(txd, txid, txdata['confirmations'])
+            confirmfun(txd, txid, txdata['confirmations'])
             del btcinterface.txnotify_fun[tx_output_set]
-            log.debug('ran confirmfun')
+            log.debug('CONFIRMed: {}'.format(txid))
 
 
 # noinspection PyMissingConstructor
@@ -538,9 +534,10 @@ class BitcoinCoreInterface(BlockchainInterface):
             raise Exception('wrong network configured')
 
         self.http_server = None
-        self.zmq_server = None
         self.txnotify_fun = {}
         self.wallet_synced = False
+        # self.zmq_server = JmZmq(self)
+
 
     @staticmethod
     def get_wallet_name(wallet):
@@ -715,12 +712,13 @@ class BitcoinCoreInterface(BlockchainInterface):
                 srv.using_port = hostport[1]
                 break
 
-    def add_tx_notify(self, txd, d, unconfirmed, notifyaddr):
+    def add_tx_notify(self, txd, unconfirmfun, confirmfun, notifyaddr):
+        log.debug('add_tx_notify: {}'.format(notifyaddr))
         # todo: these maybe could be initialized elsewhere
         if not self.http_server:
             self.start_http_server()
-        if not self.zmq_server:
-            self.zmq_server = JmZmq(self)
+        # if not self.zmq_server:
+        #     self.zmq_server = JmZmq(self)
 
         # todo: if using zmq, we don't need to tell the wallet
         one_addr_imported = False
@@ -735,7 +733,7 @@ class BitcoinCoreInterface(BlockchainInterface):
                      immediate=True)
         tx_output_set = frozenset([(sv['script'], sv['value'])
                                    for sv in txd['outs']])
-        self.txnotify_fun[tx_output_set] = (d, unconfirmed)
+        self.txnotify_fun[tx_output_set] = (unconfirmfun, confirmfun)
 
     def pushtx(self, txhex):
         try:

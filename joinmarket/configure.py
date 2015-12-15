@@ -12,8 +12,8 @@ globalLogPublisher.addObserver(
         textFileLogObserver(sys.stdout, timeFormat='%Y-%m-%d %H:%M:%S.%f'))
 
 # noinspection PyTypeChecker
-globalLogPublisher.addObserver(
-        jsonFileLogObserver(io.open("logs/log.json", "a")))
+# globalLogPublisher.addObserver(
+#         jsonFileLogObserver(io.open("logs/log.json", "a")))
 
 
 log = Logger()

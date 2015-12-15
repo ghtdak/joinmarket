@@ -5,18 +5,17 @@ import traceback
 from twisted.logger import Logger
 from twisted.internet import reactor
 
-import joinmarket as jm
-from joinmarket.btc_generator_basic import build_objects
+from joinmarket.yield_generator_basic import build_objects
 
 log = Logger()
 
 
 # noinspection PyBroadException
 def run():
-    block_instance, maker, wallet = None, None, None
     try:
         log.debug('Reactor Run')
-        block_instance, maker, wallet = build_objects()
+        block_instance, _, _ = build_objects()
+        block_instance.build_irc()
         reactor.run()
     except:
         log.debug('CRASHING, DUMPING EVERYTHING')

@@ -23,8 +23,8 @@ class CoinJoinTX(object):
     # soon the taker argument will be removed and just be replaced by wallet
     # or some other interface
     def __init__(self,
-                 cb_deferred,
                  taker,
+                 cb_deferred,
                  cj_amount,
                  orders,
                  input_utxos,
@@ -319,7 +319,7 @@ class CoinJoinTX(object):
             for nr in self.nonrespondants:
                 del self.active_orders[nr]
 
-            def from_choose(new_orders, new_makers_fee):
+            def from_choose((new_orders, new_makers_fee)):
                 for nick, order in new_orders.iteritems():
                     self.active_orders[nick] = order
 

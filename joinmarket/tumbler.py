@@ -2,10 +2,7 @@ from __future__ import absolute_import, print_function
 
 import copy
 import sys
-import threading
 
-
-import time
 from optparse import OptionParser
 from pprint import pprint
 
@@ -95,38 +92,55 @@ class Tumbler(jm.Taker):
         self.daemon = True
         self.ignored_makers = []
         self.sweeping = False
+        # todo: HHHHAAAAACCCCCCKKKKKK!!!!!
+        self.confirmDefer = None
 
     def unconfirm_callback(self, txd, txid):
         log.debug('that was %d tx out of %d' %
                   (self.current_tx + 1, len(self.tx_list)))
 
-    # def confirm_callback(self, txd, txid, confirmations):
+    def confirm_callback(self, txd, txid, confirmations):
+        if self.confirmDefer:
+            self.confirmDefer.callback(txd, txid, confirmations)
+            self.confirmDefer = None
+
     #     self.wallet.add_new_utxos(txd, txid)
         # previous twiddling of the conditional lock...
 
-    # so, it seems this callback is unnecessary if successful
+    # todo: a kludge for now until we understand how to re-architect
+    # finish etc
     def finishcallback(self, coinjointx):
-        if coinjointx.all_responded:
-            jm.bc_interface.add_tx_notify(
-                    coinjointx.latest_tx,
-                    self.unconfirm_callback,
-                    self.confirm_callback,
-                    coinjointx.my_cj_addr)
+        # a slight assist to "create_tx and the inlinecallbacks"
+        #coinjointx.cb_deferred.callback(coinjointx)
+        # ^^^ now, that's twisted         ^^^
 
-            self.wallet.remove_old_utxos(coinjointx.latest_tx)
-            coinjointx.self_sign_and_push()
-        else:
-            self.ignored_makers += coinjointx.nonrespondants
-            log.debug('recreating the tx, ignored_makers=' + str(
-                self.ignored_makers))
-            self.create_tx()
+        # we have our own version of double spend
+        d = coinjointx.cb_deferred
+        coinjointx.cb_deferred = None
+        if d:
+            d.callback(coinjointx)
+
+    #     if coinjointx.all_responded:
+    #         jm.bc_interface.add_tx_notify(
+    #                 coinjointx.latest_tx,
+    #                 self.unconfirm_callback,
+    #                 self.confirm_callback,
+    #                 coinjointx.my_cj_addr)
+    #
+    #         self.wallet.remove_old_utxos(coinjointx.latest_tx)
+    #         coinjointx.self_sign_and_push()
+    #     else:
+    #         self.ignored_makers += coinjointx.nonrespondants
+    #         log.debug('recreating the tx, ignored_makers=' + str(
+    #             self.ignored_makers))
+    #         self.create_tx()
 
     # because it has sleep, we do the deferred thing
     # todo: this polling is unnecessary.  Register for callback
     # 'in the right place'
 
     @defer.inlineCallbacks
-    def choose_orders_recover(self, cj_amount, makercount,
+    def tumbler_choose_orders(self, cj_amount, makercount,
                               nonrespondants=None, active_nicks=None):
 
         if nonrespondants is None:
@@ -158,28 +172,29 @@ class Tumbler(jm.Taker):
                 yield jm.sleepGenerator(self.options.liquiditywait)
                 continue
             break
-        log.debug('chosen orders to fill {} totalcjfee={}'.format(
-                orders, total_cj_fee))
+        # log.debug('chosen orders to fill {} totalcjfee={}'.format(
+        #         orders, total_cj_fee))
 
         defer.returnValue((orders, total_cj_fee))
 
+    choose_orders_recover = tumbler_choose_orders
+
     @defer.inlineCallbacks
-    def create_tx(self):
-        successful = False
-        while not successful:
+    def create_tx(self, tx, sweep, balance, destaddr):
+        while True:
             orders = None
             cj_amount = 0
             change_addr = None
-            if self.sweep:
+            if sweep:
                 log.debug('sweeping')
                 utxos = self.wallet.get_utxos_by_mixdepth()[
-                    self.tx['srcmixdepth']]
+                    tx['srcmixdepth']]
                 total_value = sum([addrval['value']
                                    for addrval in utxos.values()])
                 while True:
                     orders, cj_amount = jm.choose_sweep_orders(
                         self.db, total_value, self.options.txfee,
-                        self.tx['makercount'], jm.weighted_order_choose,
+                        tx['makercount'], jm.weighted_order_choose,
                         self.ignored_makers)
                     if orders is None:
                         log.debug('waiting for liquidity ' + str(
@@ -188,10 +203,10 @@ class Tumbler(jm.Taker):
                         yield jm.sleepGenerator(self.options.liquiditywait)
                         continue
                     abs_cj_fee = 1.0 * (
-                        total_value - cj_amount) / self.tx['makercount']
+                        total_value - cj_amount) / tx['makercount']
                     rel_cj_fee = abs_cj_fee / cj_amount
-                    log.debug('rel/abs average fee = ' + str(rel_cj_fee) + ' / ' +
-                              str(abs_cj_fee))
+                    log.debug('rel/abs average fee = {} / {}'.format(
+                            rel_cj_fee, abs_cj_fee))
                     if rel_cj_fee > self.options.maxcjfee[
                             0] and abs_cj_fee > self.options.maxcjfee[1]:
                         log.debug('cj fee higher than maxcjfee, waiting ' + str(
@@ -200,28 +215,28 @@ class Tumbler(jm.Taker):
                         continue
                     break
             else:
-                if self.tx['amount_fraction'] == 0:
+                if tx['amount_fraction'] == 0:
                     cj_amount = int(
-                            self.balance * self.options.donateamount / 100.0)
-                    self.destaddr = None
+                            balance * self.options.donateamount / 100.0)
+                    destaddr = None
                 else:
-                    cj_amount = int(self.tx['amount_fraction'] * self.balance)
+                    cj_amount = int(tx['amount_fraction'] * balance)
                 if cj_amount < self.options.mincjamount:
                     log.debug('cj amount too low, bringing up')
                     cj_amount = self.options.mincjamount
-                change_addr = self.wallet.get_change_addr(self.tx[
+                change_addr = self.wallet.get_change_addr(tx[
                     'srcmixdepth'])
                 log.debug('coinjoining ' + str(cj_amount) + ' satoshi')
-                orders, total_cj_fee = self.tumbler_choose_orders(
-                    cj_amount, self.tx['makercount'])
+                orders, total_cj_fee = yield self.tumbler_choose_orders(
+                        cj_amount, tx['makercount'])
                 total_amount = cj_amount + total_cj_fee + self.options.txfee
                 log.debug('total amount spent = ' + str(total_amount))
                 utxos = self.wallet.select_utxos(
-                        self.tx['srcmixdepth'], total_amount)
+                        tx['srcmixdepth'], total_amount)
 
             d = defer.Deferred()
-            jm.CoinJoinTX(self, d, cj_amount, orders, utxos, self.destaddr,
-                          change_addr, self.txfee)
+            jm.CoinJoinTX(self, d, cj_amount, orders, utxos, destaddr,
+                          change_addr, self.options.txfee)
 
             coinjointx = yield d
 
@@ -229,26 +244,28 @@ class Tumbler(jm.Taker):
                 d = defer.Deferred()
                 jm.bc_interface.add_tx_notify(
                         coinjointx.latest_tx,
-                        d,
+                        self.unconfirm_callback,
+                        self.confirm_callback,
                         coinjointx.my_cj_addr)
 
                 self.wallet.remove_old_utxos(coinjointx.latest_tx)
                 coinjointx.self_sign_and_push()
 
+                log.debug('register for notification: ')
+
                 txd, txid, confirmations = yield d
                 if confirmations:
                     self.wallet.add_new_utxos(txd, txid)
-                    log.debug('confirmed create_tx')
+                    log.debug('confirmed create_tx: {}'.format(txid))
+                    break                               # <---SUCCESS!!!
                 else:
                     log.debug('unconfirmed create_tx')
-                break
             else:
                 self.ignored_makers += coinjointx.nonrespondants
-                log.debug('recreating the tx, ignored_makers={}'.format(
-                        self.ignored_makers))
+                log.debug('coinjointx unsuccessful, ignored_makers=')
                 # lets do it agaoin
 
-
+    @defer.inlineCallbacks
     def init_tx(self, tx, balance, sweep):
         destaddr = None
         if tx['destination'] == 'internal':
@@ -263,13 +280,7 @@ class Tumbler(jm.Taker):
                       ' try again')
         else:
             destaddr = tx['destination']
-        self.sweep = sweep
-        self.balance = balance
-        self.tx = tx
-        self.destaddr = destaddr
-        d = self.create_tx()
-        d.addCallback(self.finishcallback)  # todo: name reuse, fix!!
-
+        yield self.create_tx(tx, sweep, balance, destaddr)
 
     @defer.inlineCallbacks
     def start(self):
@@ -289,7 +300,6 @@ class Tumbler(jm.Taker):
                 round(
                     (1 - (1 - relorder_fee)**maker_count) * 100, 3)) + '%')
         log.debug('starting')
-        self.lockcond = threading.Condition()
 
         self.balance_by_mixdepth = {}
 
@@ -318,26 +328,26 @@ class Tumbler(jm.Taker):
 
 def build_objects(argv=None):
     if not argv:
-        argv=sys.argv[1:]
+        argv=sys.argv
 
     parser = OptionParser(
             usage='usage: %prog [options] [wallet file] [destaddr(s)...]',
-            description=
-            'Sends bitcoins to many different addresses using coinjoin in'
-            ' an attempt to break the link between them. Sending to multiple '
-            ' addresses is highly recommended for privacy. This tumbler can'
-            ' be configured to ask for more address mid-run, giving the user'
-            ' a chance to click `Generate New Deposit Address` on whatever service'
-            ' they are using.')
+            description=(
+                'Sends bitcoins to many different addresses using coinjoin in '
+                ' an attempt to break the link between them. Sending to '
+                'multiple  addresses is highly recommended for privacy. This '
+                'tumbler canbe configured to ask for more address mid-run, '
+                'giving the user  a chance to click `Generate New Deposit '
+                'Address` on whatever service they are using. '))
     parser.add_option(
             '-m',
             '--mixdepthsource',
             type='int',
             dest='mixdepthsrc',
-            help=( 'Mixing depth to spend from. Useful if a previous tumbler run '
-                   'prematurely ended with coins being left in higher mixing '
-                   'levels, this option can be used to resume without needing to '
-                   'send to another address. default=0'),
+            help=( 'Mixing depth to spend from. Useful if a previous tumbler '
+                   'run prematurely ended with coins being left in higher '
+                   'mixing levels, this option can be used to resume without '
+                   'needing to send to another address. default=0'),
             default=0)
     parser.add_option(
             '-f',
@@ -352,10 +362,10 @@ def build_objects(argv=None):
             type='int',
             dest='addrcount',
             default=3,
-            help=
-            'How many destination addresses in total should be used. If not enough are given'
-            ' as command line arguments, the script will ask for more. This parameter is required'
-            ' to stop amount correlation. default=3')
+            help=('How many destination addresses in total should be used. If '
+                  'not enough are given as command line arguments, the script '
+                  'will ask for more. This parameter is required to stop '
+                  'amount correlation. default=3'))
     parser.add_option(
             '-x',
             '--maxcjfee',
@@ -363,9 +373,11 @@ def build_objects(argv=None):
             dest='maxcjfee',
             nargs=2,
             default=(0.01, 10000),
-            help='maximum coinjoin fee and bitcoin value the tumbler is '
-                 'willing to pay to a single market maker. Both values need to be exceeded, so if '
-                 'the fee is 30% but only 500satoshi is paid the tx will go ahead. default=0.01, 10000 (1%, 10000satoshi)')
+            help=('maximum coinjoin fee and bitcoin value the tumbler is '
+                  'willing to pay to a single market maker. Both values need '
+                  'to be exceeded, so if the fee is 30% but only 500satoshi '
+                  'is paid the tx will go ahead. default=0.01, 10000 (1%, '
+                  '10000satoshi)'))
     parser.add_option(
             '-N',
             '--makercountrange',
@@ -373,17 +385,17 @@ def build_objects(argv=None):
             nargs=2,
             action='store',
             dest='makercountrange',
-            help=
-            'Input the mean and spread of number of makers to use. e.g. 3 1.5 will be a normal distribution '
-            'with mean 3 and standard deveation 1.5 inclusive, default=3 1.5',
+            help=('Input the mean and spread of number of makers to use. e.g. '
+                  '3 1.5 will be a normal distribution with mean 3 and '
+                  'standard deveation 1.5 inclusive, default=3 1.5'),
             default=(3, 1.5))
     parser.add_option(
             '--minmakercount',
             type='int',
             dest='minmakercount',
             default=2,
-            help=
-            'The minimum maker count in a transaction, random values below this are clamped at this number. default=2')
+            help=('The minimum maker count in a transaction, random values '
+                  'below this are clamped at this number. default=2'))
     parser.add_option('-M',
                       '--mixdepthcount',
                       type='int',
@@ -397,10 +409,11 @@ def build_objects(argv=None):
             nargs=2,
             dest='txcountparams',
             default=(4, 1),
-            help=
-            'The number of transactions to take coins from one mixing depth to the next, it is'
-            ' randomly chosen following a normal distribution. Should be similar to --addrask. '
-            'This option controls the parameters of the normal distribution curve. (mean, standard deviation). default=(4, 1)')
+            help=('The number of transactions to take coins from one mixing '
+                  'depth to the next, it is randomly chosen following a '
+                  'normal distribution. Should be similar to --addrask. This '
+                  'option controls the parameters of the normal distribution '
+                  'curve. (mean, standard deviation). default=(4, 1)'))
     parser.add_option(
             '--mintxcount',
             type='int',
@@ -412,25 +425,25 @@ def build_objects(argv=None):
             type='float',
             dest='donateamount',
             default=0,
-            help=
-            'percent of funds to donate to joinmarket development, or zero to opt out (default=0%)')
+            help=('percent of funds to donate to joinmarket development, '
+                  'or zero to opt out (default=0%)'))
     parser.add_option(
             '--amountpower',
             type='float',
             dest='amountpower',
             default=100.0,
-            help=
-            'The output amounts follow a power law distribution, this is the power, default=100.0')
+            help=('The output amounts follow a power law distribution, '
+                  'this is the power, default=100.0'))
     parser.add_option(
             '-l',
             '--timelambda',
             type='float',
             dest='timelambda',
             default=30,
-            help=
-            'Average the number of minutes to wait between transactions. Randomly chosen '
-            ' following an exponential distribution, which describes the time between uncorrelated'
-            ' events. default=30')
+            help=('Average the number of minutes to wait between '
+                  'transactions. Randomly chosen  following an exponential '
+                  'distribution, which describes the time between '
+                  'uncorrelated events. default=30'))
     parser.add_option(
             '-w',
             '--wait-time',
@@ -455,7 +468,7 @@ def build_objects(argv=None):
             default=60,
             help=('amount of seconds to wait after failing to choose suitable '
                   'orders before trying again, default 60'))
-    (options, args) = parser.parse_args(argv)
+    (options, args) = parser.parse_args(argv[1:])
 
     if len(args) < 1:
         parser.error('Needs a wallet file')
@@ -468,7 +481,8 @@ def build_objects(argv=None):
         addr_valid, errormsg = jm.validate_address(addr)
         if not addr_valid:
             print('ERROR: Address ' + addr + ' invalid. ' + errormsg)
-            return
+            # todo: its throwing me out but still works.  sup?
+            # return
 
     if len(destaddrs) > options.addrcount:
         options.addrcount = len(destaddrs)
@@ -512,9 +526,10 @@ def build_objects(argv=None):
         print('this is very bad for privacy')
         print('=' * 50)
 
-    ret = raw_input('tumble with these tx? (y/n):')
-    if ret[0] != 'y':
-        return
+    # todo: re-enable this
+    # ret = raw_input('tumble with these tx? (y/n):')
+    # if ret[0] != 'y':
+    #     return
 
     # NOTE: possibly out of date documentation
     # a couple of modes
@@ -530,16 +545,14 @@ def build_objects(argv=None):
     # for quick testing
     # python tumbler.py -N 2 1 -c 3 0.001 -l 0.1 -M 3 -a 0 wallet_file 1xxx 1yyy
 
-    block_instance = jm.BlockInstance()
+    nickname = jm.random_nick()
 
-    wallet = jm.Wallet(
-            block_instance,
-            wallet_file,
-            max_mix_depth=options.mixdepthsrc + options.mixdepthcount)
+    block_instance = jm.BlockInstance(nickname)
 
-    block_instance.get_bci().sync_wallet(wallet)
+    mmd = options.mixdepthsrc + options.mixdepthcount
+    wallet = jm.Wallet(wallet_file, max_mix_depth=mmd)
 
-    block_instance.nickname = jm.random_nick()
+    jm.bc_interface.sync_wallet(wallet)
 
     log.debug('starting tumbler')
     tumbler = Tumbler(block_instance, wallet, tx_list, options)

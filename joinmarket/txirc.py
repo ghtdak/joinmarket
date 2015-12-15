@@ -5,18 +5,18 @@ import base64
 import random
 import traceback
 
-from joinmarket.configure import get_config_irc_channel
-from joinmarket.enc_wrapper import encrypt_encode, decode_decrypt
-from joinmarket.jsonrpc import JsonRpcError
-from joinmarket.support import chunks, sleepGenerator, system_shutdown
-
-from twisted.internet import defer, reactor, protocol
+from twisted.internet import reactor, protocol
 from twisted.internet.endpoints import TCP4ClientEndpoint
 from twisted.internet.ssl import ClientContextFactory
 from twisted.logger import Logger
 from twisted.words.protocols import irc
 from txsocksx.client import SOCKS5ClientEndpoint
 from txsocksx.tls import TLSWrapClientEndpoint
+
+from joinmarket.configure import get_config_irc_channel
+from joinmarket.enc_wrapper import encrypt_encode, decode_decrypt
+from joinmarket.jsonrpc import JsonRpcError
+from joinmarket.support import chunks
 
 log = Logger()
 log.debug('Twisted Logging Starts in txirc')
@@ -49,6 +49,11 @@ class txIRC_Client(irc.IRCClient, object):
     # ---------------------------------------------
     # callbacks from superclass
     # ---------------------------------------------
+
+    def _reallySendLine(self, line):
+        log.debug('_reallySendLine: {}...'.format(line[:40]))
+        return irc.IRCClient._reallySendLine(self, line)
+
 
     def lineReceived(self, line):
         #std_log.debug('lineReceived', line)
@@ -334,6 +339,8 @@ class IRC_Market(CommSuper):
 
     def send_error(self, nick, errormsg):
         log.debug('error<%s> : %s' % (nick, errormsg))
+        if 'Unknown format code' in errormsg:
+            raise Exception('The Susquehanna Hat Company!!!')
         self.__privmsg(nick, 'error', errormsg)
         raise CJPeerError()
 
@@ -414,14 +421,11 @@ class IRC_Market(CommSuper):
         message = pubkey + ' ' + sig
         self.__privmsg(nick, 'auth', message)
 
-    @defer.inlineCallbacks
     def send_tx(self, nick_list, txhex):
-        # HACK! really there should be rate limiting, see issue#31
+        # todo: rate limiting is handled now.  NO SLEEPING!!!
         txb64 = base64.b64encode(txhex.decode('hex'))
         for nick in nick_list:
             self.__privmsg(nick, 'tx', txb64)
-            # time.sleep(1)
-            yield sleepGenerator(1)
 
     def push_tx(self, nick, txhex):
         txb64 = base64.b64encode(txhex.decode('hex'))
@@ -461,14 +465,10 @@ class IRC_Market(CommSuper):
                    change_addr + ' ' + sig)
         self.__privmsg(nick, 'ioauth', authmsg)
 
-    @defer.inlineCallbacks
     def send_sigs(self, nick, sig_list):
-        # TODO make it send the sigs on one line if there's space
-        # todo: use better mechanism for delay
+        # todo: message rate is handled at the irc client level. solved.
         for s in sig_list:
             self.__privmsg(nick, 'sig', s)
-            # time.sleep(0.5)
-            yield sleepGenerator(0.5)
 
     def __pubmsg(self, message):
         log.debug('>>pubmsg ' + message)

@@ -149,11 +149,10 @@ class JsonRpc(object):
 
     @defer.inlineCallbacks
     def post_defer(self, obj):
+        self.asyncCount += 1
+        js = {'error':'error'}
         try:
-            self.asyncCount += 1
-
             body = json.dumps(obj)
-
             response = yield treq.post(self.url,
                                        data=body,
                                        headers=self.headers)
@@ -164,9 +163,8 @@ class JsonRpc(object):
 
             # todo: for debugging.  Can be done with a single call
             content = yield response.content()
-
             js = json.loads(content)
-        except Exception as e:
+        except:
             log.debug('json conversion exception: {}'.format(content))
             js = {'error':'error'}
         else:
@@ -176,7 +174,6 @@ class JsonRpc(object):
                 js = {'error':'error'}
 
         # todo: deal with exceptions properly
-
         finally:
             self.asyncCount -= 1
             defer.returnValue(js)
@@ -206,8 +203,8 @@ class JsonRpc(object):
 
         if response["error"] is not None:
             # todo: could be a warning or error
-            print(response["error"])
-            print('jsonrpc: {}'.format(response))
+            print(response["error"], request)
+            print('jsonrpc: {} {}'.format(response, request))
             raise JsonRpcError(response["error"])
 
         return response["result"]
