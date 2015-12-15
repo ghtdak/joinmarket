@@ -28,22 +28,18 @@ class txIRC_Client(irc.IRCClient, object):
     # messages / second
     lineRate = 1
 
-    def __init__(self, irc_market, nickname, password, hostname):
-        self.irc_market = irc_market
-
-        #register with the irc_market
-        self.irc_market.set_tx_irc_client(self)
-
+    def __init__(self, block_instance, nickname, password, hostname):
+        self.block_instance = block_instance
         self.nickname = nickname
         self.password = password
         self.hostname = hostname
 
+        # todo: kinda ugly but the factory instantiation makes this special
+        self.block_instance.tx_irc_client = self
+
         # todo: build pong timeout watchdot
         self.heartbeatinterval = 60
         self.heartbeattimeout = 30
-
-    def set_irc_market(self, mkt):
-        self.irc_market = mkt
 
     # ---------------------------------------------
     # callbacks from superclass
@@ -62,12 +58,12 @@ class txIRC_Client(irc.IRCClient, object):
 
     def connectionMade(self):
         log.debug('connectionMade: ')
-        reactor.callLater(0.0, self.irc_market.connectionMade)
+        reactor.callLater(0.0, self.block_instance.irc_market.connectionMade)
         return irc.IRCClient.connectionMade(self)
 
     def connectionLost(self, reason=protocol.connectionDone):
         log.debug('connectionLost: {}'.format(reason))
-        reactor.callLater(0.0, self.irc_market.connectionLost, reason)
+        reactor.callLater(0.0, self.block_instance.irc_market.connectionLost, reason)
         return irc.IRCClient.connectionLost(self, reason)
 
     def signedOn(self):
@@ -76,14 +72,14 @@ class txIRC_Client(irc.IRCClient, object):
 
     def joined(self, channel):
         log.debug('joined: {}'.format(channel))
-        reactor.callLater(0.0, self.irc_market.joined, channel)
+        reactor.callLater(0.0, self.block_instance.irc_market.joined, channel)
 
     def privmsg(self, userIn, channel, msg):
         log.debug('privmsg: {} {} {:d} {}'.format(userIn, channel, len(msg),
                                                   msg))
 
-        reactor.callLater(0.0, self.irc_market.handle_privmsg, userIn, channel,
-                          msg)
+        reactor.callLater(0.0, self.block_instance.irc_market.handle_privmsg,
+                          userIn, channel, msg)
 
         # user = userIn.split('!', 1)[0]
         #
@@ -227,13 +223,8 @@ class CommSuper(object):
     There were a bunch of methods defined on message_channel... so...
     """
 
-    def __init__(self):
-        self.coinjoinerpeer = None
-        self.block_instance = None
-
-    def set_coinjoiner_peer(self, cj):
-        self.coinjoinerpeer = cj
-        self.block_instance = cj.block_instance  # shortcut
+    def __init__(self, block_instance):
+        self.block_instance = block_instance
 
     def run(self):
         pass
@@ -284,9 +275,8 @@ class IRC_Market(CommSuper):
                  username='username',
                  realname='realname',
                  password=None):
-        super(IRC_Market, self).__init__()
+        super(IRC_Market, self).__init__(block_instance)
 
-        self.block_instance = block_instance
         self.given_nick = block_instance.nickname
         self.nick = block_instance.nickname
         self.userrealname = (username, realname)
@@ -300,8 +290,6 @@ class IRC_Market(CommSuper):
         # self.channel = get_config_irc_channel()
 
         # todo: rename this.  too confusing
-        self.tx_irc_client = None
-        self.connector = None
         self.from_to = None
         self.built_privmsg = []
         self.waiting = []
@@ -315,12 +303,6 @@ class IRC_Market(CommSuper):
         self.give_up = True
 
         # todo: how to end??? kicked?  timeout? etc...
-
-    def set_tcp_connector(self, connector):
-        self.connector = connector
-
-    def set_tx_irc_client(self, tx_irc_client):
-        self.tx_irc_client = tx_irc_client
 
     def run(self):
         """
@@ -340,12 +322,12 @@ class IRC_Market(CommSuper):
         log.debug('SHUTDOWN Called: Death Imminent')
         # todo: disconnection policy
         # disconnect will cause connectionLost which stops the reactor
-        self.connector.disconnect()
+        self.block_instance.tcp_connector.disconnect()
 
     def send(self, send_to, msg):
         log.debug('send: {} {:d}: {}...'.format(send_to, len(msg), msg[:40]))
         omsg = 'PRIVMSG %s :' % (send_to,) + msg
-        self.tx_irc_client.sendLine(omsg.encode('ascii'))
+        self.block_instance.tx_irc_client.sendLine(omsg.encode('ascii'))
 
     def send_error(self, nick, errormsg):
         log.debug('error<%s> : %s' % (nick, errormsg))
@@ -356,53 +338,59 @@ class IRC_Market(CommSuper):
     # connection callbacks
     # -----------------------------------
 
+    # noinspection PyBroadException
     def joined(self, channel):
         # todo: mode changes needed?
         try:
-            self.coinjoinerpeer.on_welcome()
-        except Exception as e:
+            self.cjp().on_welcome()
+        except:
             log.error(traceback.format_exc())
             self.shutdown()
 
     def userJoined(self, user, channel):
         pass
 
+    # noinspection PyBroadException
     def connectionMade(self, *args, **kwargs):
         try:
             log.debug('IRC connection made')
-            self.coinjoinerpeer.on_connect(*args, **kwargs)
-        except Exception as e:
+            self.cjp().on_connect(*args, **kwargs)
+        except:
             log.error(traceback.format_exc())
             self.shutdown()
 
+    # noinspection PyBroadException
     def connectionLost(self, reason):
         try:
             log.debug('IRC connection lost: {}'.format(reason))
-            self.coinjoinerpeer.on_disconnect(reason)
+            self.cjp().on_disconnect(reason)
             # todo: I'm making policy to shut down
             system_shutdown(self.errno, reason)
-        except Exception as e:
+        except:
             log.error(traceback.format_exc())
             self.shutdown()
 
+    # noinspection PyBroadException
     def userLeft(self, *args, **kwargs):
         try:
-            self.coinjoinerpeer.on_nick_leave(*args, **kwargs)
-        except Exception as e:
+            self.cjp().on_nick_leave(*args, **kwargs)
+        except:
             log.error(traceback.format_exc())
             self.shutdown()
 
+    # noinspection PyBroadException
     def userRenamed(self, *args, **kwargs):
         try:
-            self.coinjoinerpeer.on_nick_change(*args, **kwargs)
-        except Exception as e:
+            self.cjp().on_nick_change(*args, **kwargs)
+        except:
             log.error(traceback.format_exc())
             self.shutdown()
 
+    # noinspection PyBroadException
     def topicUpdated(self, *args, **kwargs):
         try:
-            self.coinjoinerpeer.on_set_topic(*args, **kwargs)
-        except Exception as e:
+            self.cjp().on_set_topic(*args, **kwargs)
+        except:
             log.error(traceback.format_exc())
             self.shutdown()
 
@@ -511,6 +499,11 @@ class IRC_Market(CommSuper):
             # self.send_raw(header + m + trailer)
             self.send(nick, m + trailer)
 
+    def cjp(self):
+        # basically saves space... too many notes
+        return self.block_instance.coinjoinerpeer
+
+    # noinspection PyBroadException
     def check_for_orders(self, nick, _chunks):
         if _chunks[0] in self.block_instance.ordername_list:
             try:
@@ -521,10 +514,10 @@ class IRC_Market(CommSuper):
                 maxsize = _chunks[3]
                 txfee = _chunks[4]
                 cjfee = _chunks[5]
-                self.coinjoinerpeer.on_order_seen(
+                self.cjp().on_order_seen(
                         counterparty, oid, ordertype, minsize, maxsize,
                         txfee, cjfee)
-            except IndexError as e:
+            except:
                 log.error(traceback.format_exc())
                 log.debug('index error parsing chunks')
                 # TODO what now? just ignore iirc
@@ -548,17 +541,18 @@ class IRC_Market(CommSuper):
                 # taker commands
                 elif _chunks[0] == 'pubkey':
                     maker_pk = _chunks[1]
-                    self.coinjoinerpeer.on_pubkey(nick, maker_pk)
+                    self.cjp().on_pubkey(
+                            nick, maker_pk)
                 elif _chunks[0] == 'ioauth':
                     utxo_list = _chunks[1].split(',')
                     cj_pub = _chunks[2]
                     change_addr = _chunks[3]
                     btc_sig = _chunks[4]
-                    self.coinjoinerpeer.on_ioauth(nick, utxo_list, cj_pub,
-                                                  change_addr, btc_sig)
+                    self.cjp().on_ioauth(
+                            nick, utxo_list, cj_pub, change_addr, btc_sig)
                 elif _chunks[0] == 'sig':
                     sig = _chunks[1]
-                    self.coinjoinerpeer.on_sig(nick, sig)
+                    self.cjp().on_sig(nick, sig)
 
                 # maker commands
                 if _chunks[0] == 'fill':
@@ -567,8 +561,8 @@ class IRC_Market(CommSuper):
                         amount = int(_chunks[2])
                         taker_pk = _chunks[3]
                         # todo: moved... correct?
-                        self.coinjoinerpeer.on_order_fill(nick, oid, amount,
-                                                          taker_pk)
+                        self.cjp().on_order_fill(
+                                nick, oid, amount, taker_pk)
                     except (ValueError, IndexError) as e:
                         self.send_error(nick, str(e))
 
@@ -577,8 +571,7 @@ class IRC_Market(CommSuper):
                         i_utxo_pubkey = _chunks[1]
                         btc_sig = _chunks[2]
                         # todo: shouldn't this be inside try?
-                        self.coinjoinerpeer.on_seen_auth(nick, i_utxo_pubkey,
-                                                         btc_sig)
+                        self.cjp().on_seen_auth(nick, i_utxo_pubkey, btc_sig)
                     except (ValueError, IndexError) as e:
                         self.send_error(nick, str(e))
 
@@ -587,7 +580,8 @@ class IRC_Market(CommSuper):
                     try:
                         txhex = base64.b64decode(b64tx).encode('hex')
                         # todo: inside try!
-                        self.coinjoinerpeer.on_seen_tx(nick, txhex)
+                        self.cjp().on_seen_tx(
+                                nick, txhex)
                     except TypeError as e:
                         self.send_error(nick, 'bad base64 tx. ' + repr(e))
 
@@ -595,7 +589,8 @@ class IRC_Market(CommSuper):
                     b64tx = _chunks[1]
                     try:
                         txhex = base64.b64decode(b64tx).encode('hex')
-                        self.coinjoinerpeer.on_push_tx(nick, txhex)
+                        self.cjp().on_push_tx(
+                                nick, txhex)
                     except TypeError as e:
                         self.send_error(nick, 'bad base64 tx. ' + repr(e))
             except CJPeerError:
@@ -617,12 +612,13 @@ class IRC_Market(CommSuper):
                 try:
                     oid = int(_chunks[1])
 
-                    self.coinjoinerpeer.on_order_cancel(nick, oid)
+                    self.cjp().on_order_cancel(
+                            nick, oid)
                 except ValueError as e:
                     log.debug("!cancel " + repr(e))
                     return
             elif _chunks[0] == 'orderbook':
-                self.coinjoinerpeer.on_orderbook_requested(nick)
+                self.cjp().on_orderbook_requested(nick)
 
     def __get_encryption_box(self, cmd, nick):
         """
@@ -638,7 +634,7 @@ class IRC_Market(CommSuper):
         if cmd in plaintext_commands:
             return None, False
         else:
-            return self.coinjoinerpeer.get_crypto_box_from_nick(nick), True
+            return self.cjp().get_crypto_box_from_nick(nick), True
 
     def handle_privmsg(self, sent_from, sent_to, message):
         try:
@@ -717,7 +713,7 @@ class IRC_Market(CommSuper):
                           (sent_from, sent_to, message))
         except JsonRpcError as e:
             log.debug(str(e))
-        except Exception as e:
+        except:
             log.error(traceback.format_exc())
             self.shutdown()
 
@@ -798,14 +794,20 @@ class BlockInstance(object):
                  realname='realname',
                  password=None):
 
-        BlockInstance.instances.append(self)
-        self.JM_VERSION = 2
         self.nickname = nickname
+        self.username = username
+        self.realname = realname
+        self.password = password
+
         self.bc_interface = None
+        self.channel = get_config_irc_channel()
+        self.tcp_connector = None
+        self.tx_irc_client = None
+        self.coinjoinerpeer = None
         self.ordername_list = ['absorder', 'relorder']
         self._load_program_config()
-        self.irc = self.build_irc_communicator(
-                username, realname, password)
+        BlockInstance.instances.append(self)
+        self.irc_market = self.build_irc_market()
 
     def get_bci(self):
         return self.bc_interface
@@ -814,40 +816,32 @@ class BlockInstance(object):
 
         self.bc_interface = self._get_blockchain_interface_instance()
 
-    def build_irc_communicator(self,
-                               username='username',
-                               realname='realname',
-                               password=None):
-
+    def build_irc_market(self):
         # from IRC_blah constructor
         # serverport = (config.get("MESSAGING", "host"),
         #               int(config.get("MESSAGING", "port")))
         # socks5_host = config.get("MESSAGING", "socks5_host")
         # socks5_port = int(config.get("MESSAGING", "socks5_port"))
 
-        # todo: channel set in too many places.  Should be only one
-        channel = get_config_irc_channel()
+        self.irc_market = IRC_Market(self.channel, self,
+                                     username=self.username,
+                                     realname=self.realname,
+                                     password=self.password)
 
-        irc_market = IRC_Market(
-                channel, self, username=username, realname=realname,
-                password=password)
-
+    def build_irc(self):
         # todo: hack password
-        cr = {'irc_market': irc_market,
+        cr = {'block_instance': self,
               'nickname': self.nickname,
               'password': 'nimDid[Quoc6',
               'hostname': 'nowhere.com'}
 
-        factory = LogBotFactory(channel, cr)
+        factory = LogBotFactory(self.channel, cr)
 
         # todo: hack!!!
         serverport = ('192.168.1.200', 6667)
 
-        connector = reactor.connectTCP(serverport[0], serverport[1], factory)
-
-        irc_market.set_tcp_connector(connector)
-
-        return irc_market
+        self.tcp_connector = reactor.connectTCP(
+                serverport[0], serverport[1], factory)
 
     def _get_blockchain_interface_instance(self):
         # todo: refactor joinmarket module to get rid of loops

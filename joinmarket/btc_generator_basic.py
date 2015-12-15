@@ -153,7 +153,7 @@ monitor = Monitor(120)
 
 def build_objects(argv=None):
     if argv is None:
-        argv = sys.argv[1:]
+        argv = sys.argv
 
     # def calltrace():
     #     for t in tb_stack_set:
@@ -191,35 +191,39 @@ def build_objects(argv=None):
     #create 2 new random wallets.
     #put 10 coins into the first receive address
     #to allow that bot to start.
-    wallets = make_wallets(block_instance, 2,
-                           wallet_structures=[[1, 0, 0, 0, 0],
-                                              [1, 0, 0, 0, 0]],
-                           mean_amt=10)
+    def build_otherguys():
+        wallets = make_wallets(block_instance, 2,
+                               wallet_structures=[[1, 0, 0, 0, 0],
+                                                  [1, 0, 0, 0, 0]],
+                               mean_amt=10)
 
-    seed = str(wallets[0]['seed'])
+        #run a single sendpayment call with wallet2
+        n = m = 2
+        amt = n * 100000000  #in satoshis
+        dest_address = bitcoin.privkey_to_address(
+            os.urandom(32), jm.get_p2pk_vbyte())
 
-    #run a single sendpayment call with wallet2
-    n = m = 2
-    amt = n * 100000000  #in satoshis
-    dest_address = bitcoin.privkey_to_address(
-        os.urandom(32), jm.get_p2pk_vbyte())
-
-    blobs = None
-    def launch_sender():
         for _ in range(m):
             sender_args = ['--yes', '-N', '1', str(wallets[1]['seed']),
                            str(amt), dest_address]
             log.debug('constructing sender, args: {}'.format(
                     ' '.join(sender_args)))
-            blobs = sender_build(sender_args)
-            log.debug('numblobs: {}'.format(len(blobs)))  # stupid
+            bi, t, w = sender_build(sender_args)
 
-    reactor.callLater(40, launch_sender)
+            # the necessary delay as per test/regtest.py
+            reactor.callLater(30, bi.build_irc)
+
+        return wallets
+
+    wallets = build_otherguys()
+
 
     # seed = argv[1]
     # -----------------------------------------------------
 
-    wallet = jm.Wallet(block_instance, seed, max_mix_depth=mix_levels)
+    fakeseed = str(wallets[0]['seed'])
+
+    wallet = jm.Wallet(block_instance, fakeseed, max_mix_depth=mix_levels)
 
     block_instance.get_bci().sync_wallet(wallet)
 
@@ -232,5 +236,7 @@ def build_objects(argv=None):
 
     maker = YieldGenerator(block_instance, wallet, block_instance)
 
-    return maker, wallet
+    block_instance.build_irc()
+
+    return block_instance, maker, wallet
 

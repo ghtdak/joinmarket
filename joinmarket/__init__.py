@@ -5,7 +5,7 @@ log = Logger()
 
 
 from .support import calc_cj_fee, debug_dump_object, \
-    choose_sweep_orders, choose_orders, nick_logging,\
+    choose_sweep_orders, choose_orders, \
     pick_order, cheapest_order_choose, weighted_order_choose, \
     rand_norm_array, rand_pow_array, rand_exp_array, system_shutdown
 from .enc_wrapper import decode_decrypt, encrypt_encode, get_pubkey
@@ -21,16 +21,3 @@ from .configure import config, get_network, maker_timeout_sec,\
     get_config_irc_channel, get_p2pk_vbyte, validate_address, DUST_THRESHOLD
 
 from .blockchaininterface import BlockrInterface
-# Set default logging handler to avoid "No handler found" warnings.
-
-# try:
-#     from logging import NullHandler
-# except ImportError:
-#
-#     class NullHandler(logging.Handler):
-#
-#         def emit(self, record):
-#             pass
-#
-#
-# logging.getLogger(__name__).addHandler(NullHandler())

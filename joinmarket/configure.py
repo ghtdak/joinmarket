@@ -136,6 +136,6 @@ def validate_address(addr):
 
 # todo: this should be in config
 DUST_THRESHOLD = 2730
-maker_timeout_sec = 30
 
+JM_VERSION = 2
 

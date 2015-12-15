@@ -523,4 +523,4 @@ def build_objects(argv=None):
     log.debug('starting tumbler')
     irc = jm.build_irc_communicator(block_instance.nickname)
     tumbler = Tumbler(block_instance, irc, wallet, tx_list, options)
-    return wallet, tumbler
+    return block_instance, tumbler, wallet

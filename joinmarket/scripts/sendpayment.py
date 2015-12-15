@@ -14,7 +14,7 @@ def run():
     taker, wallet = None, None
     try:
         log.debug('Reactor Run')
-        taker, wallet = build_objects()
+        block_instance, taker, wallet = build_objects()
         reactor.run()
     except:
         log.debug('CRASHING, DUMPING EVERYTHING')

@@ -84,14 +84,6 @@ def sleepGenerator(seconds):
     return d
 
 
-def nick_logging(nick):
-    pass
-    # fileHandler = logging.FileHandler('logs/{}.log'.format(nick))
-    # fileHandler.setFormatter(logFormatter)
-    # log.addHandler(fileHandler)
-    # log.info('{} log starts'.format(nick))
-
-
 def rand_norm_array(mu, sigma, n):
     # use normalvariate instead of gauss for thread safety
     return [random.normalvariate(mu, sigma) for _ in range(n)]

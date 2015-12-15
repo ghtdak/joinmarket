@@ -151,9 +151,9 @@ class PaymentThread(jm.TakerSibling):
 
 class SendPayment(jm.Taker):
 
-    def __init__(self, binst, msgchan, wallet, destaddr, amount, makercount,
+    def __init__(self, binst, wallet, destaddr, amount, makercount,
                  txfee, waittime, mixdepth, answeryes, chooseOrdersFunc):
-        super(SendPayment, self).__init__(binst, msgchan)
+        super(SendPayment, self).__init__(binst)
         self.wallet = wallet
         self.destaddr = destaddr
         self.amount = amount
@@ -256,7 +256,9 @@ def build_objects(argv=None):
 
     # load_program_config()
 
-    block_inst = jm.BlockInstance()
+    nickname = jm.random_nick()
+
+    block_instance = jm.BlockInstance(nickname)
 
     addr_valid, errormsg = jm.validate_address(destaddr)
     if not addr_valid:
@@ -270,20 +272,15 @@ def build_objects(argv=None):
     else:  # choose randomly (weighted)
         chooseOrdersFunc = jm.weighted_order_choose
 
-    block_inst.nickname = nick = jm.random_nick()
-    jm.nick_logging(nick)
-
     log.debug('starting sendpayment')
 
     if not options.userpcwallet:
-        wallet = jm.Wallet(block_inst, wallet_name, options.mixdepth + 1)
+        wallet = jm.Wallet(block_instance, wallet_name, options.mixdepth + 1)
     else:
-        wallet = jm.BitcoinCoreWallet(block_inst, fromaccount=wallet_name)
-    block_inst.get_bci().sync_wallet(wallet)
+        wallet = jm.BitcoinCoreWallet(block_instance, fromaccount=wallet_name)
+    block_instance.get_bci().sync_wallet(wallet)
 
-    irc = jm.build_irc_communicator(block_inst.nickname)
-
-    taker = SendPayment(block_inst, irc, wallet, destaddr, amount,
+    taker = SendPayment(block_instance, wallet, destaddr, amount,
                         options.makercount, options.txfee, options.waittime,
                         options.mixdepth, options.answeryes, chooseOrdersFunc)
-    return taker, wallet
+    return block_instance, taker, wallet

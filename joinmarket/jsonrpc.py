@@ -192,23 +192,26 @@ class JsonRpc(object):
 
         request = {"method": method, "params": params, "id": currentId}
 
-        if not immediate:
-            response = self.treq_queryHTTP(request)
-
-            if response["id"] != currentId:
-                print('jsonrpc: {}'.format(response))
-                raise JsonRpcConnectionError("invalid id returned by query")
-
-            if response["error"] is not None:
-                # todo: could be a warning or error
-                print(response["error"])
-                print('jsonrpc: {}'.format(response))
-                raise JsonRpcError(response["error"])
-
-            return response["result"]
-
-        else:
+        if reactor.running and immediate:
             return self.queuePost(request)
+
+        if reactor.running:
+            response = self.treq_queryHTTP(request)
+        else:
+            response = self.queryHTTP(request)
+
+        if response["id"] != currentId:
+            print('jsonrpc: {}'.format(response))
+            raise JsonRpcConnectionError("invalid id returned by query")
+
+        if response["error"] is not None:
+            # todo: could be a warning or error
+            print(response["error"])
+            print('jsonrpc: {}'.format(response))
+            raise JsonRpcError(response["error"])
+
+        return response["result"]
+
 
     def intercept(self, response, calld):
         if len(self.asyncQ) > 0:

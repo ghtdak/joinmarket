@@ -2,7 +2,6 @@
 from __future__ import absolute_import, print_function
 
 import base64
-import pprint
 import random
 import sqlite3
 import sys
@@ -41,12 +40,11 @@ class CoinJoinTX(object):
 
         self.taker_sibling = taker_sibling
         self.taker = self.taker_sibling.taker
+        self.block_instance = self.taker.block_instance
 
-        # this was the only action by start_cj its kinda different
+        # todo: this was the only action by defunct start_cj.  rearchitect!!
         self.taker.cjtx = self
 
-        # todo: lazy lazy.  remove this
-        self.msgchan = self.taker.msgchan
         self.db = self.taker.db
         self.wallet = self.taker.wallet
 
@@ -75,8 +73,12 @@ class CoinJoinTX(object):
         # create DH keypair on the fly for this Tx object
         self.kp = init_keypair()
         self.crypto_boxes = {}
-        self.msgchan.fill_orders(self.active_orders, self.cj_amount,
-                                 self.kp.hex_pk())
+        self.block_instance.tx_irc_client.fill_orders(
+                self.active_orders, self.cj_amount, self.kp.hex_pk())
+
+    def msgchan(self):
+        # legacy support
+        return self.block_instance.irc_market
 
     def start_encryption(self, nick, maker_pk):
         if nick not in self.active_orders.keys():
@@ -93,7 +95,7 @@ class CoinJoinTX(object):
         my_btc_priv = self.wallet.get_key_from_addr(my_btc_addr)
         my_btc_pub = btc.privtopub(my_btc_priv)
         my_btc_sig = btc.ecdsa_sign(self.kp.hex_pk(), my_btc_priv)
-        self.msgchan.send_auth(nick, my_btc_pub, my_btc_sig)
+        self.msgchan().send_auth(nick, my_btc_pub, my_btc_sig)
 
     def auth_counterparty(self, nick, btc_sig, cj_pub):
         """Validate the counterpartys claim to own the btc
@@ -184,7 +186,7 @@ class CoinJoinTX(object):
         random.shuffle(self.outputs)
         tx = btc.mktx(self.utxo_tx, self.outputs)
         # log.debug('obtained tx\n' + pprint.pformat(btc.deserialize(tx)))
-        self.msgchan.send_tx(self.active_orders.keys(), tx)
+        self.msgchan().send_tx(self.active_orders.keys(), tx)
 
         self.latest_tx = btc.deserialize(tx)
         for index, ins in enumerate(self.latest_tx['ins']):
@@ -331,7 +333,7 @@ class CoinJoinTX(object):
             #                pprint.pformat(self.active_orders), pprint.pformat(
             #                    self.nonrespondants)))
 
-            self.msgchan.fill_orders(new_orders, self.cj_amount,
+            self.msgchan().fill_orders(new_orders, self.cj_amount,
                                      self.kp.hex_pk())
         else:
             log.debug('nonresponse to !sig')
@@ -370,8 +372,12 @@ class CoinJoinerPeer(object):
 
     def __init__(self, block_instance):
         self.block_instance = block_instance
-        # todo: lazy.  refactor!!!
-        self.msgchan = self.block_instance.msgchan
+
+        # not the cleanest but it automates what would be an extra step
+        self.block_instance.coinjoinerpeer = self
+
+    def msgchan(self):
+        return self.block_instance.irc_market
 
     def get_crypto_box_from_nick(self, nick):
         raise Exception()
