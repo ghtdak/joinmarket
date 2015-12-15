@@ -9,7 +9,7 @@ import time
 from optparse import OptionParser
 from pprint import pprint
 
-from twisted.internet import reactor
+from twisted.internet import defer, reactor
 from twisted.logger import Logger
 
 import joinmarket as jm
@@ -31,7 +31,8 @@ def generate_tumbler_tx(destaddrs, options):
     # txcounts for going completely from one mixdepth to the next
     # follows a normal distribution
     txcounts = jm.rand_norm_array(options.txcountparams[0],
-                               options.txcountparams[1], options.mixdepthcount)
+                                  options.txcountparams[1],
+                                  options.mixdepthcount)
     txcounts = lower_bounded_int(txcounts, options.mintxcount)
     tx_list = []
     for m, txcount in enumerate(txcounts):
@@ -82,33 +83,38 @@ def generate_tumbler_tx(destaddrs, options):
     return tx_list
 
 
-# sibling which does the buy-side algorithm
-# chooses which coinjoins to initiate and when
-class TumblerThread(jm.TakerSibling):
+class Tumbler(jm.Taker):
 
-    def __init__(self, taker):
-        super(TumblerThread, self).__init__(taker)
+    def __init__(self, binst, msgchan, wallet, tx_list, options):
+        super(Tumbler, self).__init__(binst, msgchan)
+        self.wallet = wallet
+        self.tx_list = tx_list
+        self.options = options
+        self.tumbler_thread = None
+
         self.daemon = True
-        self.taker = taker
         self.ignored_makers = []
         self.sweeping = False
 
     def unconfirm_callback(self, txd, txid):
         log.debug('that was %d tx out of %d' %
-                  (self.current_tx + 1, len(self.taker.tx_list)))
+                  (self.current_tx + 1, len(self.tx_list)))
 
     def confirm_callback(self, txd, txid, confirmations):
-        self.taker.wallet.add_new_utxos(txd, txid)
+        self.wallet.add_new_utxos(txd, txid)
         self.lockcond.acquire()
         self.lockcond.notify()
         self.lockcond.release()
 
     def finishcallback(self, coinjointx):
         if coinjointx.all_responded:
-            self.taker.block_instance.get_bci().add_tx_notify(
-                    coinjointx.latest_tx, self.unconfirm_callback,
-                    self.confirm_callback, coinjointx.my_cj_addr)
-            self.taker.wallet.remove_old_utxos(coinjointx.latest_tx)
+            jm.bc_interface.add_tx_notify(
+                    coinjointx.latest_tx,
+                    self.unconfirm_callback,
+                    self.confirm_callback,
+                    coinjointx.my_cj_addr)
+
+            self.wallet.remove_old_utxos(coinjointx.latest_tx)
             coinjointx.self_sign_and_push()
         else:
             self.ignored_makers += coinjointx.nonrespondants
@@ -116,106 +122,114 @@ class TumblerThread(jm.TakerSibling):
                 self.ignored_makers))
             self.create_tx()
 
-    def tumbler_choose_orders(self,
-                              cj_amount,
-                              makercount,
-                              nonrespondants=None,
-                              active_nicks=None):
+    # because it has sleep, we do the deferred thing
+    # todo: this polling is unnecessary.  Register for callback
+    # 'in the right place'
+
+    @defer.inlineCallbacks
+    def choose_orders_recover(self, cj_amount, makercount,
+                              nonrespondants=None, active_nicks=None):
+
         if nonrespondants is None:
             nonrespondants = []
         if active_nicks is None:
             active_nicks = []
         self.ignored_makers += nonrespondants
+        orders, total_cj_fee = None, None
         while True:
             orders, total_cj_fee = jm.choose_orders(
-                self.taker.db, cj_amount, makercount, jm.weighted_order_choose,
+                self.db, cj_amount, makercount, jm.weighted_order_choose,
                 self.ignored_makers + active_nicks)
             abs_cj_fee = 1.0 * total_cj_fee / makercount
             rel_cj_fee = abs_cj_fee / cj_amount
-            log.debug('rel/abs average fee = ' + str(rel_cj_fee) + ' / ' + str(
-                abs_cj_fee))
-
-            if rel_cj_fee > self.taker.options.maxcjfee[
-                    0] and abs_cj_fee > self.taker.options.maxcjfee[1]:
+            log.debug('rel/abs average fee = {} / {}'.format(rel_cj_fee,
+                                                             abs_cj_fee))
+            if rel_cj_fee > self.options.maxcjfee[
+                    0] and abs_cj_fee > self.options.maxcjfee[1]:
                 log.debug('cj fee higher than maxcjfee, waiting ' + str(
-                    self.taker.options.liquiditywait) + ' seconds')
-                time.sleep(self.taker.options.liquiditywait)
+                    self.options.liquiditywait) + ' seconds')
+
+                yield jm.sleepGenerator(self.options.liquiditywait)
                 continue
             if orders is None:
                 log.debug('waiting for liquidity ' + str(
-                    self.taker.options.liquiditywait) +
+                    self.options.liquiditywait) +
                           'secs, hopefully more orders should come in')
-                time.sleep(self.taker.options.liquiditywait)
+
+                yield jm.sleepGenerator(self.options.liquiditywait)
                 continue
             break
         log.debug('chosen orders to fill {} totalcjfee={}'.format(
                 orders, total_cj_fee))
 
-        return orders, total_cj_fee
+        defer.returnValue((orders, total_cj_fee))
 
+    @defer.inlineCallbacks
     def create_tx(self):
         orders = None
         cj_amount = 0
         change_addr = None
-        choose_orders_recover = None
         if self.sweep:
             log.debug('sweeping')
-            utxos = self.taker.wallet.get_utxos_by_mixdepth()[self.tx[
+            utxos = self.wallet.get_utxos_by_mixdepth()[self.tx[
                 'srcmixdepth']]
             total_value = sum([addrval['value'] for addrval in utxos.values()])
             while True:
                 orders, cj_amount = jm.choose_sweep_orders(
-                    self.taker.db, total_value, self.taker.options.txfee,
+                    self.db, total_value, self.options.txfee,
                     self.tx['makercount'], jm.weighted_order_choose,
                     self.ignored_makers)
                 if orders is None:
                     log.debug('waiting for liquidity ' + str(
-                        self.taker.options.liquiditywait) +
+                        self.options.liquiditywait) +
                               'secs, hopefully more orders should come in')
-                    time.sleep(self.taker.options.liquiditywait)
+                    yield jm.sleepGenerator(self.options.liquiditywait)
                     continue
                 abs_cj_fee = 1.0 * (
                     total_value - cj_amount) / self.tx['makercount']
                 rel_cj_fee = abs_cj_fee / cj_amount
                 log.debug('rel/abs average fee = ' + str(rel_cj_fee) + ' / ' +
                           str(abs_cj_fee))
-                if rel_cj_fee > self.taker.options.maxcjfee[
-                        0] and abs_cj_fee > self.taker.options.maxcjfee[1]:
+                if rel_cj_fee > self.options.maxcjfee[
+                        0] and abs_cj_fee > self.options.maxcjfee[1]:
                     log.debug('cj fee higher than maxcjfee, waiting ' + str(
-                        self.taker.options.liquiditywait) + ' seconds')
-                    time.sleep(self.taker.options.liquiditywait)
+                        self.options.liquiditywait) + ' seconds')
+                    jm.sleepGenerator(self.options.liquiditywait)
                     continue
                 break
         else:
             if self.tx['amount_fraction'] == 0:
-                cj_amount = int(self.balance * self.taker.options.donateamount /
+                cj_amount = int(self.balance * self.options.donateamount /
                                 100.0)
                 self.destaddr = None
             else:
                 cj_amount = int(self.tx['amount_fraction'] * self.balance)
-            if cj_amount < self.taker.options.mincjamount:
+            if cj_amount < self.options.mincjamount:
                 log.debug('cj amount too low, bringing up')
-                cj_amount = self.taker.options.mincjamount
-            change_addr = self.taker.wallet.get_change_addr(self.tx[
+                cj_amount = self.options.mincjamount
+            change_addr = self.wallet.get_change_addr(self.tx[
                 'srcmixdepth'])
             log.debug('coinjoining ' + str(cj_amount) + ' satoshi')
             orders, total_cj_fee = self.tumbler_choose_orders(
                 cj_amount, self.tx['makercount'])
-            total_amount = cj_amount + total_cj_fee + self.taker.options.txfee
+            total_amount = cj_amount + total_cj_fee + self.options.txfee
             log.debug('total amount spent = ' + str(total_amount))
-            utxos = self.taker.wallet.select_utxos(self.tx['srcmixdepth'],
+            utxos = self.wallet.select_utxos(self.tx['srcmixdepth'],
                                                    total_amount)
-            choose_orders_recover = self.tumbler_choose_orders
 
-        self.taker.start_cj(self.taker.wallet, cj_amount, orders, utxos,
-                            self.destaddr, change_addr,
-                            self.taker.options.txfee, self.finishcallback,
-                            choose_orders_recover)
+        # self.start_cj(self.wallet, cj_amount, orders, utxos,
+        #                     self.destaddr, change_addr,
+        #                     self.options.txfee, self.finishcallback,
+        #                     choose_orders_recover)
+
+        jm.CoinJoinTX(self, cj_amount, orders, utxos, self.destaddr,
+                      change_addr, self.txfee)
+
 
     def init_tx(self, tx, balance, sweep):
         destaddr = None
         if tx['destination'] == 'internal':
-            destaddr = self.taker.wallet.get_receive_addr(tx['srcmixdepth'] + 1)
+            destaddr = self.wallet.get_receive_addr(tx['srcmixdepth'] + 1)
         elif tx['destination'] == 'addrask':
             while True:
                 destaddr = raw_input('insert new address: ')
@@ -239,12 +253,8 @@ class TumblerThread(jm.TakerSibling):
         log.debug('woken')
 
     def start(self):
-        log.debug('waiting for all orders to certainly arrive')
-        reactor.callLater(self.taker.options.waittime, self.run)
 
-    def run(self):
-
-        sqlorders = self.taker.db.execute(
+        sqlorders = self.db.execute(
             'SELECT cjfee, ordertype FROM orderbook;').fetchall()
         orders = [o['cjfee'] for o in sqlorders if o['ordertype'] == 'relorder']
         orders = sorted(orders)
@@ -254,7 +264,7 @@ class TumblerThread(jm.TakerSibling):
             return
         relorder_fee = float(orders[0])
         log.debug('relorder fee = ' + str(relorder_fee))
-        maker_count = sum([tx['makercount'] for tx in self.taker.tx_list])
+        maker_count = sum([tx['makercount'] for tx in self.tx_list])
         log.debug('uses ' + str(maker_count) + ' makers, at ' + str(
             relorder_fee * 100) + '% per maker, estimated total cost ' + str(
                 round(
@@ -263,36 +273,25 @@ class TumblerThread(jm.TakerSibling):
         self.lockcond = threading.Condition()
 
         self.balance_by_mixdepth = {}
-        for i, tx in enumerate(self.taker.tx_list):
+        for i, tx in enumerate(self.tx_list):
             if tx['srcmixdepth'] not in self.balance_by_mixdepth:
                 self.balance_by_mixdepth[tx[
-                    'srcmixdepth']] = self.taker.wallet.get_balance_by_mixdepth(
+                    'srcmixdepth']] = self.wallet.get_balance_by_mixdepth(
                     )[tx['srcmixdepth']]
             sweep = True
-            for later_tx in self.taker.tx_list[i + 1:]:
+            for later_tx in self.tx_list[i + 1:]:
                 if later_tx['srcmixdepth'] == tx['srcmixdepth']:
                     sweep = False
             self.current_tx = i
             self.init_tx(tx, self.balance_by_mixdepth[tx['srcmixdepth']], sweep)
 
         log.debug('total finished')
-        self.taker.msgchan.shutdown()
-
-
-class Tumbler(jm.Taker):
-
-    def __init__(self, binst, msgchan, wallet, tx_list, options):
-        super(Tumbler, self).__init__(binst, msgchan)
-        self.wallet = wallet
-        self.tx_list = tx_list
-        self.options = options
-        self.tumbler_thread = None
+        self.msgchan.shutdown()
 
     def on_welcome(self):
         super(Tumbler, self).on_welcome()
-        if not self.tumbler_thread:
-            self.tumbler_thread = TumblerThread(self)
-            self.tumbler_thread.start()
+        log.debug('waiting for all orders to certainly arrive')
+        reactor.callLater(self.options.waittime, self.start)
 
 
 def build_objects(argv=None):

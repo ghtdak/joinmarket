@@ -7,27 +7,18 @@ from ConfigParser import SafeConfigParser, NoOptionError
 import bitcoin as btc
 from twisted.logger import Logger, textFileLogObserver, globalLogPublisher, \
     jsonFileLogObserver
-from joinmarket.jsonrpc import JsonRpc
 
-# config = SafeConfigParser()
-# config_location = 'joinmarket.cfg'
+globalLogPublisher.addObserver(
+        textFileLogObserver(sys.stdout, timeFormat='%Y-%m-%d %H:%M:%S.%f'))
 
-globalLogPublisher.addObserver(textFileLogObserver(sys.stdout))
 # noinspection PyTypeChecker
-globalLogPublisher.addObserver(jsonFileLogObserver(
-        io.open("logs/log.json", "a")))
+globalLogPublisher.addObserver(
+        jsonFileLogObserver(io.open("logs/log.json", "a")))
 
 
 log = Logger()
 log.info('log started')
 
-# logFormatter = logging.Formatter(('%(asctime)s [%(threadName)-12.12s] '
-#                                   '[%(levelname)-5.5s]  %(message)s'))
-#
-# todo: before the nick is set, we don't grab stuff.  rearchitect!!!
-# fileHandler = logging.FileHandler('logs/{}.log'.format('everything'))
-# fileHandler.setFormatter(logFormatter)
-# log.addHandler(fileHandler)
 
 # FIXME: Add rpc_* options here in the future!
 required_options = {'BLOCKCHAIN': ['blockchain_source', 'network'],

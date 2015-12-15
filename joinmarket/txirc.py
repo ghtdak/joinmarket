@@ -5,15 +5,15 @@ import base64
 import random
 import traceback
 
-from twisted.logger import Logger
-
-from joinmarket.configure import get_config_irc_channel, config, get_network
+from joinmarket.configure import get_config_irc_channel
 from joinmarket.enc_wrapper import encrypt_encode, decode_decrypt
-from joinmarket.jsonrpc import JsonRpcError, JsonRpc
+from joinmarket.jsonrpc import JsonRpcError
 from joinmarket.support import chunks, sleepGenerator, system_shutdown
+
 from twisted.internet import defer, reactor, protocol
 from twisted.internet.endpoints import TCP4ClientEndpoint
 from twisted.internet.ssl import ClientContextFactory
+from twisted.logger import Logger
 from twisted.words.protocols import irc
 from txsocksx.client import SOCKS5ClientEndpoint
 from txsocksx.tls import TLSWrapClientEndpoint
@@ -35,8 +35,7 @@ class txIRC_Client(irc.IRCClient, object):
         self.password = password
         self.hostname = hostname
 
-        # todo: kinda ugly but the factory instantiation makes this special
-        self.block_instance.tx_irc_client = self
+        self.block_instance.set_tx_irc_client(self)
 
         # todo: build pong timeout watchdot
         # self.heartbeattimeout = 30
@@ -64,12 +63,12 @@ class txIRC_Client(irc.IRCClient, object):
 
     def connectionMade(self):
         log.debug('connectionMade: ')
-        reactor.callLater(0.0, self.block_instance.irc_market.connectionMade)
+        reactor.callLater(0.0, self.irc_market.connectionMade)
         return irc.IRCClient.connectionMade(self)
 
     def connectionLost(self, reason=protocol.connectionDone):
         log.debug('connectionLost: {}'.format(reason))
-        reactor.callLater(0.0, self.block_instance.irc_market.connectionLost, reason)
+        reactor.callLater(0.0, self.irc_market.connectionLost, reason)
         return irc.IRCClient.connectionLost(self, reason)
 
     def signedOn(self):
@@ -78,13 +77,13 @@ class txIRC_Client(irc.IRCClient, object):
 
     def joined(self, channel):
         log.debug('joined: {}'.format(channel))
-        reactor.callLater(0.0, self.block_instance.irc_market.joined, channel)
+        reactor.callLater(0.0, self.irc_market.joined, channel)
 
     def privmsg(self, userIn, channel, msg):
         log.debug('privmsg: {} {} {:d} {}...'.format(userIn, channel, len(msg),
                                                   msg[:40]))
 
-        reactor.callLater(0.0, self.block_instance.irc_market.handle_privmsg,
+        reactor.callLater(0.0, self.irc_market.handle_privmsg,
                           userIn, channel, msg)
 
         # user = userIn.split('!', 1)[0]
@@ -282,8 +281,7 @@ class IRC_Market(CommSuper):
                  password=None):
         super(IRC_Market, self).__init__(block_instance)
 
-        self.given_nick = block_instance.nickname
-        self.nick = block_instance.nickname
+        self.nickname = block_instance.nickname
         self.userrealname = (username, realname)
         if password and len(password) == 0:
             password = None
@@ -370,7 +368,7 @@ class IRC_Market(CommSuper):
             log.debug('IRC connection lost: {}'.format(reason))
             self.cjp().on_disconnect(reason)
             # todo: I'm making policy to shut down
-            system_shutdown(self.errno, reason)
+            # system_shutdown(self.errno, reason)
         except:
             log.error(traceback.format_exc())
             self.shutdown()
@@ -510,7 +508,7 @@ class IRC_Market(CommSuper):
 
     # noinspection PyBroadException
     def check_for_orders(self, nick, _chunks):
-        if _chunks[0] in self.block_instance.ordername_list:
+        if _chunks[0] in ['absorder', 'relorder']:
             try:
                 counterparty = nick
                 oid = _chunks[1]
@@ -519,6 +517,9 @@ class IRC_Market(CommSuper):
                 maxsize = _chunks[3]
                 txfee = _chunks[4]
                 cjfee = _chunks[5]
+                log.debug('on_order_seen: {}'.format(', '.join(
+                    map(str, [counterparty, oid, ordertype, minsize, maxsize,
+                        txfee, cjfee]))))
                 self.cjp().on_order_seen(
                         counterparty, oid, ordertype, minsize, maxsize,
                         txfee, cjfee)
@@ -649,7 +650,7 @@ class IRC_Market(CommSuper):
 
             self.from_to = (nick, sent_to)
 
-            if sent_to == self.nick:
+            if sent_to == self.nickname:
                 # todo: this is some ctcp thing handled elsewhere. check
                 # if message[0] == '\x01':
                 #     endindex = message[1:].find('\x01')
@@ -807,10 +808,8 @@ class BlockInstance(object):
         self.tcp_connector = None
         self.tx_irc_client = None
         self.coinjoinerpeer = None
-        self.ordername_list = ['absorder', 'relorder']
 
         self.channel = get_config_irc_channel()
-        self.bc_interface = self._get_blockchain_interface_instance()
         self.irc_market = IRC_Market(self.channel, self,
                                      username=self.username,
                                      realname=self.realname,
@@ -818,8 +817,13 @@ class BlockInstance(object):
 
         BlockInstance.instances.append(self)  # list of everyone important
 
-    def get_bci(self):
-        return self.bc_interface
+    def set_coinjoinerpeer(self, cjp):
+        log.debug('set_coinjoinerpeer')
+        self.coinjoinerpeer = cjp
+
+    def set_tx_irc_client(self, txircclt):
+        log.debug('set_tx_irc_client')
+        self.tx_irc_client = txircclt
 
         # from IRC_blah constructor
         # serverport = (config.get("MESSAGING", "host"),
@@ -829,6 +833,10 @@ class BlockInstance(object):
 
 
     def build_irc(self):
+        if self.tx_irc_client:
+            raise Exception('irc already built')
+
+        log.debug('build_irc')
         # todo: hack password
         cr = {'block_instance': self,
               'nickname': self.nickname,
@@ -842,39 +850,3 @@ class BlockInstance(object):
 
         self.tcp_connector = reactor.connectTCP(
                 serverport[0], serverport[1], factory)
-
-    def _get_blockchain_interface_instance(self):
-        # todo: refactor joinmarket module to get rid of loops
-        # importing here is necessary to avoid import loops
-        from joinmarket.blockchaininterface import BitcoinCoreInterface, \
-            RegtestBitcoinCoreInterface, BlockrInterface
-        from joinmarket.blockchaininterface import CliJsonRpc
-
-        source = config.get("BLOCKCHAIN", "blockchain_source")
-        network = get_network()
-        testnet = network == 'testnet'
-        if source == 'bitcoin-rpc':
-            rpc_host = config.get("BLOCKCHAIN", "rpc_host")
-            rpc_port = config.get("BLOCKCHAIN", "rpc_port")
-            rpc_user = config.get("BLOCKCHAIN", "rpc_user")
-            rpc_password = config.get("BLOCKCHAIN", "rpc_password")
-            rpc = JsonRpc(rpc_host, rpc_port, rpc_user, rpc_password)
-            bc_interface = BitcoinCoreInterface(self, rpc, network)
-        elif source == 'json-rpc':
-            bitcoin_cli_cmd = config.get("BLOCKCHAIN", "bitcoin_cli_cmd").split(' ')
-            rpc = CliJsonRpc(bitcoin_cli_cmd, testnet)
-            bc_interface = BitcoinCoreInterface(self, rpc, network)
-        elif source == 'regtest':
-            rpc_host = config.get("BLOCKCHAIN", "rpc_host")
-            rpc_port = config.get("BLOCKCHAIN", "rpc_port")
-            rpc_user = config.get("BLOCKCHAIN", "rpc_user")
-            rpc_password = config.get("BLOCKCHAIN", "rpc_password")
-            rpc = JsonRpc(rpc_host, rpc_port, rpc_user, rpc_password)
-            bc_interface = RegtestBitcoinCoreInterface(self, rpc)
-        elif source == 'blockr':
-            bc_interface = BlockrInterface(self, testnet)
-        else:
-            raise ValueError("Invalid blockchain source")
-        return bc_interface
-
-

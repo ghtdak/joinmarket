@@ -10,8 +10,7 @@ import binascii
 import random
 import subprocess
 
-from joinmarket import Wallet
-from joinmarket.support import chunks
+import joinmarket as jm
 
 log = Logger()
 '''This code is intended to provide
@@ -47,7 +46,7 @@ def local_command(command, bg=False, redirect=''):
         return subprocess.check_output(command)
 
 
-def make_wallets(binst, n, wallet_structures=None, mean_amt=1, sdev_amt=0):
+def make_wallets(n, wallet_structures=None, mean_amt=1, sdev_amt=0):
     """
     binst: BlockInstance
     n: number of wallets to be created
@@ -60,20 +59,18 @@ def make_wallets(binst, n, wallet_structures=None, mean_amt=1, sdev_amt=0):
    """
     if len(wallet_structures) != n:
         raise Exception("Number of wallets doesn't match wallet structures")
-    seeds = chunks(binascii.hexlify(os.urandom(15 * n)), n)
+    seeds = jm.chunks(binascii.hexlify(os.urandom(15 * n)), n)
     wallets = {}
     for i in range(n):
         wallets[i] = {'seed': seeds[i],
-                      'wallet': Wallet(binst,
-                                       seeds[i],
-                                       max_mix_depth=5)}
+                      'wallet': jm.Wallet(seeds[i], max_mix_depth=5)}
 
         for j in range(5):
             for k in range(wallet_structures[i][j]):
                 deviation = sdev_amt * random.random()
                 amt = mean_amt - sdev_amt / 2.0 + deviation
                 if amt < 0: amt = 0.001
-                binst.get_bci().grab_coins(
+                jm.bc_interface.grab_coins(
                     wallets[i]['wallet'].get_receive_addr(j), amt)
     return wallets
 

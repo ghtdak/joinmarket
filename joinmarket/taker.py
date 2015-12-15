@@ -8,12 +8,13 @@ import sys
 from decimal import InvalidOperation, Decimal
 
 from twisted.logger import Logger
+from twisted.internet import defer, reactor
 
 import bitcoin as btc
 from joinmarket.configure import get_p2pk_vbyte, maker_timeout_sec
 from joinmarket.enc_wrapper import init_keypair, as_init_encryption, init_pubkey
 from joinmarket.support import calc_cj_fee
-from twisted.internet import reactor
+from joinmarket.blockchaininterface import bc_interface
 
 log = Logger()
 
@@ -22,7 +23,7 @@ class CoinJoinTX(object):
     # soon the taker argument will be removed and just be replaced by wallet
     # or some other interface
     def __init__(self,
-                 taker_sibling,
+                 taker,
                  cj_amount,
                  orders,
                  input_utxos,
@@ -38,8 +39,7 @@ class CoinJoinTX(object):
         log.debug('starting cj to {} with change '
                   'at {}'.format(my_change_addr, my_change_addr))
 
-        self.taker_sibling = taker_sibling
-        self.taker = self.taker_sibling.taker
+        self.taker = taker
         self.block_instance = self.taker.block_instance
 
         # todo: this was the only action by defunct start_cj.  rearchitect!!
@@ -119,8 +119,7 @@ class CoinJoinTX(object):
                                 'orderbook WHERE oid=? AND counterparty=?',
                                 (self.active_orders[nick], nick)).fetchone()
 
-        # todo: this is getting a bit verbose
-        bci = self.taker.block_instance.get_bci()
+        bci = bc_interface
         utxo_data = bci.query_utxo_set(self.utxos[nick])
         if None in utxo_data:
             # log.debug(('ERROR outputs unconfirmed or already spent. '
@@ -219,7 +218,7 @@ class CoinJoinTX(object):
                 continue
             utxo[ctr] = [index, utxo_for_checking]
             ctr += 1
-        utxo_data = self.taker.block_instance.bc_interface.query_utxo_set([x[
+        utxo_data = bc_interface.query_utxo_set([x[
             1] for x in utxo.values()])
 
         # insert signatures
@@ -259,7 +258,7 @@ class CoinJoinTX(object):
             # remove placeholders
             if ins['script'] == 'deadbeef':
                 ins['script'] = ''
-            self.taker_sibling.finishcallback(self)
+            self.taker.finishcallback(self)
 
     def coinjoin_address(self):
         if self.my_cj_addr:
@@ -290,7 +289,7 @@ class CoinJoinTX(object):
         # TODO send to a random maker or push myself
         # TODO need to check whether the other party sent it
         # self.msgchan.push_tx(self.active_orders.keys()[0], txhex)
-        self.txid = self.taker.block_instance.get_bci().pushtx(tx)
+        self.txid = bc_interface.pushtx(tx)
         if self.txid is None:
             log.debug('unable to pushtx')
 
@@ -307,8 +306,8 @@ class CoinJoinTX(object):
 
         # this is new
 
-        if not self.taker_sibling.does_recover():
-            self.taker_sibling.finishcallback(self)
+        if not self.taker.does_recover():
+            self.taker.finishcallback(self)
             return
 
         if self.latest_tx is None:
@@ -318,35 +317,32 @@ class CoinJoinTX(object):
             for nr in self.nonrespondants:
                 del self.active_orders[nr]
 
-            new_orders, new_makers_fee = \
-                self.taker_sibling.choose_orders_recover(
-                        self.cj_amount, len(self.nonrespondants),
-                        self.nonrespondants,
-                        self.active_orders.keys())
+            def from_choose(new_orders, new_makers_fee):
+                for nick, order in new_orders.iteritems():
+                    self.active_orders[nick] = order
 
-            for nick, order in new_orders.iteritems():
-                self.active_orders[nick] = order
+                self.nonrespondants = list(new_orders.keys())
 
-            self.nonrespondants = list(new_orders.keys())
+                self.msgchan.fill_orders(new_orders, self.cj_amount,
+                                         self.kp.hex_pk())
 
-            # log.debug(('new active_orders = {} \nnew nonrespondants = '
-            #            '{}').format(
-            #                pprint.pformat(self.active_orders), pprint.pformat(
-            #                    self.nonrespondants)))
+            defer.maybeDeferred(
+                    self.taker.choose_orders_recover,
+                    self.cj_amount, len(self.nonrespondants),
+                    self.nonrespondants,
+                    self.active_orders.keys()).addCallback(from_choose)
 
-            self.msgchan.fill_orders(new_orders, self.cj_amount,
-                                     self.kp.hex_pk())
         else:
             log.debug('nonresponse to !sig')
             # nonresponding to !sig, have to restart tx from the beginning
-            self.taker_sibling.finishcallback(self)
-            # finishcallback will check if self.all_responded is True and will know it came from here
+            self.taker.finishcallback(self)
+            # finishcallback will check if self.all_responded is True and
+            # will know it came from here
 
     class Watchdog(object):
 
         def __init__(self, cjtx):
             self.cjtx = cjtx
-            # todo: all_responded communication strategy - rearchitect!
             self.watchdog = None
 
         def times_up(self):
@@ -375,73 +371,19 @@ class CoinJoinerPeer(object):
         self.block_instance = block_instance
 
         # not the cleanest but it automates what would be an extra step
-        self.block_instance.coinjoinerpeer = self
+        self.block_instance.set_coinjoinerpeer(self)
 
     def __getattr__(self, name):
         if name == 'msgchan':
             return self.block_instance.irc_market
         if name[:3] == 'on_':
+            log.debug('{} event not implemented'.format(name))
             return self.do_nothing
         else:
             raise AttributeError
 
     def do_nothing(self, *args, **kwargs):
         pass
-
-    # todo: clean this up
-    # def get_crypto_box_from_nick(self, nick):
-    #     raise Exception()
-    #
-    # def on_set_topic(self, *args, **kwargs):
-    #     pass
-    #
-    # def on_welcome(self, *args, **kwargs):
-    #     pass
-    #
-    # def on_connect(self, *args, **kwargs):
-    #     pass
-    #
-    # def on_disconnect(self, *args, **kwargs):
-    #     pass
-    #
-    # def on_nick_leave(self, *args, **kwargs):
-    #     pass
-    #
-    # def on_nick_change(self, *args, **kwargs):
-    #     pass
-    #
-    # def on_order_seen(self, *args, **kwargs):
-    #     pass
-    #
-    # def on_order_cancel(self, *args, **kwargs):
-    #     pass
-    #
-    # def on_error(self, *args, **kwargs):
-    #     pass
-    #
-    # def on_pubkey(self, *args, **kwargs):
-    #     pass
-    #
-    # def on_ioauth(self, *args, **kwargs):
-    #     pass
-    #
-    # def on_sig(self, *args, **kwargs):
-    #     pass
-    #
-    # def on_orderbook_requested(self, *args, **kwargs):
-    #     pass
-    #
-    # def on_order_fill(self, *args, **kwargs):
-    #     pass
-    #
-    # def on_seen_auth(self, *args, **kwargs):
-    #     pass
-    #
-    # def on_seen_tx(self, *args, **kwargs):
-    #     pass
-    #
-    # def on_push_tx(self, *args, **kwargs):
-    #     pass
 
 
 class OrderbookWatch(CoinJoinerPeer):
@@ -523,6 +465,29 @@ class Taker(OrderbookWatch):
         # TODO have a list of maker's nick we're coinjoining with, so
         # that some other guy doesnt send you confusing stuff
 
+    # -----------------------------------------
+    # callbacks
+    # -----------------------------------------
+
+    def choose_orders_recover(self,
+                              cj_amount,
+                              makercount,
+                              nonrespondants=None,
+                              active_nicks=None):
+        pass
+
+    def finishcallback(self, coinjointx):
+        pass
+
+    def does_recover(self):
+        """
+        not enitirely sure.  the coinjointx code has an option...
+        :return:
+        """
+        return True
+
+    # ----------------------------------------
+
     def get_crypto_box_from_nick(self, nick):
         if nick in self.cjtx.crypto_boxes:
             return self.cjtx.crypto_boxes[nick][
@@ -596,26 +561,3 @@ def donation_address(cjtx):
     sender_address = btc.pubtoaddr(sender_pubkey, get_p2pk_vbyte())
     log.debug('sending coins to ' + sender_address)
     return sender_address
-
-
-class TakerSibling(object):
-
-    def __init__(self, taker):
-        self.taker = taker
-
-    def choose_orders_recover(self,
-                              cj_amount,
-                              makercount,
-                              nonrespondants=None,
-                              active_nicks=None):
-        pass
-
-    def finishcallback(self, coinjointx):
-        pass
-
-    def does_recover(self):
-        """
-        not enitirely sure.  the coinjointx code has an option...
-        :return:
-        """
-        return True

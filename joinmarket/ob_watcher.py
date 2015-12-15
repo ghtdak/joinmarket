@@ -144,11 +144,11 @@ def create_orderbook_table(db, btc_unit, rel_unit):
 
     # somewhat complex sorting to sort by cjfee but with absorders on top
 
+    ol = ['absorder', 'relorder']
     def orderby_cmp(x, y):
         if x['ordertype'] == y['ordertype']:
             return cmp(Decimal(x['cjfee']), Decimal(y['cjfee']))
-        return cmp(jm_single().ordername_list.index(x['ordertype']),
-                   jm_single().ordername_list.index(y['ordertype']))
+        return cmp(ol.index(x['ordertype']), ol.index(y['ordertype']))
 
     for o in sorted(rows, cmp=orderby_cmp):
         result += ' <tr>\n'

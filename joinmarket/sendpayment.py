@@ -25,74 +25,83 @@ def check_high_fee(total_fee_pc):
         log.info('\n'.join(['=' * 60] * 3))
 
 
-# callback sibling which does the buy-side algorithm
-# chooses which coinjoins to initiate and when
-class PaymentThread(jm.TakerSibling):
+class SendPayment(jm.Taker):
 
-    def __init__(self, taker):
-        super(PaymentThread, self).__init__(taker)
+    def __init__(self, block_instance, wallet, destaddr, amount, makercount,
+                 txfee, waittime, mixdepth, answeryes, chooseOrdersFunc):
+        super(SendPayment, self).__init__(block_instance)
+        self.wallet = wallet
+        self.destaddr = destaddr
+        self.amount = amount
+        self.makercount = makercount
+        self.txfee = txfee
+        self.waittime = waittime
+        self.mixdepth = mixdepth
+        self.answeryes = answeryes
+        self.chooseOrdersFunc = chooseOrdersFunc
         self.daemon = True
         self.ignored_makers = []
 
-    def start(self):
-        # reactor.callLater(self.taker.waittime, self.create_tx)
-        reactor.callLater(15, self.create_tx)
+    # -------------------------------------------------------------------
+    # takerSibling section - was a separate object in a previous life
+    # includes callbacks
+    # -------------------------------------------------------------------
 
     def create_tx(self):
         log.debug('sendpayment: create_tx called')
-        crow = self.taker.db.execute('SELECT COUNT(DISTINCT counterparty) FROM '
+        crow = self.db.execute('SELECT COUNT(DISTINCT counterparty) FROM '
                                      'orderbook;').fetchone()
         # log.debug('counterparty counting: {}'.format(crow))
         counterparty_count = crow['COUNT(DISTINCT counterparty)']
         counterparty_count -= len(self.ignored_makers)
-        if counterparty_count < self.taker.makercount:
+        if counterparty_count < self.makercount:
             log.info('{:d} of {:d} not enough counterparties to fill order, '
-                     'ending'.format(counterparty_count, self.taker.makercount))
-            # self.taker.msgchan.shutdown(0)
+                     'ending'.format(counterparty_count, self.makercount))
+            # self.msgchan.shutdown(0)
             return
 
         change_addr = None
-        if self.taker.amount == 0:
-            utxos = self.taker.wallet.get_utxos_by_mixdepth()[
-                self.taker.mixdepth]
+        if self.amount == 0:
+            utxos = self.wallet.get_utxos_by_mixdepth()[
+                self.mixdepth]
             total_value = sum([va['value'] for va in utxos.values()])
 
             orders, cjamount = jm.choose_sweep_orders(
-                self.taker.db, total_value, self.taker.txfee,
-                self.taker.makercount, self.taker.chooseOrdersFunc,
+                self.db, total_value, self.txfee,
+                self.makercount, self.chooseOrdersFunc,
                 self.ignored_makers)
 
-            if not self.taker.answeryes:
-                total_cj_fee = total_value - cjamount - self.taker.txfee
+            if not self.answeryes:
+                total_cj_fee = total_value - cjamount - self.txfee
                 log.debug('total cj fee = ' + str(total_cj_fee))
                 total_fee_pc = 1.0 * total_cj_fee / cjamount
                 log.debug('total coinjoin fee = ' + str(float('%.3g' % (
                     100.0 * total_fee_pc))) + '%')
                 check_high_fee(total_fee_pc)
                 if raw_input('send with these orders? (y/n):')[0] != 'y':
-                    self.taker.msgchan.shutdown(0)
+                    self.msgchan.shutdown(0)
                     return
         else:
             orders, total_cj_fee = self.sendpayment_choose_orders(
-                self.taker.amount, self.taker.makercount)
+                self.amount, self.makercount)
             if not orders:
                 log.debug('ERROR not enough liquidity in the orderbook, '
                           'exiting')
                 return
-            total_amount = self.taker.amount + total_cj_fee + self.taker.txfee
+            total_amount = self.amount + total_cj_fee + self.txfee
             log.info('total amount spent = ' + str(total_amount))
-            utxos = self.taker.wallet.select_utxos(self.taker.mixdepth,
+            utxos = self.wallet.select_utxos(self.mixdepth,
                                                    total_amount)
-            cjamount = self.taker.amount
-            change_addr = self.taker.wallet.get_change_addr(self.taker.mixdepth)
+            cjamount = self.amount
+            change_addr = self.wallet.get_change_addr(self.mixdepth)
 
-        # self.taker.start_cj(self.taker.wallet, cjamount, orders, utxos,
-        #                     self.taker.destaddr, change_addr, self.taker.txfee,
+        # self.start_cj(self.wallet, cjamount, orders, utxos,
+        #                     self.destaddr, change_addr, self.txfee,
         #                     self.finishcallback, choose_orders_recover)
         # instead, do...
 
-        jm.CoinJoinTX(self, cjamount, orders, utxos, self.taker.destaddr,
-                      change_addr, self.taker.txfee)
+        jm.CoinJoinTX(self, cjamount, orders, utxos, self.destaddr,
+                      change_addr, self.txfee)
 
     def finishcallback(self, coinjointx):
         # log.debug('sendpayment->finishcallback: {}...'.format(
@@ -100,18 +109,15 @@ class PaymentThread(jm.TakerSibling):
         if coinjointx.all_responded:
             coinjointx.self_sign_and_push()
             log.debug('created fully signed tx, ending')
-            # self.taker.msgchan.shutdown(0)
+            # self.msgchan.shutdown(0)
             return
         self.ignored_makers += coinjointx.nonrespondants
         log.debug('recreating the tx, ignored_makers='.format(
             self.ignored_makers))
         reactor.callLater(2.0, self.create_tx)
 
-    def sendpayment_choose_orders(self,
-                                  cj_amount,
-                                  makercount,
-                                  nonrespondants=None,
-                                  active_nicks=None):
+    def sendpayment_choose_orders(self, cj_amount, makercount,
+                                  nonrespondants=None, active_nicks=None):
 
         if nonrespondants is None:
             nonrespondants = []
@@ -121,7 +127,7 @@ class PaymentThread(jm.TakerSibling):
         self.ignored_makers += nonrespondants
 
         orders, total_cj_fee = jm.choose_orders(
-            self.taker.db, cj_amount, makercount, self.taker.chooseOrdersFunc,
+            self.db, cj_amount, makercount, self.chooseOrdersFunc,
             self.ignored_makers + active_nicks)
 
         if not orders:
@@ -130,7 +136,7 @@ class PaymentThread(jm.TakerSibling):
         # log.info('chosen orders to fill {} totalcjfee={}'.format(orders,
         #                                                          total_cj_fee))
 
-        if not self.taker.answeryes:
+        if not self.answeryes:
             if len(self.ignored_makers) > 0:
                 noun = 'total'
             else:
@@ -143,37 +149,29 @@ class PaymentThread(jm.TakerSibling):
 
             if raw_input('send with these orders? (y/n):')[0] != 'y':
                 log.debug('ending')
-                self.taker.msgchan.shutdown(0)
+                self.msgchan.shutdown(0)
                 return None, -1
 
         return orders, total_cj_fee
 
+    # for callback
+    choose_orders_recover = sendpayment_choose_orders
 
-class SendPayment(jm.Taker):
-
-    def __init__(self, binst, wallet, destaddr, amount, makercount,
-                 txfee, waittime, mixdepth, answeryes, chooseOrdersFunc):
-        super(SendPayment, self).__init__(binst)
-        self.wallet = wallet
-        self.destaddr = destaddr
-        self.amount = amount
-        self.makercount = makercount
-        self.txfee = txfee
-        self.waittime = waittime
-        self.mixdepth = mixdepth
-        self.answeryes = answeryes
-        self.chooseOrdersFunc = chooseOrdersFunc
-        self.taker_sibling = PaymentThread(self)
+    # --------------------------------------------------------
+    # taker stuff
+    # --------------------------------------------------------
 
     def on_welcome(self):
-        jm.Taker.on_welcome(self)
-        log.debug('on_welcome: {}'.format(__name__))
-        self.taker_sibling.start()
+        log.debug('on_welcome')
+        super(SendPayment, self).on_welcome()
+        # todo: self.waittime seemed too short. ???
+        # reactor.callLater(self.waittime, self.create_tx)
+        reactor.callLater(self.waittime, self.create_tx)
 
 
 def build_objects(argv=None):
     if argv is None:
-        argv = sys.argv[1:]
+        argv = sys.argv
 
     parser = OptionParser(
             usage=('usage: %prog [options] [wallet file / fromaccount] '
@@ -245,7 +243,7 @@ def build_objects(argv=None):
                   'of the internal joinmarket wallet. Requires '
                   'blockchain_source=json-rpc'))
 
-    (options, args) = parser.parse_args(argv)
+    (options, args) = parser.parse_args(argv[1:])
 
     if len(args) < 3:
         parser.error('Needs a wallet, amount and destination address')
@@ -275,10 +273,10 @@ def build_objects(argv=None):
     log.debug('starting sendpayment')
 
     if not options.userpcwallet:
-        wallet = jm.Wallet(block_instance, wallet_name, options.mixdepth + 1)
+        wallet = jm.Wallet(wallet_name, options.mixdepth + 1)
     else:
-        wallet = jm.BitcoinCoreWallet(block_instance, fromaccount=wallet_name)
-    block_instance.get_bci().sync_wallet(wallet)
+        wallet = jm.BitcoinCoreWallet(fromaccount=wallet_name)
+    jm.bc_interface.sync_wallet(wallet)
 
     taker = SendPayment(block_instance, wallet, destaddr, amount,
                         options.makercount, options.txfee, options.waittime,

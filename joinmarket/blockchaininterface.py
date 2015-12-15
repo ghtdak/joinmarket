@@ -19,15 +19,16 @@ from twisted.web import server as twisted_server
 from twisted.web import resource as twisted_resource
 from twisted.internet import defer, task, reactor
 from twisted.internet.protocol import DatagramProtocol
+from twisted.logger import Logger
+
 import treq
 from txzmq import ZmqEndpoint, ZmqFactory, ZmqSubConnection
-from twisted.logger import Logger
 
 import bitcoin as btc
 
-from joinmarket.jsonrpc import JsonRpcConnectionError
+from joinmarket.jsonrpc import JsonRpcConnectionError, JsonRpc
 from joinmarket.support import chunks, system_shutdown
-from joinmarket.configure import config, get_p2pk_vbyte
+from joinmarket.configure import config, get_p2pk_vbyte, get_network
 
 log = Logger()
 
@@ -75,8 +76,8 @@ def is_index_ahead_of_cache(wallet, mix_depth, forchange):
 class BlockchainInterface(object):
     __metaclass__ = abc.ABCMeta
 
-    def __init__(self, block_instance):
-        self.block_instance = block_instance
+    def __init__(self):
+        pass
 
     def sync_wallet(self, wallet):
         self.sync_addresses(wallet)
@@ -117,8 +118,8 @@ class BlockchainInterface(object):
 class BlockrInterface(BlockchainInterface):
     BLOCKR_MAX_ADDR_REQ_COUNT = 20
 
-    def __init__(self, block_instance, testnet=False):
-        super(BlockrInterface, self).__init__(block_instance)
+    def __init__(self, testnet=False):
+        super(BlockrInterface, self).__init__()
 
         # see bci.py in bitcoin module
         self.network = 'testnet' if testnet else 'btc'
@@ -223,8 +224,7 @@ class BlockrInterface(BlockchainInterface):
             tx_output_set = set([(sv['script'], sv['value']) for sv in txd[
                 'outs']])
             output_addresses = [
-                btc.script_to_address(scrval[0],
-                                      self.block_instance.get_p2pk_vbyte())
+                btc.script_to_address(scrval[0], get_p2pk_vbyte())
                 for scrval in tx_output_set
             ]
 
@@ -530,8 +530,8 @@ class NotifyHttpServer(twisted_resource.Resource):
 # with addresses not belonging to us
 class BitcoinCoreInterface(BlockchainInterface):
 
-    def __init__(self, block_instance, jsonRpc, network):
-        super(BitcoinCoreInterface, self).__init__(block_instance)
+    def __init__(self, jsonRpc, network):
+        super(BitcoinCoreInterface, self).__init__()
         self.jsonRpc = jsonRpc
 
         blockchainInfo = self.jsonRpc.call("getblockchaininfo", [])
@@ -602,7 +602,7 @@ class BitcoinCoreInterface(BlockchainInterface):
         for privkey_list in wallet.imported_privkeys.values():
             for privkey in privkey_list:
                 imported_addr = btc.privtoaddr(
-                    privkey, self.block_instance.get_p2pk_vbyte())
+                    privkey, get_p2pk_vbyte())
                 wallet_addr_list.append(imported_addr)
         imported_addr_list = self.rpc('getaddressesbyaccount', [wallet_name])
         if not set(wallet_addr_list).issubset(set(imported_addr_list)):
@@ -720,6 +720,7 @@ class BitcoinCoreInterface(BlockchainInterface):
                 break
 
     def add_tx_notify(self, txd, unconfirmfun, confirmfun, notifyaddr):
+        # todo: these maybe could be initialized elsewhere
         if not self.http_server:
             self.start_http_server()
         if not self.zmq_server:
@@ -770,9 +771,8 @@ class BitcoinCoreInterface(BlockchainInterface):
 # with > 100 blocks.
 class RegtestBitcoinCoreInterface(BitcoinCoreInterface):
 
-    def __init__(self, block_instance, jsonRpc):
-        super(RegtestBitcoinCoreInterface, self).__init__(block_instance,
-                                                          jsonRpc, 'regtest')
+    def __init__(self, jsonRpc):
+        super(RegtestBitcoinCoreInterface, self).__init__(jsonRpc, 'regtest')
 
     def pushtx(self, txhex):
         ret = super(RegtestBitcoinCoreInterface, self).pushtx(txhex)
@@ -839,18 +839,41 @@ class RegtestBitcoinCoreInterface(BitcoinCoreInterface):
                             'getreceivedbyaddress', [address])))})
         return {'data': res}
 
-# todo: won't run anyways
-# def main():
-#     #TODO some useful quick testing here, so people know if they've set it up right
-#     myBCI = RegtestBitcoinCoreInterface()
-#     #myBCI.send_tx('stuff')
-#     print myBCI.get_utxos_from_addr(["n4EjHhGVS4Rod8ociyviR3FH442XYMWweD"])
-#     print myBCI.get_balance_at_addr(["n4EjHhGVS4Rod8ociyviR3FH442XYMWweD"])
-#     txid = myBCI.grab_coins('mygp9fsgEJ5U7jkPpDjX9nxRj8b5nC3Hnd', 23)
-#     print txid
-#     print myBCI.get_balance_at_addr(['mygp9fsgEJ5U7jkPpDjX9nxRj8b5nC3Hnd'])
-#     print myBCI.get_utxos_from_addr(['mygp9fsgEJ5U7jkPpDjX9nxRj8b5nC3Hnd'])
-#
-#
-# if __name__ == '__main__':
-#     main()
+def _get_blockchain_interface_instance():
+
+    source = config.get("BLOCKCHAIN", "blockchain_source")
+    network = get_network()
+    testnet = network == 'testnet'
+    if source == 'bitcoin-rpc':
+        rpc_host = config.get("BLOCKCHAIN", "rpc_host")
+        rpc_port = config.get("BLOCKCHAIN", "rpc_port")
+        rpc_user = config.get("BLOCKCHAIN", "rpc_user")
+        rpc_password = config.get("BLOCKCHAIN", "rpc_password")
+        rpc = JsonRpc(rpc_host, rpc_port, rpc_user, rpc_password)
+        bc_interface = BitcoinCoreInterface(rpc, network)
+    elif source == 'json-rpc':
+        bitcoin_cli_cmd = config.get("BLOCKCHAIN", "bitcoin_cli_cmd").split(' ')
+        rpc = CliJsonRpc(bitcoin_cli_cmd, testnet)
+        bc_interface = BitcoinCoreInterface(rpc, network)
+    elif source == 'regtest':
+        rpc_host = config.get("BLOCKCHAIN", "rpc_host")
+        rpc_port = config.get("BLOCKCHAIN", "rpc_port")
+        rpc_user = config.get("BLOCKCHAIN", "rpc_user")
+        rpc_password = config.get("BLOCKCHAIN", "rpc_password")
+        rpc = JsonRpc(rpc_host, rpc_port, rpc_user, rpc_password)
+        bc_interface = RegtestBitcoinCoreInterface(rpc)
+    elif source == 'blockr':
+        bc_interface = BlockrInterface(testnet)
+    else:
+        raise ValueError("Invalid blockchain source")
+    return bc_interface
+
+bc_interface = _get_blockchain_interface_instance()
+
+# Blockchain Instance - bci
+# short and sweet
+# def bci():
+#     global _global_bc_interface
+#     if not _global_bc_interface:
+#         _global_bc_interface = _get_blockchain_interface_instance()
+#     return _global_bc_interface

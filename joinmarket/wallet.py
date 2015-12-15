@@ -2,7 +2,6 @@ from __future__ import absolute_import, print_function
 
 import json
 import os
-import pprint
 from decimal import Decimal
 from getpass import getpass
 
@@ -10,7 +9,7 @@ from ConfigParser import NoSectionError
 from twisted.logger import Logger
 
 import bitcoin as btc
-from joinmarket.blockchaininterface import BitcoinCoreInterface
+from joinmarket.blockchaininterface import BitcoinCoreInterface, bc_interface
 from joinmarket.configure import get_network, get_p2pk_vbyte, config
 from joinmarket.jsonrpc import JsonRpcError
 from joinmarket.slowaes import decryptData
@@ -26,8 +25,7 @@ class AbstractWallet(object):
     Mostly written with Wallet in mind, the default JoinMarket HD wallet
     """
 
-    def __init__(self, block_inst):
-        self.block_inst = block_inst
+    def __init__(self):
         self.max_mix_depth = 0
         self.utxo_selector = btc.select  # default fallback: upstream
         try:
@@ -86,13 +84,12 @@ class AbstractWallet(object):
 class Wallet(AbstractWallet):
 
     def __init__(self,
-                 block_inst,
                  seedarg,
                  max_mix_depth=2,
                  gaplimit=6,
                  extend_mixdepth=False,
                  storepassword=False):
-        super(Wallet, self).__init__(block_inst)
+        super(Wallet, self).__init__()
         self.max_mix_depth = max_mix_depth
         self.storepassword = storepassword
         # key is address, value is (mixdepth, forchange, index) if mixdepth =
@@ -204,7 +201,6 @@ class Wallet(AbstractWallet):
         self.addr_cache[addr] = (mixing_depth, forchange, index[forchange])
         index[forchange] += 1
         # self.update_cache_index()
-        bc_interface = self.block_inst.get_bci()
         if isinstance(bc_interface, BitcoinCoreInterface):
             # do not import in the middle of sync_wallet()
             if bc_interface.wallet_synced:
@@ -275,9 +271,9 @@ class Wallet(AbstractWallet):
 
 class BitcoinCoreWallet(AbstractWallet):
 
-    def __init__(self, block_inst, fromaccount):
-        super(BitcoinCoreWallet, self).__init__(block_inst)
-        if not isinstance(block_inst.get_bci(), BitcoinCoreInterface):
+    def __init__(self, fromaccount):
+        super(BitcoinCoreWallet, self).__init__()
+        if not isinstance(bc_interface, BitcoinCoreInterface):
             raise RuntimeError('Bitcoin Core wallet can only be used when '
                                'blockchain interface is BitcoinCoreInterface')
         self.fromaccount = fromaccount
@@ -285,10 +281,10 @@ class BitcoinCoreWallet(AbstractWallet):
 
     def get_key_from_addr(self, addr):
         self.ensure_wallet_unlocked()
-        return self.block_inst.get_bci().rpc('dumpprivkey', [addr])
+        return bc_interface.rpc('dumpprivkey', [addr])
 
     def get_utxos_by_mixdepth(self):
-        unspent_list = self.block_inst.get_bci().rpc('listunspent', [])
+        unspent_list = bc_interface.rpc('listunspent', [])
         result = {0: {}}
         for u in unspent_list:
             if not u['spendable']:
@@ -303,10 +299,10 @@ class BitcoinCoreWallet(AbstractWallet):
         return result
 
     def get_change_addr(self, mixing_depth):
-        return self.block_inst.get_bci().rpc('getrawchangeaddress', [])
+        return bc_interface.rpc('getrawchangeaddress', [])
 
     def ensure_wallet_unlocked(self):
-        wallet_info = self.block_inst.get_bci().rpc('getwalletinfo', [])
+        wallet_info = bc_interface.rpc('getwalletinfo', [])
         if 'unlocked_until' in wallet_info and wallet_info[
                 'unlocked_until'] <= 0:
             while True:
@@ -315,7 +311,7 @@ class BitcoinCoreWallet(AbstractWallet):
                     raise RuntimeError('Aborting wallet unlock')
                 try:
                     # TODO cleanly unlock wallet after use, not with arbitrary timeout
-                    self.block_inst.get_bci().rpc('walletpassphrase',
+                    bc_interface.rpc('walletpassphrase',
                                                   [password, 10])
                     break
                 except JsonRpcError as exc:

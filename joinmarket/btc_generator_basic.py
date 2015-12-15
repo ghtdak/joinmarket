@@ -7,12 +7,12 @@ import time
 import cPickle as pickle
 
 from twisted.logger import Logger
+from twisted.internet import reactor
 
 import bitcoin
 import joinmarket as jm
 from joinmarket.jsonrpc import tb_stack_dd
 from joinmarket.test.commontest import make_wallets
-from twisted.internet import reactor
 from .sendpayment import build_objects as sender_build
 
 # from joinmarket.jsonrpc import tb_stack_set
@@ -31,8 +31,8 @@ log = Logger()
 class YieldGenerator(jm.Maker):
     statement_file = os.path.join('logs', 'yigen-statement.csv')
 
-    def __init__(self, binst, wallet, block_instance):
-        super(YieldGenerator, self).__init__(binst, wallet)
+    def __init__(self, block_instance, wallet):
+        super(YieldGenerator, self).__init__(block_instance, wallet)
         self.tx_unconfirm_timestamp = {}
         self.income_statement = None
         self.block_instance = block_instance
@@ -47,6 +47,7 @@ class YieldGenerator(jm.Maker):
         self.income_statement.close()
 
     def on_welcome(self):
+        log.debug('on_welcome')
         jm.Maker.on_welcome(self)
         if not os.path.isfile(self.statement_file):
             self.log_statement(
@@ -171,7 +172,7 @@ def build_objects(argv=None):
 
     # todo: for testing... remove me!!
 
-    if isinstance(block_instance.get_bci(), jm.BlockrInterface):
+    if isinstance(jm.bc_interface, jm.BlockrInterface):
         c = ('\nYou are running a yield generator by polling the blockr.io '
              'website. This is quite bad for privacy. That site is owned by '
              'coinbase.com Also your bot will run faster and more efficently, '
@@ -192,7 +193,7 @@ def build_objects(argv=None):
     #put 10 coins into the first receive address
     #to allow that bot to start.
     def build_otherguys():
-        wallets = make_wallets(block_instance, 2,
+        wallets = make_wallets(2,
                                wallet_structures=[[1, 0, 0, 0, 0],
                                                   [1, 0, 0, 0, 0]],
                                mean_amt=10)
@@ -215,28 +216,20 @@ def build_objects(argv=None):
 
         return wallets
 
-    wallets = build_otherguys()
+    # wallets = build_otherguys()
+    # fakeseed = str(wallets[0]['seed'])
 
-
-    # seed = argv[1]
     # -----------------------------------------------------
 
-    fakeseed = str(wallets[0]['seed'])
+    seed = argv[1]
 
-    wallet = jm.Wallet(block_instance, fakeseed, max_mix_depth=mix_levels)
+    wallet = jm.Wallet(seed, max_mix_depth=mix_levels)
 
-    block_instance.get_bci().sync_wallet(wallet)
+    jm.bc_interface.sync_wallet(wallet)
 
     log.debug('starting yield generator')
 
-    nickname = block_instance.nickname
-    log.info("starting irc thingy with nick: {}".format(nickname))
-
-    log.info('irc thingy launched')
-
-    maker = YieldGenerator(block_instance, wallet, block_instance)
-
-    block_instance.build_irc()
+    maker = YieldGenerator(block_instance, wallet)
 
     return block_instance, maker, wallet
 
