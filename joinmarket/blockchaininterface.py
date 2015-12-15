@@ -96,7 +96,7 @@ class BlockchainInterface(object):
         pass
 
     @abc.abstractmethod
-    def add_tx_notify(self, txd, unconfirmfun, confirmfun, notifyaddr):
+    def add_tx_notify(self, txd, d, unconfirmed, notifyaddr):
         """Invokes unconfirmfun and confirmfun when tx is seen on the network"""
         pass
 
@@ -207,7 +207,7 @@ class BlockrInterface(BlockchainInterface):
         log.debug('blockr sync_unspent took ' + str((self.last_sync_unspent - st
                                                     )) + 'sec')
 
-    def add_tx_notify(self, txd, unconfirmfun, confirmfun, notifyaddr):
+    def add_tx_notify(self, txd, d, unconfirmfun, notifyaddr):
         unconfirm_timeout = 10 * 60  # seconds
         unconfirm_poll_period = 5
         confirm_timeout = 2 * 60 * 60
@@ -216,6 +216,8 @@ class BlockrInterface(BlockchainInterface):
         # AsyncWebSucker returns immediately.  The yields are non-blocking
         # calls managed by Twisted using the miracle of generators.  The
         # illusion of blocking
+
+        # todo: a bit of a high wire act.  Need to look closely here!!
 
         @defer.inlineCallbacks
         def AsyncWebSucker():
@@ -356,7 +358,7 @@ class BlockrInterface(BlockchainInterface):
                         confirmed_txid = txinfo['tx']['txid']
                         confirmed_txhex = str(txinfo['tx']['hex'])
                         break
-            confirmfun(btc.deserialize(confirmed_txhex), confirmed_txid, 1)
+            d.callback(btc.deserialize(confirmed_txhex), confirmed_txid, 1)
 
         # AsyncWebSucker returns a deferred.. but it doesn't matter because
         # nobody uses the return... magic!!!
@@ -474,16 +476,10 @@ class MultiCast(DatagramProtocol):
 
 def process_raw_tx(btcinterface, tx, txid):
     txd = btc.deserialize(tx)
-    tx_output_set = set([(sv['script'], sv['value']) for sv in txd[
-        'outs']])
+    tx_output_set = frozenset([(sv['script'], sv['value'])
+                               for sv in txd['outs']])
 
-    unconfirmfun, confirmfun = None, None
-    for tx_out, ucfun, cfun in btcinterface.txnotify_fun:
-        if tx_out == tx_output_set:
-            unconfirmfun = ucfun
-            confirmfun = cfun
-            break
-    if unconfirmfun is None:
+    if tx_output_set not in btcinterface.txnotify_fun:
         log.debug('txid=' + txid + ' not being listened for')
     else:
         # on rare occasions people spend their output without waiting
@@ -494,17 +490,17 @@ def process_raw_tx(btcinterface, tx, txid):
             if txdata is not None:
                 break
         assert txdata is not None
+        d, unconfirmed = btcinterface.txnotify_fun[tx_output_set]
         if txdata['confirmations'] == 0:
-            unconfirmfun(txd, txid)
+            unconfirmed(txd, txid)
             # TODO pass the total transfered amount value here somehow
             # wallet_name = self.get_wallet_name()
             # amount =
             # bitcoin-cli move wallet_name "" amount
             log.debug('ran unconfirmfun')
         else:
-            confirmfun(txd, txid, txdata['confirmations'])
-            btcinterface.txnotify_fun.remove((tx_out, unconfirmfun,
-                                              confirmfun))
+            d.callback(txd, txid, txdata['confirmations'])
+            del btcinterface.txnotify_fun[tx_output_set]
             log.debug('ran confirmfun')
 
 
@@ -543,7 +539,7 @@ class BitcoinCoreInterface(BlockchainInterface):
 
         self.http_server = None
         self.zmq_server = None
-        self.txnotify_fun = []
+        self.txnotify_fun = {}
         self.wallet_synced = False
 
     @staticmethod
@@ -719,13 +715,14 @@ class BitcoinCoreInterface(BlockchainInterface):
                 srv.using_port = hostport[1]
                 break
 
-    def add_tx_notify(self, txd, unconfirmfun, confirmfun, notifyaddr):
+    def add_tx_notify(self, txd, d, unconfirmed, notifyaddr):
         # todo: these maybe could be initialized elsewhere
         if not self.http_server:
             self.start_http_server()
         if not self.zmq_server:
             self.zmq_server = JmZmq(self)
 
+        # todo: if using zmq, we don't need to tell the wallet
         one_addr_imported = False
         for outs in txd['outs']:
             addr = btc.script_to_address(outs['script'], get_p2pk_vbyte())
@@ -736,8 +733,9 @@ class BitcoinCoreInterface(BlockchainInterface):
             self.rpc('importaddress',
                      [notifyaddr, 'joinmarket-notify', False],
                      immediate=True)
-        tx_output_set = set([(sv['script'], sv['value']) for sv in txd['outs']])
-        self.txnotify_fun.append((tx_output_set, unconfirmfun, confirmfun))
+        tx_output_set = frozenset([(sv['script'], sv['value'])
+                                   for sv in txd['outs']])
+        self.txnotify_fun[tx_output_set] = (d, unconfirmed)
 
     def pushtx(self, txhex):
         try:

@@ -23,6 +23,7 @@ class CoinJoinTX(object):
     # soon the taker argument will be removed and just be replaced by wallet
     # or some other interface
     def __init__(self,
+                 cb_deferred,
                  taker,
                  cj_amount,
                  orders,
@@ -39,6 +40,7 @@ class CoinJoinTX(object):
         log.debug('starting cj to {} with change '
                   'at {}'.format(my_change_addr, my_change_addr))
 
+        self.cb_deferred = cb_deferred
         self.taker = taker
         self.block_instance = self.taker.block_instance
 

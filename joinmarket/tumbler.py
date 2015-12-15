@@ -85,8 +85,8 @@ def generate_tumbler_tx(destaddrs, options):
 
 class Tumbler(jm.Taker):
 
-    def __init__(self, binst, msgchan, wallet, tx_list, options):
-        super(Tumbler, self).__init__(binst, msgchan)
+    def __init__(self, block_instance, wallet, tx_list, options):
+        super(Tumbler, self).__init__(block_instance)
         self.wallet = wallet
         self.tx_list = tx_list
         self.options = options
@@ -100,12 +100,11 @@ class Tumbler(jm.Taker):
         log.debug('that was %d tx out of %d' %
                   (self.current_tx + 1, len(self.tx_list)))
 
-    def confirm_callback(self, txd, txid, confirmations):
-        self.wallet.add_new_utxos(txd, txid)
-        self.lockcond.acquire()
-        self.lockcond.notify()
-        self.lockcond.release()
+    # def confirm_callback(self, txd, txid, confirmations):
+    #     self.wallet.add_new_utxos(txd, txid)
+        # previous twiddling of the conditional lock...
 
+    # so, it seems this callback is unnecessary if successful
     def finishcallback(self, coinjointx):
         if coinjointx.all_responded:
             jm.bc_interface.add_tx_notify(
@@ -166,64 +165,88 @@ class Tumbler(jm.Taker):
 
     @defer.inlineCallbacks
     def create_tx(self):
-        orders = None
-        cj_amount = 0
-        change_addr = None
-        if self.sweep:
-            log.debug('sweeping')
-            utxos = self.wallet.get_utxos_by_mixdepth()[self.tx[
-                'srcmixdepth']]
-            total_value = sum([addrval['value'] for addrval in utxos.values()])
-            while True:
-                orders, cj_amount = jm.choose_sweep_orders(
-                    self.db, total_value, self.options.txfee,
-                    self.tx['makercount'], jm.weighted_order_choose,
-                    self.ignored_makers)
-                if orders is None:
-                    log.debug('waiting for liquidity ' + str(
-                        self.options.liquiditywait) +
-                              'secs, hopefully more orders should come in')
-                    yield jm.sleepGenerator(self.options.liquiditywait)
-                    continue
-                abs_cj_fee = 1.0 * (
-                    total_value - cj_amount) / self.tx['makercount']
-                rel_cj_fee = abs_cj_fee / cj_amount
-                log.debug('rel/abs average fee = ' + str(rel_cj_fee) + ' / ' +
-                          str(abs_cj_fee))
-                if rel_cj_fee > self.options.maxcjfee[
-                        0] and abs_cj_fee > self.options.maxcjfee[1]:
-                    log.debug('cj fee higher than maxcjfee, waiting ' + str(
-                        self.options.liquiditywait) + ' seconds')
-                    jm.sleepGenerator(self.options.liquiditywait)
-                    continue
-                break
-        else:
-            if self.tx['amount_fraction'] == 0:
-                cj_amount = int(self.balance * self.options.donateamount /
-                                100.0)
-                self.destaddr = None
+        successful = False
+        while not successful:
+            orders = None
+            cj_amount = 0
+            change_addr = None
+            if self.sweep:
+                log.debug('sweeping')
+                utxos = self.wallet.get_utxos_by_mixdepth()[
+                    self.tx['srcmixdepth']]
+                total_value = sum([addrval['value']
+                                   for addrval in utxos.values()])
+                while True:
+                    orders, cj_amount = jm.choose_sweep_orders(
+                        self.db, total_value, self.options.txfee,
+                        self.tx['makercount'], jm.weighted_order_choose,
+                        self.ignored_makers)
+                    if orders is None:
+                        log.debug('waiting for liquidity ' + str(
+                            self.options.liquiditywait) +
+                                  'secs, hopefully more orders should come in')
+                        yield jm.sleepGenerator(self.options.liquiditywait)
+                        continue
+                    abs_cj_fee = 1.0 * (
+                        total_value - cj_amount) / self.tx['makercount']
+                    rel_cj_fee = abs_cj_fee / cj_amount
+                    log.debug('rel/abs average fee = ' + str(rel_cj_fee) + ' / ' +
+                              str(abs_cj_fee))
+                    if rel_cj_fee > self.options.maxcjfee[
+                            0] and abs_cj_fee > self.options.maxcjfee[1]:
+                        log.debug('cj fee higher than maxcjfee, waiting ' + str(
+                            self.options.liquiditywait) + ' seconds')
+                        jm.sleepGenerator(self.options.liquiditywait)
+                        continue
+                    break
             else:
-                cj_amount = int(self.tx['amount_fraction'] * self.balance)
-            if cj_amount < self.options.mincjamount:
-                log.debug('cj amount too low, bringing up')
-                cj_amount = self.options.mincjamount
-            change_addr = self.wallet.get_change_addr(self.tx[
-                'srcmixdepth'])
-            log.debug('coinjoining ' + str(cj_amount) + ' satoshi')
-            orders, total_cj_fee = self.tumbler_choose_orders(
-                cj_amount, self.tx['makercount'])
-            total_amount = cj_amount + total_cj_fee + self.options.txfee
-            log.debug('total amount spent = ' + str(total_amount))
-            utxos = self.wallet.select_utxos(self.tx['srcmixdepth'],
-                                                   total_amount)
+                if self.tx['amount_fraction'] == 0:
+                    cj_amount = int(
+                            self.balance * self.options.donateamount / 100.0)
+                    self.destaddr = None
+                else:
+                    cj_amount = int(self.tx['amount_fraction'] * self.balance)
+                if cj_amount < self.options.mincjamount:
+                    log.debug('cj amount too low, bringing up')
+                    cj_amount = self.options.mincjamount
+                change_addr = self.wallet.get_change_addr(self.tx[
+                    'srcmixdepth'])
+                log.debug('coinjoining ' + str(cj_amount) + ' satoshi')
+                orders, total_cj_fee = self.tumbler_choose_orders(
+                    cj_amount, self.tx['makercount'])
+                total_amount = cj_amount + total_cj_fee + self.options.txfee
+                log.debug('total amount spent = ' + str(total_amount))
+                utxos = self.wallet.select_utxos(
+                        self.tx['srcmixdepth'], total_amount)
 
-        # self.start_cj(self.wallet, cj_amount, orders, utxos,
-        #                     self.destaddr, change_addr,
-        #                     self.options.txfee, self.finishcallback,
-        #                     choose_orders_recover)
+            d = defer.Deferred()
+            jm.CoinJoinTX(self, d, cj_amount, orders, utxos, self.destaddr,
+                          change_addr, self.txfee)
 
-        jm.CoinJoinTX(self, cj_amount, orders, utxos, self.destaddr,
-                      change_addr, self.txfee)
+            coinjointx = yield d
+
+            if coinjointx.all_responded:
+                d = defer.Deferred()
+                jm.bc_interface.add_tx_notify(
+                        coinjointx.latest_tx,
+                        d,
+                        coinjointx.my_cj_addr)
+
+                self.wallet.remove_old_utxos(coinjointx.latest_tx)
+                coinjointx.self_sign_and_push()
+
+                txd, txid, confirmations = yield d
+                if confirmations:
+                    self.wallet.add_new_utxos(txd, txid)
+                    log.debug('confirmed create_tx')
+                else:
+                    log.debug('unconfirmed create_tx')
+                break
+            else:
+                self.ignored_makers += coinjointx.nonrespondants
+                log.debug('recreating the tx, ignored_makers={}'.format(
+                        self.ignored_makers))
+                # lets do it agaoin
 
 
     def init_tx(self, tx, balance, sweep):
@@ -244,16 +267,12 @@ class Tumbler(jm.Taker):
         self.balance = balance
         self.tx = tx
         self.destaddr = destaddr
-        self.create_tx()
-        self.lockcond.acquire()
-        self.lockcond.wait()
-        self.lockcond.release()
-        log.debug('tx confirmed, waiting for ' + str(tx['wait']) + ' minutes')
-        time.sleep(tx['wait'] * 60)
-        log.debug('woken')
+        d = self.create_tx()
+        d.addCallback(self.finishcallback)  # todo: name reuse, fix!!
 
+
+    @defer.inlineCallbacks
     def start(self):
-
         sqlorders = self.db.execute(
             'SELECT cjfee, ordertype FROM orderbook;').fetchall()
         orders = [o['cjfee'] for o in sqlorders if o['ordertype'] == 'relorder']
@@ -273,6 +292,7 @@ class Tumbler(jm.Taker):
         self.lockcond = threading.Condition()
 
         self.balance_by_mixdepth = {}
+
         for i, tx in enumerate(self.tx_list):
             if tx['srcmixdepth'] not in self.balance_by_mixdepth:
                 self.balance_by_mixdepth[tx[
@@ -283,10 +303,12 @@ class Tumbler(jm.Taker):
                 if later_tx['srcmixdepth'] == tx['srcmixdepth']:
                     sweep = False
             self.current_tx = i
-            self.init_tx(tx, self.balance_by_mixdepth[tx['srcmixdepth']], sweep)
+            yield self.init_tx(
+                    tx, self.balance_by_mixdepth[tx['srcmixdepth']], sweep)
 
         log.debug('total finished')
-        self.msgchan.shutdown()
+        # todo: turn those machines back on!!!
+        # self.msgchan.shutdown()
 
     def on_welcome(self):
         super(Tumbler, self).on_welcome()
@@ -520,6 +542,5 @@ def build_objects(argv=None):
     block_instance.nickname = jm.random_nick()
 
     log.debug('starting tumbler')
-    irc = jm.build_irc_communicator(block_instance.nickname)
-    tumbler = Tumbler(block_instance, irc, wallet, tx_list, options)
+    tumbler = Tumbler(block_instance, wallet, tx_list, options)
     return block_instance, tumbler, wallet
