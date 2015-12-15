@@ -128,7 +128,7 @@ class JoinNPTests(unittest.TestCase):
 
         #run a single sendpayment call
         amt = 100000000  #in satoshis
-        dest_address = btc.privkey_to_address(os.urandom(32), get_p2pk_vbyte())
+        dest_address = btc.privkey_to_address(os.urandom(32), jm.get_p2pk_vbyte())
         try:
             sp_proc = local_command(['python', 'sendpayment.py', '--yes', '-N',
                                      str(self.n), self.wallets[self.n][

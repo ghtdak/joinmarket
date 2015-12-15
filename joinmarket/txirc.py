@@ -25,8 +25,9 @@ log.debug('Twisted Logging Starts in txirc')
 class txIRC_Client(irc.IRCClient, object):
 
     # lineRate is a class variable in the superclass used to limit
-    # messages / second
+    # messages / second.  heartbeat is what you'd think
     lineRate = 1
+    heartbeatinterval = 60
 
     def __init__(self, block_instance, nickname, password, hostname):
         self.block_instance = block_instance
@@ -38,8 +39,13 @@ class txIRC_Client(irc.IRCClient, object):
         self.block_instance.tx_irc_client = self
 
         # todo: build pong timeout watchdot
-        self.heartbeatinterval = 60
-        self.heartbeattimeout = 30
+        # self.heartbeattimeout = 30
+
+    def __getattr__(self, name):
+        if name == 'irc_market':
+            return self.block_instance.irc_market
+        else:
+            raise AttributeError
 
     # ---------------------------------------------
     # callbacks from superclass
@@ -75,8 +81,8 @@ class txIRC_Client(irc.IRCClient, object):
         reactor.callLater(0.0, self.block_instance.irc_market.joined, channel)
 
     def privmsg(self, userIn, channel, msg):
-        log.debug('privmsg: {} {} {:d} {}'.format(userIn, channel, len(msg),
-                                                  msg))
+        log.debug('privmsg: {} {} {:d} {}...'.format(userIn, channel, len(msg),
+                                                  msg[:40]))
 
         reactor.callLater(0.0, self.block_instance.irc_market.handle_privmsg,
                           userIn, channel, msg)
@@ -105,8 +111,8 @@ class txIRC_Client(irc.IRCClient, object):
         return nickname + '^'
 
     def modeChanged(self, user, channel, _set, modes, args):
-        log.debug('modeChanged: {} {} {} {} {}'.format(user, channel, _set,
-                                                       modes, args))
+        log.debug('modeChanged: {} {} {} {} {}'.format(
+                user, channel, _set, modes, args))
 
     def pong(self, user, secs):
         log.debug('pong: {:d}'.format(secs))
@@ -250,9 +256,8 @@ class CommSuper(object):
     def push_tx(self, nick, txhex):
         pass
 
-    # maker commands
     def announce_orders(self, orderlist, nick=None):
-        pass  # nick=None means announce publicly
+        pass
 
     def cancel_orders(self, oid_list):
         pass
@@ -799,34 +804,29 @@ class BlockInstance(object):
         self.realname = realname
         self.password = password
 
-        self.bc_interface = None
-        self.channel = get_config_irc_channel()
         self.tcp_connector = None
         self.tx_irc_client = None
         self.coinjoinerpeer = None
         self.ordername_list = ['absorder', 'relorder']
-        self._load_program_config()
-        BlockInstance.instances.append(self)
-        self.irc_market = self.build_irc_market()
+
+        self.channel = get_config_irc_channel()
+        self.bc_interface = self._get_blockchain_interface_instance()
+        self.irc_market = IRC_Market(self.channel, self,
+                                     username=self.username,
+                                     realname=self.realname,
+                                     password=self.password)
+
+        BlockInstance.instances.append(self)  # list of everyone important
 
     def get_bci(self):
         return self.bc_interface
 
-    def _load_program_config(self):
-
-        self.bc_interface = self._get_blockchain_interface_instance()
-
-    def build_irc_market(self):
         # from IRC_blah constructor
         # serverport = (config.get("MESSAGING", "host"),
         #               int(config.get("MESSAGING", "port")))
         # socks5_host = config.get("MESSAGING", "socks5_host")
         # socks5_port = int(config.get("MESSAGING", "socks5_port"))
 
-        self.irc_market = IRC_Market(self.channel, self,
-                                     username=self.username,
-                                     realname=self.realname,
-                                     password=self.password)
 
     def build_irc(self):
         # todo: hack password

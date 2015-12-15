@@ -29,7 +29,7 @@ class CoinJoinOrder(object):
         self.oid = oid
         self.cj_amount = amount
         if self.cj_amount <= DUST_THRESHOLD:
-            self.maker.msgchan().send_error(nick, 'amount below dust threshold')
+            self.maker.msgchan.send_error(nick, 'amount below dust threshold')
         # the btc pubkey of the utxo that the taker plans to use as input
         self.taker_pk = taker_pk
         # create DH keypair on the fly for this Order object
@@ -39,10 +39,10 @@ class CoinJoinOrder(object):
 
         order_s = [o for o in maker.orderlist if o['oid'] == oid]
         if len(order_s) == 0:
-            self.maker.msgchan().send_error(nick, 'oid not found')
+            self.maker.msgchan.send_error(nick, 'oid not found')
         order = order_s[0]
         if amount < order['minsize'] or amount > order['maxsize']:
-            self.maker.msgchan().send_error(nick, 'amount out of range')
+            self.maker.msgchan.send_error(nick, 'amount out of range')
         self.ordertype = order['ordertype']
         self.txfee = order['txfee']
         self.cjfee = order['cjfee']
@@ -76,9 +76,12 @@ class CoinJoinOrder(object):
                 # orders to find out which addresses you use
         self.maker.msgchan.send_pubkey(nick, self.kp.hex_pk())
 
-    def msgchan(self):
+    def __getattr__(self, name):
         # legacy support
-        return self.block_instance.irc_market
+        if name == 'msgchan':
+            return self.block_instance.irc_market
+        else:
+            raise AttributeError
 
     def auth_counterparty(self, nick, i_utxo_pubkey, btc_sig):
         self.i_utxo_pubkey = i_utxo_pubkey
@@ -219,7 +222,7 @@ class Maker(CoinJoinerPeer):
             return self.active_orders[nick].crypto_box
 
     def on_orderbook_requested(self, nick):
-        self.msgchan().announce_orders(self.orderlist, nick)
+        self.msgchan.announce_orders(self.orderlist, nick)
 
     def on_order_fill(self, nick, oid, amount, taker_pubkey):
         if nick in self.active_orders and self.active_orders[nick] is not None:
@@ -230,14 +233,14 @@ class Maker(CoinJoinerPeer):
 
     def on_seen_auth(self, nick, pubkey, sig):
         if nick not in self.active_orders or self.active_orders[nick] is None:
-            self.msgchan().send_error(nick, 'No open order from this nick')
+            self.msgchan.send_error(nick, 'No open order from this nick')
         self.active_orders[nick].auth_counterparty(nick, pubkey, sig)
         # TODO if auth_counterparty returns false, remove this order from active_orders
         # and send an error
 
     def on_seen_tx(self, nick, txhex):
         if nick not in self.active_orders or self.active_orders[nick] is None:
-            self.msgchan().send_error(nick, 'No open order from this nick')
+            self.msgchan.send_error(nick, 'No open order from this nick')
         self.active_orders[nick].recv_tx(nick, txhex)
 
     def on_push_tx(self, nick, txhex):
@@ -245,10 +248,10 @@ class Maker(CoinJoinerPeer):
         txid = self.block_instance.get_bci().pushtx(txhex)
         log.debug('pushed tx ' + str(txid))
         if txid is None:
-            self.msgchan().send_error(nick, 'Unable to push tx')
+            self.msgchan.send_error(nick, 'Unable to push tx')
 
     def on_welcome(self):
-        self.msgchan().announce_orders(self.orderlist)
+        self.msgchan.announce_orders(self.orderlist)
         self.active_orders = {}
 
     def on_nick_leave(self, nick):
@@ -266,9 +269,9 @@ class Maker(CoinJoinerPeer):
                 log.debug(fmt(oid))
             self.orderlist.remove(order[0])
         if len(to_cancel) > 0:
-            self.msgchan().cancel_orders(to_cancel)
+            self.msgchan.cancel_orders(to_cancel)
         if len(to_announce) > 0:
-            self.msgchan().announce_orders(to_announce)
+            self.msgchan.announce_orders(to_announce)
             for ann in to_announce:
                 oldorder_s = [order
                               for order in self.orderlist

@@ -73,12 +73,14 @@ class CoinJoinTX(object):
         # create DH keypair on the fly for this Tx object
         self.kp = init_keypair()
         self.crypto_boxes = {}
-        self.block_instance.tx_irc_client.fill_orders(
+        self.msgchan.fill_orders(
                 self.active_orders, self.cj_amount, self.kp.hex_pk())
 
-    def msgchan(self):
-        # legacy support
-        return self.block_instance.irc_market
+    def __getattr__(self, name):
+        if name == 'msgchan':
+            return self.block_instance.irc_market
+        else:
+            raise AttributeError
 
     def start_encryption(self, nick, maker_pk):
         if nick not in self.active_orders.keys():
@@ -95,7 +97,7 @@ class CoinJoinTX(object):
         my_btc_priv = self.wallet.get_key_from_addr(my_btc_addr)
         my_btc_pub = btc.privtopub(my_btc_priv)
         my_btc_sig = btc.ecdsa_sign(self.kp.hex_pk(), my_btc_priv)
-        self.msgchan().send_auth(nick, my_btc_pub, my_btc_sig)
+        self.msgchan.send_auth(nick, my_btc_pub, my_btc_sig)
 
     def auth_counterparty(self, nick, btc_sig, cj_pub):
         """Validate the counterpartys claim to own the btc
@@ -186,7 +188,7 @@ class CoinJoinTX(object):
         random.shuffle(self.outputs)
         tx = btc.mktx(self.utxo_tx, self.outputs)
         # log.debug('obtained tx\n' + pprint.pformat(btc.deserialize(tx)))
-        self.msgchan().send_tx(self.active_orders.keys(), tx)
+        self.msgchan.send_tx(self.active_orders.keys(), tx)
 
         self.latest_tx = btc.deserialize(tx)
         for index, ins in enumerate(self.latest_tx['ins']):
@@ -284,7 +286,6 @@ class CoinJoinTX(object):
 
     def push(self, txd):
         tx = btc.serialize(txd)
-        log.debug('\n' + tx)
         log.debug('txid = ' + btc.txhash(tx))
         # TODO send to a random maker or push myself
         # TODO need to check whether the other party sent it
@@ -333,7 +334,7 @@ class CoinJoinTX(object):
             #                pprint.pformat(self.active_orders), pprint.pformat(
             #                    self.nonrespondants)))
 
-            self.msgchan().fill_orders(new_orders, self.cj_amount,
+            self.msgchan.fill_orders(new_orders, self.cj_amount,
                                      self.kp.hex_pk())
         else:
             log.debug('nonresponse to !sig')
@@ -376,62 +377,71 @@ class CoinJoinerPeer(object):
         # not the cleanest but it automates what would be an extra step
         self.block_instance.coinjoinerpeer = self
 
-    def msgchan(self):
-        return self.block_instance.irc_market
+    def __getattr__(self, name):
+        if name == 'msgchan':
+            return self.block_instance.irc_market
+        if name[:3] == 'on_':
+            return self.do_nothing
+        else:
+            raise AttributeError
 
-    def get_crypto_box_from_nick(self, nick):
-        raise Exception()
-
-    def on_set_topic(self, *args, **kwargs):
+    def do_nothing(self, *args, **kwargs):
         pass
 
-    def on_welcome(self, *args, **kwargs):
-        pass
-
-    def on_connect(self, *args, **kwargs):
-        pass
-
-    def on_disconnect(self, *args, **kwargs):
-        pass
-
-    def on_nick_leave(self, *args, **kwargs):
-        pass
-
-    def on_nick_change(self, *args, **kwargs):
-        pass
-
-    def on_order_seen(self, *args, **kwargs):
-        pass
-
-    def on_order_cancel(self, *args, **kwargs):
-        pass
-
-    def on_error(self, *args, **kwargs):
-        pass
-
-    def on_pubkey(self, *args, **kwargs):
-        pass
-
-    def on_ioauth(self, *args, **kwargs):
-        pass
-
-    def on_sig(self, *args, **kwargs):
-        pass
-
-    def on_orderbook_requested(self, *args, **kwargs):
-        pass
-
-    def on_order_fill(self, *args, **kwargs):
-        pass
-
-    def on_seen_auth(self, *args, **kwargs):
-        pass
-
-    def on_seen_tx(self, *args, **kwargs):
-        pass
-
-    def on_push_tx(self, *args, **kwargs):
-        pass
+    # todo: clean this up
+    # def get_crypto_box_from_nick(self, nick):
+    #     raise Exception()
+    #
+    # def on_set_topic(self, *args, **kwargs):
+    #     pass
+    #
+    # def on_welcome(self, *args, **kwargs):
+    #     pass
+    #
+    # def on_connect(self, *args, **kwargs):
+    #     pass
+    #
+    # def on_disconnect(self, *args, **kwargs):
+    #     pass
+    #
+    # def on_nick_leave(self, *args, **kwargs):
+    #     pass
+    #
+    # def on_nick_change(self, *args, **kwargs):
+    #     pass
+    #
+    # def on_order_seen(self, *args, **kwargs):
+    #     pass
+    #
+    # def on_order_cancel(self, *args, **kwargs):
+    #     pass
+    #
+    # def on_error(self, *args, **kwargs):
+    #     pass
+    #
+    # def on_pubkey(self, *args, **kwargs):
+    #     pass
+    #
+    # def on_ioauth(self, *args, **kwargs):
+    #     pass
+    #
+    # def on_sig(self, *args, **kwargs):
+    #     pass
+    #
+    # def on_orderbook_requested(self, *args, **kwargs):
+    #     pass
+    #
+    # def on_order_fill(self, *args, **kwargs):
+    #     pass
+    #
+    # def on_seen_auth(self, *args, **kwargs):
+    #     pass
+    #
+    # def on_seen_tx(self, *args, **kwargs):
+    #     pass
+    #
+    # def on_push_tx(self, *args, **kwargs):
+    #     pass
 
 
 class OrderbookWatch(CoinJoinerPeer):
