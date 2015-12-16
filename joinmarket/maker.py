@@ -261,8 +261,8 @@ class Maker(CoinJoinerPeer):
             del self.active_orders[nick]
 
     def modify_orders(self, to_cancel, to_announce):
-        log.debug('modifying orders. to_cancel={}\nto_announce={}'.format(
-            to_cancel, to_announce))
+        log.debug('modifying orders',
+                  to_cancel=to_cancel, to_announce=to_announce)
         for oid in to_cancel:
             order = [o for o in self.orderlist if o['oid'] == oid]
             if len(order) == 0:

@@ -315,8 +315,8 @@ def choose_orders(db, cj_amount, n, chooseOrdersBy, ignored_makers=None):
     chosen_orders = []
     for i in range(n):
         chosen_order = chooseOrdersBy(orders, n, feekey)
-        orders = [o for o in orders if o[0] != chosen_order[0]
-                 ]  # remove all orders from that same counterparty
+        # remove all orders from that same counterparty
+        orders = [o for o in orders if o[0] != chosen_order[0]]
         chosen_orders.append(chosen_order)
         total_cj_fee += chosen_order[2]
     log.debug('chosen orders = \n' + '\n'.join([str(o) for o in chosen_orders]))

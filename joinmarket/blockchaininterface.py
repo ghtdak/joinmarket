@@ -497,7 +497,7 @@ def process_raw_tx(btcinterface, tx, txid):
         else:
             confirmfun(txd, txid, txdata['confirmations'])
             del btcinterface.txnotify_fun[tx_output_set]
-            log.debug('CONFIRMed: {}'.format(txid))
+            log.debug('CoNfIrMeDd: {}'.format(txid))
 
 
 # noinspection PyMissingConstructor
@@ -513,7 +513,7 @@ class NotifyHttpServer(twisted_resource.Resource):
         self.multicast = MultiCast(btcinterface)
 
     def render_GET(self, request):
-        log.debug('url received: {}'.format(request.uri))
+        # log.debug('url received: {}'.format(request.uri))
         self.multicast.writeDatagram(request.uri)
         return ''
 
@@ -690,8 +690,16 @@ class BitcoinCoreInterface(BlockchainInterface):
 
     def start_http_server(self):
         log.debug('**** start_http_server')
+
+        class JmSrv(twisted_server.Site):
+            def __init__(self, srv):
+                twisted_server.Site.__init__(self, srv)
+
+            def log(self, _):
+                pass            # SHUT UP!!!
+
         srv = NotifyHttpServer(self)
-        self.http_server = twisted_server.Site(srv)
+        self.http_server = JmSrv(srv)
         notify_host = 'localhost'
         notify_port = 62602  # defaults
         if 'notify_host' in config.options("BLOCKCHAIN"):

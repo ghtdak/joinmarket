@@ -96,12 +96,14 @@ class Tumbler(jm.Taker):
         self.confirmDefer = None
 
     def unconfirm_callback(self, txd, txid):
+        log.debug('unconfirm_callback', txd=txd, txid=txid)
         log.debug('that was %d tx out of %d' %
                   (self.current_tx + 1, len(self.tx_list)))
 
     def confirm_callback(self, txd, txid, confirmations):
+        log.debug('confirm_callback',txd=txd, txid=txid)
         if self.confirmDefer:
-            self.confirmDefer.callback(txd, txid, confirmations)
+            self.confirmDefer.callback((txd, txid, confirmations))
             self.confirmDefer = None
 
     #     self.wallet.add_new_utxos(txd, txid)
@@ -159,15 +161,14 @@ class Tumbler(jm.Taker):
                                                              abs_cj_fee))
             if rel_cj_fee > self.options.maxcjfee[
                     0] and abs_cj_fee > self.options.maxcjfee[1]:
-                log.debug('cj fee higher than maxcjfee, waiting ' + str(
-                    self.options.liquiditywait) + ' seconds')
+                log.debug('cj fee higher than maxcjfee, waiting ',
+                          delay=self.options.liquiditywait)
 
                 yield jm.sleepGenerator(self.options.liquiditywait)
                 continue
             if orders is None:
-                log.debug('waiting for liquidity ' + str(
-                    self.options.liquiditywait) +
-                          'secs, hopefully more orders should come in')
+                log.debug('waiting for liquidity',
+                          delay=self.options.liquiditywait)
 
                 yield jm.sleepGenerator(self.options.liquiditywait)
                 continue
@@ -197,9 +198,8 @@ class Tumbler(jm.Taker):
                         tx['makercount'], jm.weighted_order_choose,
                         self.ignored_makers)
                     if orders is None:
-                        log.debug('waiting for liquidity ' + str(
-                            self.options.liquiditywait) +
-                                  'secs, hopefully more orders should come in')
+                        log.debug('waiting for liquidity ',
+                                  delay=self.options.liquiditywait)
                         yield jm.sleepGenerator(self.options.liquiditywait)
                         continue
                     abs_cj_fee = 1.0 * (
@@ -209,8 +209,8 @@ class Tumbler(jm.Taker):
                             rel_cj_fee, abs_cj_fee))
                     if rel_cj_fee > self.options.maxcjfee[
                             0] and abs_cj_fee > self.options.maxcjfee[1]:
-                        log.debug('cj fee higher than maxcjfee, waiting ' + str(
-                            self.options.liquiditywait) + ' seconds')
+                        log.debug('cj fee higher than maxcjfee, waiting ',
+                                  delay=self.options.liquiditywait)
                         jm.sleepGenerator(self.options.liquiditywait)
                         continue
                     break
@@ -226,11 +226,11 @@ class Tumbler(jm.Taker):
                     cj_amount = self.options.mincjamount
                 change_addr = self.wallet.get_change_addr(tx[
                     'srcmixdepth'])
-                log.debug('coinjoining ' + str(cj_amount) + ' satoshi')
+                log.debug('coinjoining ', cj_amount=cj_amount)
                 orders, total_cj_fee = yield self.tumbler_choose_orders(
                         cj_amount, tx['makercount'])
                 total_amount = cj_amount + total_cj_fee + self.options.txfee
-                log.debug('total amount spent = ' + str(total_amount))
+                log.debug('total amount spent', total_amount=total_amount)
                 utxos = self.wallet.select_utxos(
                         tx['srcmixdepth'], total_amount)
 
@@ -241,7 +241,6 @@ class Tumbler(jm.Taker):
             coinjointx = yield d
 
             if coinjointx.all_responded:
-                d = defer.Deferred()
                 jm.bc_interface.add_tx_notify(
                         coinjointx.latest_tx,
                         self.unconfirm_callback,
@@ -253,16 +252,17 @@ class Tumbler(jm.Taker):
 
                 log.debug('register for notification: ')
 
+                self.confirmDefer = d = defer.Deferred()
                 txd, txid, confirmations = yield d
                 if confirmations:
                     self.wallet.add_new_utxos(txd, txid)
-                    log.debug('confirmed create_tx: {}'.format(txid))
+                    log.debug('confirmed create_tx', txid=txid)
                     break                               # <---SUCCESS!!!
                 else:
-                    log.debug('unconfirmed create_tx')
+                    log.debug('unconfirmed create_tx', txid=txid)
             else:
                 self.ignored_makers += coinjointx.nonrespondants
-                log.debug('coinjointx unsuccessful, ignored_makers=')
+                log.debug('coinjointx unsuccessful')
                 # lets do it agaoin
 
     @defer.inlineCallbacks
@@ -293,13 +293,14 @@ class Tumbler(jm.Taker):
                       'Is the bot connecting to the right server?')
             return
         relorder_fee = float(orders[0])
-        log.debug('relorder fee = ' + str(relorder_fee))
+        log.debug('set relorder fee',relorder_fee=relorder_fee)
         maker_count = sum([tx['makercount'] for tx in self.tx_list])
+        log.debug('status', maker_count=maker_count, relorder_fee=relorder_fee)
         log.debug('uses ' + str(maker_count) + ' makers, at ' + str(
             relorder_fee * 100) + '% per maker, estimated total cost ' + str(
                 round(
                     (1 - (1 - relorder_fee)**maker_count) * 100, 3)) + '%')
-        log.debug('starting')
+        log.debug('starting the big tumbler loop')
 
         self.balance_by_mixdepth = {}
 
@@ -322,7 +323,7 @@ class Tumbler(jm.Taker):
 
     def on_welcome(self):
         super(Tumbler, self).on_welcome()
-        log.debug('waiting for all orders to certainly arrive')
+        log.debug('waiting for all orders to  arrive')
         reactor.callLater(self.options.waittime, self.start)
 
 
@@ -510,8 +511,8 @@ def build_objects(argv=None):
     dbg_tx_list = []
     for srcmixdepth, txlist in tx_dict.iteritems():
         dbg_tx_list.append({'srcmixdepth': srcmixdepth, 'tx': txlist})
-    log.debug('tumbler transaction list')
-    pprint(dbg_tx_list)
+    log.debug('tumbler transaction list', tx_dict=tx_dict)
+    # pprint(dbg_tx_list)
 
     total_wait = sum([tx['wait'] for tx in tx_list])
     print('creates ' + str(len(tx_list)) + ' transactions in total')

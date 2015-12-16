@@ -8,20 +8,8 @@ from twisted.logger import Logger
 
 from twisted.internet import reactor
 
-# data_dir = os.path.dirname(os.path.realpath(__file__))
-# sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
-
-# from common import *
-# import common
-from joinmarket import taker as takermodule
-from joinmarket import load_program_config, validate_address, \
-    jm_single, get_p2pk_vbyte, random_nick
-from joinmarket import get_log, choose_sweep_orders, choose_orders, \
-    pick_order, cheapest_order_choose, weighted_order_choose
-from joinmarket import AbstractWallet, IRCMessageChannel, debug_dump_object
-
 import bitcoin as btc
-import sendpayment
+import joinmarket as jm
 
 log = Logger()
 
@@ -51,7 +39,7 @@ class PaymentThread(object):
         choose_orders_recover = None
         if self.taker.cjamount == 0:
             total_value = sum([va['value'] for va in utxos.values()])
-            orders, cjamount = choose_sweep_orders(
+            orders, cjamount = jm.choose_sweep_orders(
                 self.taker.db, total_value, self.taker.options.txfee,
                 self.taker.options.makercount, self.taker.chooseOrdersFunc,
                 self.ignored_makers)
@@ -61,7 +49,7 @@ class PaymentThread(object):
                 total_fee_pc = 1.0 * total_cj_fee / cjamount
                 log.debug('total coinjoin fee = ' + str(float('%.3g' % (
                     100.0 * total_fee_pc))) + '%')
-                sendpayment.check_high_fee(total_fee_pc)
+                jm.sendpayment.check_high_fee(total_fee_pc)
                 if raw_input('send with these orders? (y/n):')[0] != 'y':
                     # noinspection PyTypeChecker
                     self.finishcallback(None)
@@ -117,7 +105,7 @@ class PaymentThread(object):
         if nonrespondants is None:
             nonrespondants = []
         self.ignored_makers += nonrespondants
-        orders, total_cj_fee = choose_orders(
+        orders, total_cj_fee = jm.choose_orders(
             self.taker.db, cj_amount, makercount, self.taker.chooseOrdersFunc,
             self.ignored_makers + active_nicks)
         if not orders:
@@ -132,7 +120,7 @@ class PaymentThread(object):
             total_fee_pc = 1.0 * total_cj_fee / cj_amount
             log.debug(noun + ' coinjoin fee = ' + str(float('%.3g' % (
                 100.0 * total_fee_pc))) + '%')
-            sendpayment.check_high_fee(total_fee_pc)
+            jm.sendpayment.check_high_fee(total_fee_pc)
             if raw_input('send with these orders? (y/n):')[0] != 'y':
                 log.debug('ending')
                 self.taker.msgchan.shutdown()
@@ -145,11 +133,11 @@ class PaymentThread(object):
         reactor.callLater(self.taker.options.waittime, self.create_tx)
 
 
-class CreateUnsignedTx(takermodule.Taker):
+class CreateUnsignedTx(jm.Taker):
 
     def __init__(self, msgchan, wallet, auth_utxo, cjamount, destaddr,
                  changeaddr, utxo_data, options, chooseOrdersFunc):
-        takermodule.Taker.__init__(self, msgchan)
+        jm.Taker.__init__(self, msgchan)
         self.wallet = wallet
         self.auth_utxo = auth_utxo
         self.cjamount = cjamount
@@ -160,11 +148,14 @@ class CreateUnsignedTx(takermodule.Taker):
         self.chooseOrdersFunc = chooseOrdersFunc
 
     def on_welcome(self):
-        takermodule.Taker.on_welcome(self)
+        jm.Taker.on_welcome(self)
         PaymentThread(self).start()
 
 
-def main():
+def build_objects(argv=None):
+    if argv is None:
+        argv = sys.argv
+
     parser = OptionParser(
         usage='usage: %prog [options] [auth utxo] [cjamount] [cjaddr] ['
         'changeaddr] [utxos..]',
@@ -178,53 +169,58 @@ def main():
                      'corresponding private key'))
 
     # for cjamount=0 do a sweep, and ignore change address
-    parser.add_option('-f',
-                      '--txfee',
-                      action='store',
-                      type='int',
-                      dest='txfee',
-                      default=10000,
-                      help='total miner fee in satoshis, default=10000')
     parser.add_option(
-        '-w',
-        '--wait-time',
-        action='store',
-        type='float',
-        dest='waittime',
-        help='wait time in seconds to allow orders to arrive, default=5',
-        default=5)
-    parser.add_option('-N',
-                      '--makercount',
-                      action='store',
-                      type='int',
-                      dest='makercount',
-                      help='how many makers to coinjoin with, default=2',
-                      default=2)
+            '-f',
+            '--txfee',
+            action='store',
+            type='int',
+            dest='txfee',
+            default=10000,
+            help='total miner fee in satoshis, default=10000')
     parser.add_option(
-        '-C',
-        '--choose-cheapest',
-        action='store_true',
-        dest='choosecheapest',
-        default=False,
-        help='override weightened offers picking and choose cheapest')
+            '-w',
+            '--wait-time',
+            action='store',
+            type='float',
+            dest='waittime',
+            help='wait time in seconds to allow orders to arrive, default=5',
+            default=5)
     parser.add_option(
-        '-P',
-        '--pick-orders',
-        action='store_true',
-        dest='pickorders',
-        default=False,
-        help=
-        'manually pick which orders to take. doesn\'t work while sweeping.')
-    parser.add_option('--yes',
-                      action='store_true',
-                      dest='answeryes',
-                      default=False,
-                      help='answer yes to everything')
+            '-N',
+            '--makercount',
+            action='store',
+            type='int',
+            dest='makercount',
+            help='how many makers to coinjoin with, default=2',
+            default=2)
+    parser.add_option(
+            '-C',
+            '--choose-cheapest',
+            action='store_true',
+            dest='choosecheapest',
+            default=False,
+            help='override weightened offers picking and choose cheapest')
+    parser.add_option(
+            '-P',
+            '--pick-orders',
+            action='store_true',
+            dest='pickorders',
+            default=False,
+            help=
+            'manually pick which orders to take. doesn\'t work while sweeping.')
+    parser.add_option(
+            '--yes',
+            action='store_true',
+            dest='answeryes',
+            default=False,
+            help='answer yes to everything')
+
     # TODO implement parser.add_option('-n', '--no-network',
     # action='store_true', dest='nonetwork', default=False, help='dont query
     # the blockchain interface, instead user must supply value of UTXOs on '
     # + ' command line in the format txid:output/value-in-satoshi')
-    (options, args) = parser.parse_args()
+
+    (options, args) = parser.parse_args(argv[1:])
 
     if len(args) < 3:
         parser.error('Needs a wallet, amount and destination address')
@@ -235,12 +231,11 @@ def main():
     changeaddr = args[3]
     cold_utxos = args[4:]
 
-    load_program_config()
-    addr_valid1, errormsg1 = validate_address(destaddr)
+    addr_valid1, errormsg1 = jm.validate_address(destaddr)
     errormsg2 = None
     # if amount = 0 dont bother checking changeaddr so user can write any junk
     if cjamount != 0:
-        addr_valid2, errormsg2 = validate_address(changeaddr)
+        addr_valid2, errormsg2 = jm.validate_address(changeaddr)
     else:
         addr_valid2 = True
     if not addr_valid1 or not addr_valid2:
@@ -251,7 +246,7 @@ def main():
         return
 
     all_utxos = [auth_utxo] + cold_utxos
-    query_result = jm_single().bc_interface.query_utxo_set(all_utxos)
+    query_result = jm.bc_interface.query_utxo_set(all_utxos)
     if None in query_result:
         log.info(query_result)
     utxo_data = {}
@@ -259,44 +254,32 @@ def main():
         utxo_data[utxo] = {'address': data['address'], 'value': data['value']}
     auth_privkey = raw_input('input private key for ' + utxo_data[auth_utxo][
         'address'] + ' :')
-    if utxo_data[auth_utxo]['address'] != btc.privtoaddr(auth_privkey,
-                                                         get_p2pk_vbyte()):
+    if utxo_data[auth_utxo]['address'] != btc.privtoaddr(
+            auth_privkey, jm.get_p2pk_vbyte()):
         log.info('ERROR: privkey does not match auth utxo')
         return
 
     if options.pickorders and cjamount != 0:  # cant use for sweeping
-        chooseOrdersFunc = pick_order
+        chooseOrdersFunc = jm.pick_order
     elif options.choosecheapest:
-        chooseOrdersFunc = cheapest_order_choose
+        chooseOrdersFunc = jm.cheapest_order_choose
     else:  # choose randomly (weighted)
-        chooseOrdersFunc = weighted_order_choose
+        chooseOrdersFunc = jm.weighted_order_choose
 
-    jm_single().nickname = random_nick()
+    nickname = jm.random_nick()
     log.debug('starting sendpayment')
 
-    class UnsignedTXWallet(AbstractWallet):
+    class UnsignedTXWallet(jm.AbstractWallet):
 
         def get_key_from_addr(self, addr):
             log.debug('getting privkey of ' + addr)
-            if btc.privtoaddr(auth_privkey, get_p2pk_vbyte()) != addr:
+            if btc.privtoaddr(auth_privkey, jm.get_p2pk_vbyte()) != addr:
                 raise RuntimeError('privkey doesnt match given address')
             return auth_privkey
 
     wallet = UnsignedTXWallet()
-    irc = IRCMessageChannel(jm_single().nickname)
-    taker = CreateUnsignedTx(irc, wallet, auth_utxo, cjamount, destaddr,
+    block_instance = jm.BlockInstance(nickname)
+    taker = CreateUnsignedTx(block_instance, wallet, auth_utxo, cjamount, destaddr,
                              changeaddr, utxo_data, options, chooseOrdersFunc)
-    try:
-        log.debug('starting irc')
-        irc.run()
-    except:
-        log.debug('CRASHING, DUMPING EVERYTHING')
-        debug_dump_object(wallet, ['addr_cache', 'keys', 'wallet_name', 'seed'])
-        debug_dump_object(taker)
-        import traceback
-        log.debug(traceback.format_exc())
 
-
-if __name__ == "__main__":
-    main()
-    log.info('done')
+    return block_instance, taker, wallet

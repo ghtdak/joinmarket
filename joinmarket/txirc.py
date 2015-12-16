@@ -51,7 +51,7 @@ class txIRC_Client(irc.IRCClient, object):
     # ---------------------------------------------
 
     def _reallySendLine(self, line):
-        log.debug('_reallySendLine: {}...'.format(line[:40]))
+        # log.debug('_reallySendLine: {}...'.format(line[:40]))
         return irc.IRCClient._reallySendLine(self, line)
 
 
@@ -169,13 +169,6 @@ class txIRC_Client(irc.IRCClient, object):
     def noticed(self, user, channel, message):
         log.debug('notice: {} {} {}'.format(user, channel, message))
 
-
-"""
-17:40 <marketeer> !relorder 4 2220656169 2494728195 1000 0.0000649!relorder 5
-2494728196 2823231150 1000 0.000069!absorder 0 2731 38458808 1000 2654!relorder
-1 38458809 788535195 1000 0.000039!relorder 2 788535196 1675859185 1000
-0.0000449!relorder 3 1675859186 2220656168 1000 0.000049 ~
-"""
 
 MAX_PRIVMSG_LEN = 400
 COMMAND_PREFIX = '!'
@@ -333,12 +326,12 @@ class IRC_Market(CommSuper):
         self.block_instance.tcp_connector.disconnect()
 
     def send(self, send_to, msg):
-        log.debug('send: {} {:d}: {}...'.format(send_to, len(msg), msg[:40]))
+        log.debug('send: ', send_to=send_to, mesg=msg)
         omsg = 'PRIVMSG %s :' % (send_to,) + msg
         self.block_instance.tx_irc_client.sendLine(omsg.encode('ascii'))
 
     def send_error(self, nick, errormsg):
-        log.debug('error<%s> : %s' % (nick, errormsg))
+        log.debug('send_error', nick=nick, errormsg=errormsg)
         if 'Unknown format code' in errormsg:
             raise Exception('The Susquehanna Hat Company!!!')
         self.__privmsg(nick, 'error', errormsg)
@@ -366,7 +359,7 @@ class IRC_Market(CommSuper):
             log.debug('IRC connection made')
             self.cjp().on_connect(*args, **kwargs)
         except:
-            log.error(traceback.format_exc())
+            log.failure('connectionMade')
             self.shutdown()
 
     # noinspection PyBroadException
@@ -377,7 +370,7 @@ class IRC_Market(CommSuper):
             # todo: I'm making policy to shut down
             # system_shutdown(self.errno, reason)
         except:
-            log.error(traceback.format_exc())
+            log.failure('connectionLost')
             self.shutdown()
 
     # noinspection PyBroadException
@@ -385,7 +378,7 @@ class IRC_Market(CommSuper):
         try:
             self.cjp().on_nick_leave(*args, **kwargs)
         except:
-            log.error(traceback.format_exc())
+            log.failure('userLeft')
             self.shutdown()
 
     # noinspection PyBroadException
@@ -393,7 +386,7 @@ class IRC_Market(CommSuper):
         try:
             self.cjp().on_nick_change(*args, **kwargs)
         except:
-            log.error(traceback.format_exc())
+            log.failure('userRenamed')
             self.shutdown()
 
     # noinspection PyBroadException
@@ -401,7 +394,7 @@ class IRC_Market(CommSuper):
         try:
             self.cjp().on_set_topic(*args, **kwargs)
         except:
-            log.error(traceback.format_exc())
+            log.failure('topicUpdated')
             self.shutdown()
 
     # OrderbookWatch callback
@@ -422,7 +415,7 @@ class IRC_Market(CommSuper):
         self.__privmsg(nick, 'auth', message)
 
     def send_tx(self, nick_list, txhex):
-        # todo: rate limiting is handled now.  NO SLEEPING!!!
+        # todo: rateLimit handles excessive messages.  NO SLEEPING!!!
         txb64 = base64.b64encode(txhex.decode('hex'))
         for nick in nick_list:
             self.__privmsg(nick, 'tx', txb64)
@@ -476,8 +469,7 @@ class IRC_Market(CommSuper):
         self.send(self.channel, message)
 
     def __privmsg(self, nick, cmd, message):
-        log.debug('>>privmsg ' + 'nick=' + nick + ' cmd=' + cmd + ' msg=' +
-                  message)
+        log.debug('>>privmsg ', nick=nick, cmd=cmd, message=message)
         # should we encrypt?
         box, encrypt = self.__get_encryption_box(cmd, nick)
         # encrypt before chunking
@@ -517,15 +509,16 @@ class IRC_Market(CommSuper):
                 maxsize = _chunks[3]
                 txfee = _chunks[4]
                 cjfee = _chunks[5]
-                log.debug('on_order_seen: {}'.format(', '.join(
-                    map(str, [counterparty, oid, ordertype, minsize, maxsize,
-                        txfee, cjfee]))))
+                log.debug('check_for_orders->on_order_seen',
+                          counterparty=counterparty, oid=oid,
+                          ordertype=ordertype,
+                          minsize=minsize, maxsize=maxsize,
+                          txfee=txfee, cjfee=cjfee)
                 self.cjp().on_order_seen(
                         counterparty, oid, ordertype, minsize, maxsize,
                         txfee, cjfee)
             except:
-                log.error(traceback.format_exc())
-                log.debug('index error parsing chunks')
+                log.failure('check_for_orders')
                 # TODO what now? just ignore iirc
             finally:
                 return True
@@ -566,39 +559,31 @@ class IRC_Market(CommSuper):
                         oid = int(_chunks[1])
                         amount = int(_chunks[2])
                         taker_pk = _chunks[3]
-                        # todo: moved... correct?
-                        self.cjp().on_order_fill(
-                                nick, oid, amount, taker_pk)
                     except (ValueError, IndexError) as e:
                         self.send_error(nick, str(e))
-
+                    self.cjp().on_order_fill(
+                            nick, oid, amount, taker_pk)
                 elif _chunks[0] == 'auth':
                     try:
                         i_utxo_pubkey = _chunks[1]
                         btc_sig = _chunks[2]
-                        # todo: shouldn't this be inside try?
-                        self.cjp().on_seen_auth(nick, i_utxo_pubkey, btc_sig)
                     except (ValueError, IndexError) as e:
                         self.send_error(nick, str(e))
-
+                    self.cjp().on_seen_auth(nick, i_utxo_pubkey, btc_sig)
                 elif _chunks[0] == 'tx':
                     b64tx = _chunks[1]
                     try:
                         txhex = base64.b64decode(b64tx).encode('hex')
-                        # todo: inside try!
-                        self.cjp().on_seen_tx(
-                                nick, txhex)
                     except TypeError as e:
                         self.send_error(nick, 'bad base64 tx. ' + repr(e))
-
+                    self.cjp().on_seen_tx(nick, txhex)
                 elif _chunks[0] == 'push':
                     b64tx = _chunks[1]
                     try:
                         txhex = base64.b64decode(b64tx).encode('hex')
-                        self.cjp().on_push_tx(
-                                nick, txhex)
                     except TypeError as e:
                         self.send_error(nick, 'bad base64 tx. ' + repr(e))
+                    self.cjp().on_push_tx(nick, txhex)
             except CJPeerError:
                 # TODO proper error handling
                 log.debug('cj peer error TODO handle')
@@ -610,7 +595,6 @@ class IRC_Market(CommSuper):
             return
         for command in message[1:].split(COMMAND_PREFIX):
             _chunks = command.split(" ")
-            # todo: logic seems twisted... but I'm sure its right
             if self.check_for_orders(nick, _chunks):
                 pass
             elif _chunks[0] == 'cancel':
@@ -636,7 +620,6 @@ class IRC_Market(CommSuper):
         type of object (maker/taker)."""
 
         # todo: comment says # old doc, dont trust
-
         if cmd in plaintext_commands:
             return None, False
         else:
@@ -651,26 +634,15 @@ class IRC_Market(CommSuper):
             self.from_to = (nick, sent_to)
 
             if sent_to == self.nickname:
-                # todo: this is some ctcp thing handled elsewhere. check
-                # if message[0] == '\x01':
-                #     endindex = message[1:].find('\x01')
-                #     if endindex == -1:
-                #         return
-                #     ctcp = message[1:endindex + 1]
-                #     if ctcp.upper() == 'VERSION':
-                #         self.send_raw('PRIVMSG ' + nick +
-                #                       ' :\x01VERSION xchat 2.8.8 Ubuntu\x01')
-                #         return
-
                 if nick not in self.built_privmsg:
                     if message[0] != COMMAND_PREFIX:
-                        log.debug('Expecting Command, got: {}'.format(message))
+                        log.debug('bad command', msg=message[0])
                         return
 
                     # new message starting
                     cmd_string = message[1:].split(' ')[0]
                     if cmd_string not in plaintext_commands + encrypted_commands:
-                        log.debug('cmd not in cmd_list, line="' + message + '"')
+                        log.debug('cmd not in cmd_list', cmd_string=cmd_string)
                         return
                     self.built_privmsg[nick] = [cmd_string, message[:-2]]
                 else:
@@ -678,7 +650,6 @@ class IRC_Market(CommSuper):
                 box, encrypt = self.__get_encryption_box(
                     self.built_privmsg[nick][0], nick)
 
-                # todo: this is sensitive command parser stuff I'm guessing
                 # todo: change format, use regex etc
                 if message[-1] == ';':
                     self.waiting[nick] = True
@@ -686,17 +657,15 @@ class IRC_Market(CommSuper):
                     self.waiting[nick] = False
                     if encrypt:
                         if not box:
-                            log.debug('error, dont have encryption box object '
-                                      'for {}, dropping message'.format(nick))
+                            log.debug('no encryption box, dropping', nick=nick)
                             return
                         # need to decrypt everything after the command string
                         to_decrypt = ''.join(self.built_privmsg[nick][1].split(
                             ' ')[1])
                         try:
                             decrypted = decode_decrypt(to_decrypt, box)
-                        except ValueError as e:
-                            log.debug('valueerror when decrypting, '
-                                      'skipping: {}'.format(repr(e)))
+                        except ValueError:
+                            log.failure('bad format decrypt')
                             return
                         parsed = self.built_privmsg[nick][1].split(' ')[0]
                         parsed += ' ' + decrypted
@@ -706,21 +675,21 @@ class IRC_Market(CommSuper):
                     # todo: kinda tricky here.  rearchitect!!
                     del self.built_privmsg[nick]
 
-                    log.debug("<<privmsg nick=%s message=%s" % (nick, parsed))
+                    log.debug("<<privmsg", nick=nick, parsed=parsed)
                     self.__on_privmsg(nick, parsed)
                 else:
                     # drop the bad nick
                     del self.built_privmsg[nick]
             elif sent_to == self.channel:
-                log.debug("<<pubmsg nick=%s message=%s" % (nick, message))
+                log.debug("<<pubmsg", nick=nick, message=message)
                 self.__on_pubmsg(nick, message)
             else:
-                log.debug('what is this? privmsg src=%s target=%s message=%s;' %
-                          (sent_from, sent_to, message))
-        except JsonRpcError as e:
-            log.debug(str(e))
+                log.debug('what is this?', sent_from=sent_from, sent_to=sent_to,
+                          message=message)
+        except JsonRpcError:
+            log.failure('general I guess')
         except:
-            log.error(traceback.format_exc())
+            log.failure('severe')
             self.shutdown()
 
 # -----------------------------------------------------

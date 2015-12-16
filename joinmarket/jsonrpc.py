@@ -81,7 +81,7 @@ class JsonRpc(object):
 
     def treq_queryHTTP(self, obj):
         self.blockNew += 1
-        if self.asyncCount > 0:
+        if self.asyncCount > 10:
             log.debug('treq_queryHTTP blocking - Q size: {:d}'.format(
                     self.asyncCount))
         while self.asyncCount > 0:
@@ -150,7 +150,8 @@ class JsonRpc(object):
     @defer.inlineCallbacks
     def post_defer(self, obj):
         self.asyncCount += 1
-        js = {'error':'error'}
+        js = {'jm_error':'inialize'}
+        content = None
         try:
             body = json.dumps(obj)
             response = yield treq.post(self.url,
@@ -165,13 +166,15 @@ class JsonRpc(object):
             content = yield response.content()
             js = json.loads(content)
         except:
-            log.debug('json conversion exception: {}'.format(content))
-            js = {'error':'error'}
+            log.debug('conversion exception', content=content)
+            js = {'jm_error':'exception',
+                  'error':'error'}
         else:
             # log.debug('json conversion success: {}'.format(js))
             if js['id'] != obj['id']:
-                log.error('jsonrpc post_defer invalid id returned by query')
-                js = {'error':'error'}
+                log.error('post_defer id', js=js)
+                print(js)
+                js['jm_error'] = 'id_mismatch'
 
         # todo: deal with exceptions properly
         finally:
@@ -223,7 +226,7 @@ class JsonRpc(object):
 
         nd = defer.Deferred()
 
-        if self.asyncCount <= 5 and self.blockNew == 0:
+        if self.asyncCount <= 0 and self.blockNew == 0:
             rd = self.post_defer(request)
             rd.addCallback(self.intercept, nd)
         else:

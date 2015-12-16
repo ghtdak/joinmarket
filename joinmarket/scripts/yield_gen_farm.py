@@ -5,6 +5,9 @@ import binascii
 import os
 import random
 
+import sys
+
+import signal
 from twisted.internet import reactor
 from twisted.logger import Logger
 
@@ -17,7 +20,10 @@ import bitcoin as btc
 import joinmarket as jm
 
 
-def main():
+def main(argv=None):
+    if argv is None:
+        argv = sys.argv
+
 
     def printTumblr(args):
         for a in args:
@@ -62,7 +68,10 @@ def main():
                 amt = base + random.random()
                 amt = float("%.6f" % (amt))
                 log.debug('grabbing amount: {}'.format(amt))
-                jm.bc_interface.grab_coins(w.get_receive_addr(j), amt)
+                try:
+                    jm.bc_interface.grab_coins(w.get_receive_addr(j), amt)
+                except:
+                    log.debug('grab_coins reject', j=j, amt=amt)
 
     argvv = [['btc_generator_basic.py', str(wallets[i]['seed'])]
              for i in range(6)]
@@ -70,12 +79,26 @@ def main():
     printTumblr(argvv)
 
     for argv in argvv:
-        log.debug('launching yielder: {}'.format(str(argv)))
-        block_inst, _, _ = build_yld(argv)
-        block_inst.build_irc()
-
+        log.debug('launching yielder', argv=argv)
+        def do_irc((block_inst, _, __)):
+            block_inst.build_irc()
+            log.debug('irc done for:', nick=block_inst.nickname)
+        build_yld(argv).addCallback(do_irc)
 
     log.debug('done building')
 
-reactor.callWhenRunning(main)
-reactor.run()
+def shutdown_handler(*args, **kwargs):
+    log.debug('keyboard interrupt')
+    reactor.stop()
+
+def install_handler():
+    signal.signal(signal.SIGINT, shutdown_handler)
+
+
+def run():
+    reactor.callLater(0.1, install_handler)
+    reactor.callWhenRunning(main)
+    reactor.run()
+
+if __name__ == '__main__':
+    sys.exit(run())

@@ -1,19 +1,16 @@
 from __future__ import absolute_import, print_function
 
+import cPickle as pickle
 import datetime
 import os
 import sys
 import time
-import cPickle as pickle
 
+from twisted.internet import defer, reactor
 from twisted.logger import Logger
-from twisted.internet import reactor
 
-import bitcoin
 import joinmarket as jm
 from joinmarket.jsonrpc import tb_stack_dd
-from joinmarket.test.commontest import make_wallets
-from .sendpayment import build_objects as sender_build
 
 # from joinmarket.jsonrpc import tb_stack_set
 
@@ -97,7 +94,7 @@ class YieldGenerator(jm.Maker):
         change_value = my_total_in - amount - cjorder.txfee + real_cjfee
         if change_value <= jm.DUST_THRESHOLD:
             log.debug(('change value={} below dust threshold, '
-                       'finding new utxos').format(change_value))
+                       'finding new utxos'), change_value=change_value)
             try:
                 utxos = self.wallet.select_utxos(
                     mixdepth, amount + self.block_instance.DUST_THRESHOLD)
@@ -186,50 +183,22 @@ def build_objects(argv=None):
         if ret[0] != 'y':
             return
 
-    # --------------------------------------------------------
-    # Testing Infrastructure
-
-    #create 2 new random wallets.
-    #put 10 coins into the first receive address
-    #to allow that bot to start.
-    def build_otherguys():
-        wallets = make_wallets(2,
-                               wallet_structures=[[1, 0, 0, 0, 0],
-                                                  [1, 0, 0, 0, 0]],
-                               mean_amt=10)
-
-        #run a single sendpayment call with wallet2
-        n = m = 2
-        amt = n * 100000000  #in satoshis
-        dest_address = bitcoin.privkey_to_address(
-            os.urandom(32), jm.get_p2pk_vbyte())
-
-        for _ in range(m):
-            sender_args = ['--yes', '-N', '1', str(wallets[1]['seed']),
-                           str(amt), dest_address]
-            log.debug('constructing sender, args: {}'.format(
-                    ' '.join(sender_args)))
-            bi, t, w = sender_build(sender_args)
-
-            # the necessary delay as per test/regtest.py
-            reactor.callLater(30, bi.build_irc)
-
-        return wallets
-
-    # wallets = build_otherguys()
-    # fakeseed = str(wallets[0]['seed'])
-
-    # -----------------------------------------------------
-
     seed = argv[1]
 
-    wallet = jm.Wallet(seed, max_mix_depth=mix_levels)
+    def make_slow(d):
 
-    jm.bc_interface.sync_wallet(wallet)
+        wallet = jm.Wallet(seed, max_mix_depth=mix_levels)
 
-    log.debug('starting yield generator')
+        jm.bc_interface.sync_wallet(wallet)
 
-    maker = YieldGenerator(block_instance, wallet)
+        log.debug('starting yield generator')
 
-    return block_instance, maker, wallet
+        maker = YieldGenerator(block_instance, wallet)
 
+        d.callback((block_instance, maker, wallet))
+
+    d = defer.Deferred()
+
+    reactor.callWhenRunning(make_slow, d)
+
+    return d
