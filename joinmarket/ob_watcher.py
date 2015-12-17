@@ -234,7 +234,9 @@ class OrderbookPageRequestHeader(resource.Resource):
         return str(len(counterparties))
 
     def render_GET(self, request):
+        log.debug('render_get', request=request)
         path = request.uri
+        log.debug('uri', path=path)
 
         path, query = path.split('?', 1) if '?' in path else (
             path, '')
@@ -242,9 +244,9 @@ class OrderbookPageRequestHeader(resource.Resource):
         pages = ['/', '/ordersize', '/depth', '/orderbook.json']
         if path not in pages:
             return
-        fd = open('orderbook.html', 'r')
-        orderbook_fmt = fd.read()
-        fd.close()
+
+        with open('orderbook.html', 'r') as fd:
+            orderbook_fmt = fd.read()
         alert_msg = ''
         if path == '/':
             btc_unit = args['btcunit'][
@@ -255,8 +257,9 @@ class OrderbookPageRequestHeader(resource.Resource):
                 btc_unit = sorted_units[0]
             if rel_unit not in sorted_rel_units:
                 rel_unit = sorted_rel_units[0]
-            ordercount, ordertable = create_orderbook_table(self.taker.db,
-                                                            btc_unit, rel_unit)
+            ordercount, ordertable = create_orderbook_table(
+                    self.taker.db, btc_unit, rel_unit)
+
             choose_units_form = create_choose_units_form(btc_unit, rel_unit)
             table_heading = create_table_heading(btc_unit, rel_unit)
             replacements = {

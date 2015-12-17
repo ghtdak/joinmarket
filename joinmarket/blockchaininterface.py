@@ -180,7 +180,7 @@ class BlockrInterface(BlockchainInterface):
         def AsyncWebSucker():
             blockr_domain = self.blockr_domain
             daemon = True
-            tx_output_set = set([(sv['script'], sv['value']) for sv in trw.txd[
+            tx_output_set = set([(sv['script'], sv['value']) for sv in trw.tx[
                 'outs']])
             output_addresses = [
                 btc.script_to_address(scrval[0], get_p2pk_vbyte())
@@ -455,7 +455,7 @@ def process_raw_tx(btcinterface, tx, txid):
             # bitcoin-cli move wallet_name "" amount
             log.debug('unconfirmtx: {}'.format(txid))
         else:
-            trw.confirmfun(txd, txid, txdata['confirmations'])
+            trw.send_confirm(txd, txid, txdata['confirmations'])
             del btcinterface.txnotify_fun[tx_output_set]
             log.debug('CoNfIrMeDd: {}'.format(txid))
 
@@ -687,17 +687,17 @@ class BitcoinCoreInterface(BlockchainInterface):
             self.start_http_server()
 
         one_addr_imported = False
-        for outs in trw.txd['outs']:
+        for outs in trw.tx['outs']:
             addr = btc.script_to_address(outs['script'], get_p2pk_vbyte())
             if self.rpc('getaccount', [addr]) != '':
                 one_addr_imported = True
                 break
         if not one_addr_imported:
             self.rpc('importaddress',
-                     [trw.notifyaddr, 'joinmarket-notify', False],
+                     [trw.cj_addr, 'joinmarket-notify', False],
                      immediate=True)
         tx_output_set = frozenset([(sv['script'], sv['value'])
-                                   for sv in trw.txd['outs']])
+                                   for sv in trw.tx['outs']])
         self.txnotify_fun[tx_output_set] = trw
 
     def pushtx(self, txhex):

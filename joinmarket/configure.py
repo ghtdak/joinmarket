@@ -4,7 +4,8 @@ import io
 import sys
 
 from ConfigParser import SafeConfigParser, NoOptionError
-from twisted.logger import Logger, textFileLogObserver, globalLogPublisher
+from twisted.logger import Logger, textFileLogObserver, globalLogPublisher, \
+    jsonFileLogObserver
 
 import bitcoin as btc
 

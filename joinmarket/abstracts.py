@@ -13,12 +13,34 @@ from .configure import config
 log = Logger()
 
 class TransactionWatcher(object):
+
     def __init__(self):
         self.d_confirm = None
+        # self.tx = None
+        # self.cj_addr = None
+
+    @property
+    def tx(self):
+        return self._tx
+
+    @tx.setter
+    def tx(self, value):
+        self._tx = value
+
+    @property
+    def cj_addr(self):
+        return self._cj_addr
+
+    @cj_addr.setter
+    def cj_addr(self, value):
+        self._cj_addr = value
 
     def confirm(self):
         self.d_confirm = defer.Deferred()
         return self.d_confirm
+
+    def send_confirm(self, txd, txid, txdata):
+        self.d_confirm.callback((txd, txid, txdata))
 
     def unconfirmfun(self, txd, txid):
         pass

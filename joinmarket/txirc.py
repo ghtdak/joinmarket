@@ -305,6 +305,12 @@ class IRC_Market(CommSuper):
 
         # todo: how to end??? kicked?  timeout? etc...
 
+    def __getattr__(self, name):
+        if name == 'cjp':
+            return self.block_instance.coinjoinerpeer
+        else:
+            raise AttributeError('name: {} doesn\'t exist'.format(name))
+
     def run(self):
         """
         Run defined here for consistency
@@ -345,7 +351,7 @@ class IRC_Market(CommSuper):
     def joined(self, channel):
         # todo: mode changes needed?
         try:
-            self.cjp().on_welcome()
+            self.cjp.on_welcome()
         except:
             log.error(traceback.format_exc())
             self.shutdown()
@@ -357,7 +363,7 @@ class IRC_Market(CommSuper):
     def connectionMade(self, *args, **kwargs):
         try:
             log.debug('IRC connection made')
-            self.cjp().on_connect(*args, **kwargs)
+            self.cjp.on_connect(*args, **kwargs)
         except:
             log.failure('connectionMade')
             self.shutdown()
@@ -366,7 +372,7 @@ class IRC_Market(CommSuper):
     def connectionLost(self, reason):
         try:
             log.debug('IRC connection lost: {}'.format(reason))
-            self.cjp().on_disconnect(reason)
+            self.cjp.on_disconnect(reason)
             # todo: I'm making policy to shut down
             # system_shutdown(self.errno, reason)
         except:
@@ -376,7 +382,7 @@ class IRC_Market(CommSuper):
     # noinspection PyBroadException
     def userLeft(self, *args, **kwargs):
         try:
-            self.cjp().on_nick_leave(*args, **kwargs)
+            self.cjp.on_nick_leave(*args, **kwargs)
         except:
             log.failure('userLeft')
             self.shutdown()
@@ -384,7 +390,7 @@ class IRC_Market(CommSuper):
     # noinspection PyBroadException
     def userRenamed(self, *args, **kwargs):
         try:
-            self.cjp().on_nick_change(*args, **kwargs)
+            self.cjp.on_nick_change(*args, **kwargs)
         except:
             log.failure('userRenamed')
             self.shutdown()
@@ -392,7 +398,7 @@ class IRC_Market(CommSuper):
     # noinspection PyBroadException
     def topicUpdated(self, *args, **kwargs):
         try:
-            self.cjp().on_set_topic(*args, **kwargs)
+            self.cjp.on_set_topic(*args, **kwargs)
         except:
             log.failure('topicUpdated')
             self.shutdown()
@@ -494,10 +500,6 @@ class IRC_Market(CommSuper):
             # self.send_raw(header + m + trailer)
             self.send(nick, m + trailer)
 
-    def cjp(self):
-        # basically saves space... too many notes
-        return self.block_instance.coinjoinerpeer
-
     # noinspection PyBroadException
     def check_for_orders(self, nick, _chunks):
         if _chunks[0] in ['absorder', 'relorder']:
@@ -514,7 +516,7 @@ class IRC_Market(CommSuper):
                           ordertype=ordertype,
                           minsize=minsize, maxsize=maxsize,
                           txfee=txfee, cjfee=cjfee)
-                self.cjp().on_order_seen(
+                self.cjp.on_order_seen(
                         counterparty, oid, ordertype, minsize, maxsize,
                         txfee, cjfee)
             except:
@@ -540,18 +542,18 @@ class IRC_Market(CommSuper):
                 # taker commands
                 elif _chunks[0] == 'pubkey':
                     maker_pk = _chunks[1]
-                    self.cjp().on_pubkey(
+                    self.cjp.on_pubkey(
                             nick, maker_pk)
                 elif _chunks[0] == 'ioauth':
                     utxo_list = _chunks[1].split(',')
                     cj_pub = _chunks[2]
                     change_addr = _chunks[3]
                     btc_sig = _chunks[4]
-                    self.cjp().on_ioauth(
+                    self.cjp.on_ioauth(
                             nick, utxo_list, cj_pub, change_addr, btc_sig)
                 elif _chunks[0] == 'sig':
                     sig = _chunks[1]
-                    self.cjp().on_sig(nick, sig)
+                    self.cjp.on_sig(nick, sig)
 
                 # maker commands
                 if _chunks[0] == 'fill':
@@ -561,7 +563,7 @@ class IRC_Market(CommSuper):
                         taker_pk = _chunks[3]
                     except (ValueError, IndexError) as e:
                         self.send_error(nick, str(e))
-                    self.cjp().on_order_fill(
+                    self.cjp.on_order_fill(
                             nick, oid, amount, taker_pk)
                 elif _chunks[0] == 'auth':
                     try:
@@ -569,21 +571,21 @@ class IRC_Market(CommSuper):
                         btc_sig = _chunks[2]
                     except (ValueError, IndexError) as e:
                         self.send_error(nick, str(e))
-                    self.cjp().on_seen_auth(nick, i_utxo_pubkey, btc_sig)
+                    self.cjp.on_seen_auth(nick, i_utxo_pubkey, btc_sig)
                 elif _chunks[0] == 'tx':
                     b64tx = _chunks[1]
                     try:
                         txhex = base64.b64decode(b64tx).encode('hex')
                     except TypeError as e:
                         self.send_error(nick, 'bad base64 tx. ' + repr(e))
-                    self.cjp().on_seen_tx(nick, txhex)
+                    self.cjp.on_seen_tx(nick, txhex)
                 elif _chunks[0] == 'push':
                     b64tx = _chunks[1]
                     try:
                         txhex = base64.b64decode(b64tx).encode('hex')
                     except TypeError as e:
                         self.send_error(nick, 'bad base64 tx. ' + repr(e))
-                    self.cjp().on_push_tx(nick, txhex)
+                    self.cjp.on_push_tx(nick, txhex)
             except CJPeerError:
                 # TODO proper error handling
                 log.debug('cj peer error TODO handle')
@@ -602,13 +604,13 @@ class IRC_Market(CommSuper):
                 try:
                     oid = int(_chunks[1])
 
-                    self.cjp().on_order_cancel(
+                    self.cjp.on_order_cancel(
                             nick, oid)
                 except ValueError as e:
                     log.debug("!cancel " + repr(e))
                     return
             elif _chunks[0] == 'orderbook':
-                self.cjp().on_orderbook_requested(nick)
+                self.cjp.on_orderbook_requested(nick)
 
     def __get_encryption_box(self, cmd, nick):
         """
@@ -623,7 +625,7 @@ class IRC_Market(CommSuper):
         if cmd in plaintext_commands:
             return None, False
         else:
-            return self.cjp().get_crypto_box_from_nick(nick), True
+            return self.cjp.get_crypto_box_from_nick(nick), True
 
     def handle_privmsg(self, sent_from, sent_to, message):
         try:

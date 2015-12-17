@@ -10,7 +10,6 @@ NOR PERFORMANT NOR HIGH PRECISION!
 Only for sampling purposes
 """
 
-# import logging
 import pprint
 import random
 import traceback

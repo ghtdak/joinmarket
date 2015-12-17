@@ -11,12 +11,12 @@ log.debug('wtf')
 
 def main():
 
-    argv = ['tumbler.py', '-N', '2', '0', '-a', '0', '-M', '5', '-w', '3', '-l', '0.2', '-s', '100000000', '26112de', 'mj4eah26xBywHgfthpTaoaF7KQXXutP8fM']
+    argv = ['tumbler.py', '-N', '2', '0', '-a', '0', '-M', '5', '-w', '3', '-l', '0.2', '-s', '100000000', '53f9326', 'mkh4SJ9qSWTR5TUsegosUrwMHwT4FNHXZ3']
 
     log.debug('launching tumblrr: {}'.format(str(argv)))
 
-    _block_inst, _, _ = build_tumbler(argv)
-    _block_inst.build_irc()
+    block_inst = build_tumbler(argv)
+    block_inst.build_irc()
     log.debug('done building')
 
 
