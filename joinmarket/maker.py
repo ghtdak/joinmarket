@@ -2,11 +2,13 @@
 from __future__ import absolute_import, print_function
 
 import base64
+import pprint
 
-from twisted.internet import reactor
+from twisted.internet import defer, reactor
 from twisted.logger import Logger
 
 import bitcoin as btc
+from joinmarket.abstracts import TransactionWatcher
 from joinmarket.txirc import BlockInstance
 from joinmarket.configure import DUST_THRESHOLD, get_p2pk_vbyte
 from joinmarket.enc_wrapper import init_keypair, as_init_encryption, init_pubkey
@@ -19,8 +21,9 @@ from joinmarket.blockchaininterface import bc_interface
 log = Logger()
 
 
-class CoinJoinOrder(object):
+class CoinJoinOrder(TransactionWatcher):
 
+    # todo: way too much stuff going on in init
     def __init__(self, maker, nick, oid, amount, taker_pk):
         self.tx = None
         self.i_utxo_pubkey = None
@@ -57,7 +60,6 @@ class CoinJoinOrder(object):
             # TODO make up orders offers in a way that this error cant appear
             #  check nothing has messed up with the wallet code, remove this
             # code after a while
-        import pprint
         # log.debug('maker utxos = ' + pprint.pformat(self.utxos))
         utxo_list = self.utxos.keys()
         utxo_data = bc_interface.query_utxo_set(
@@ -126,14 +128,16 @@ class CoinJoinOrder(object):
                 'script'].decode('hex')))
         # len(sigs) > 0 guarenteed since i did verify_unsigned_tx()
 
-        bc_interface.add_tx_notify(
-            self.tx, self.unconfirm_callback, self.confirm_callback,
-            self.cj_addr)
+        bc_interface.add_tx_notify(self)
+
+        self.d_confirm = defer.Deferred()
+        self.d_confirm.addCallback(self.confirmfun)
+
         log.debug('sending sigs ' + str(sigs))
         self.maker.msgchan.send_sigs(nick, sigs)
         self.maker.active_orders[nick] = None
 
-    def unconfirm_callback(self, txd, txid):
+    def unconfirmfun(self, txd, txid):
         removed_utxos = self.maker.wallet.remove_old_utxos(self.tx)
 
         # log.debug('saw tx on network, removed_utxos=\n{}'.format(pprint.pformat(
@@ -142,7 +146,7 @@ class CoinJoinOrder(object):
                                                               removed_utxos)
         self.maker.modify_orders(to_cancel, to_announce)
 
-    def confirm_callback(self, txd, txid, confirmations):
+    def confirmfun(self, txd, txid, confirmations):
         bc_interface.sync_unspent(self.maker.wallet)
         log.debug('tx in a block')
         log.debug('earned = ' + str(self.real_cjfee - self.txfee))
@@ -176,8 +180,8 @@ class CoinJoinOrder(object):
             my_total_in - self.cj_amount - self.txfee + self.real_cjfee)
         log.debug('potentially earned = {}'.format(self.real_cjfee -
                                                    self.txfee))
-        log.debug('mycjaddr, mychange = {}, {}'.format(self.cj_addr,
-                                                       self.change_addr))
+        log.debug('exchange info', cj_addr=self.cj_addr,
+                  change_addr=self.change_addr)
 
         times_seen_cj_addr = 0
         times_seen_change_addr = 0
@@ -384,7 +388,7 @@ def main():
     ]  # btc.sha256('dont use brainwallets except for holding testnet coins')
 
     binst = BlockInstance(nickname)
-    wallet = Wallet(binst, seed, max_mix_depth=5)
+    wallet = Wallet(seed, max_mix_depth=5)
     binst.get_bci().sync_wallet(wallet)
 
     maker = Maker(binst, wallet)

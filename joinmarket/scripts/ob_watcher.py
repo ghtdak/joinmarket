@@ -3,7 +3,7 @@ from __future__ import absolute_import, print_function
 from twisted.internet import reactor
 from twisted.logger import Logger
 
-from joinmarket.yield_generator_basic import build_objects
+from joinmarket.ob_watcher import build_objects
 
 log = Logger()
 

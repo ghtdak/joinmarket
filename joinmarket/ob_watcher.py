@@ -1,32 +1,38 @@
 from __future__ import absolute_import
 
-import BaseHTTPServer
-import SimpleHTTPServer
 import base64
 import io
 import json
-import threading
-import time
+import sys
 import urllib2
 from decimal import Decimal
 from optparse import OptionParser
 
-# data_dir = os.path.dirname(os.path.realpath(__file__))
-# sys.path.insert(0, os.path.join(data_dir, 'joinmarket'))
-
-# https://stackoverflow.com/questions/2801882/generating-a-png-with-matplotlib-when-display-is-undefined
 import matplotlib
+from twisted.internet import reactor
+from twisted.logger import Logger
+from twisted.web import server, resource
 
-from joinmarket import jm_single, load_program_config, IRCMessageChannel
-from joinmarket import random_nick, calc_cj_fee, OrderbookWatch
+import joinmarket as jm
 
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-shutdownform = '<form action="shutdown" method="post"><input type="submit" value="Shutdown" /></form>'
-shutdownpage = '<html><body><center><h1>Successfully Shut down</h1></center></body></html>'
+log = Logger()
 
-refresh_orderbook_form = '<form action="refreshorderbook" method="post"><input type="submit" value="Check for timed-out counterparties" /></form>'
+"""
+https://stackoverflow.com/questions/2801882/generating-a-png-with-matplotlib-
+when-display-is-undefined
+"""
+
+shutdownform = ('<form action="shutdown" method="post"><input type="submit"'
+                ' value="Shutdown" /></form>')
+shutdownpage = ('<html><body><center><h1>Successfully Shut down</h1></center>'
+                '</body></html>')
+
+refresh_orderbook_form = ('<form action="refreshorderbook" method="post">'
+                          '<input type="submit" value="Check for timed-out '
+                          'counterparties" /></form>')
 sorted_units = ('BTC', 'mBTC', '&#956;BTC', 'satoshi')
 unit_to_power = {'BTC': 8, 'mBTC': 5, '&#956;BTC': 2, 'satoshi': 0}
 sorted_rel_units = ('%', '&#8241;', 'ppm')
@@ -41,10 +47,9 @@ def create_depth_chart(db, cj_amount, args=None):
     if args is None:
         args = {}
     sqlorders = db.execute('SELECT * FROM orderbook;').fetchall()
-    orderfees = sorted([calc_cj_fee(o['ordertype'], o['cjfee'], cj_amount) / 1e8
-                        for o in sqlorders
-                        if o['minsize'] <= cj_amount <= o[
-                            'maxsize']])
+    orderfees = sorted(
+            [jm.calc_cj_fee(o['ordertype'], o['cjfee'], cj_amount) / 1e8
+             for o in sqlorders if o['minsize'] <= cj_amount <= o['maxsize']])
 
     if len(orderfees) == 0:
         return 'No orders at amount ' + str(cj_amount / 1e8)
@@ -190,13 +195,24 @@ def create_choose_units_form(selected_btc, selected_rel):
     return choose_units_form
 
 
-class OrderbookPageRequestHeader(SimpleHTTPServer.SimpleHTTPRequestHandler):
+class NotifyHttpServer(resource.Resource):
 
-    def __init__(self, request, client_address, base_server):
-        self.taker = base_server.taker
-        self.base_server = base_server
-        SimpleHTTPServer.SimpleHTTPRequestHandler.__init__(
-            self, request, client_address, base_server)
+    isLeaf = True
+
+    def __init__(self, btcinterface):
+        self.btcinterface = btcinterface
+        self.using_port = None
+
+    def render_GET(self, request):
+        return ''
+
+
+class OrderbookPageRequestHeader(resource.Resource):
+
+    isLeaf = True
+
+    def __init__(self, taker):
+        self.taker = taker
 
     def create_orderbook_obj(self):
         rows = self.taker.db.execute('SELECT * FROM orderbook;').fetchall()
@@ -217,23 +233,20 @@ class OrderbookPageRequestHeader(SimpleHTTPServer.SimpleHTTPRequestHandler):
             'SELECT DISTINCT counterparty FROM orderbook;').fetchall()
         return str(len(counterparties))
 
-    def do_GET(self):
-        # SimpleHTTPServer.SimpleHTTPRequestHandler.do_GET(self)
-        # print 'httpd received ' + self.path + ' request'
-        self.path, query = self.path.split('?', 1) if '?' in self.path else (
-            self.path, '')
+    def render_GET(self, request):
+        path = request.uri
+
+        path, query = path.split('?', 1) if '?' in path else (
+            path, '')
         args = urllib2.urlparse.parse_qs(query)
         pages = ['/', '/ordersize', '/depth', '/orderbook.json']
-        if self.path not in pages:
+        if path not in pages:
             return
         fd = open('orderbook.html', 'r')
         orderbook_fmt = fd.read()
         fd.close()
         alert_msg = ''
-        if jm_single().joinmarket_alert:
-            alert_msg = '<br />JoinMarket Alert Message:<br />' + \
-                        jm_single().joinmarket_alert
-        if self.path == '/':
+        if path == '/':
             btc_unit = args['btcunit'][
                 0] if 'btcunit' in args else sorted_units[0]
             rel_unit = args['relunit'][
@@ -256,15 +269,15 @@ class OrderbookPageRequestHeader(SimpleHTTPServer.SimpleHTTPRequestHandler):
                     shutdownform + refresh_orderbook_form + choose_units_form +
                     table_heading + ordertable + '</table>\n')
             }
-        elif self.path == '/ordersize':
+        elif path == '/ordersize':
             replacements = {
                 'PAGETITLE': 'JoinMarket Browser Interface',
                 'MAINHEADING': 'Order Sizes',
                 'SECONDHEADING': 'Order Size Histogram' + alert_msg,
                 'MAINBODY': create_size_histogram(self.taker.db, args)
             }
-        elif self.path.startswith('/depth'):
-            # if self.path[6] == '?':
+        elif path.startswith('/depth'):
+            # if path[6] == '?':
             #	quantity =
             cj_amounts = [10**cja for cja in range(4, 12, 1)]
             mainbody = [create_depth_chart(self.taker.db, cja, args) \
@@ -277,104 +290,87 @@ class OrderbookPageRequestHeader(SimpleHTTPServer.SimpleHTTPRequestHandler):
                 'SECONDHEADING': 'Orderbook Depth' + alert_msg,
                 'MAINBODY': '<br />'.join(mainbody)
             }
-        elif self.path == '/orderbook.json':
+        elif path == '/orderbook.json':
             replacements = {}
             orderbook_fmt = json.dumps(self.create_orderbook_obj())
         orderbook_page = orderbook_fmt
         for key, rep in replacements.iteritems():
             orderbook_page = orderbook_page.replace(key, rep)
-        self.send_response(200)
-        if self.path.endswith('.json'):
-            self.send_header('Content-Type', 'application/json')
-        else:
-            self.send_header('Content-Type', 'text/html')
-        self.send_header('Content-Length', len(orderbook_page))
-        self.end_headers()
-        self.wfile.write(orderbook_page)
+        # self.send_response(200)
+        # if path.endswith('.json'):
+        #     self.send_header('Content-Type', 'application/json')
+        # else:
+        #     self.send_header('Content-Type', 'text/html')
+        # self.send_header('Content-Length', len(orderbook_page))
+        # self.end_headers()
+        return orderbook_page
 
-    def do_POST(self):
-        pages = ['/shutdown', '/refreshorderbook']
-        if self.path not in pages:
-            return
-        if self.path == '/shutdown':
-            self.taker.msgchan.shutdown()
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/html')
-            self.send_header('Content-Length', len(shutdownpage))
-            self.end_headers()
-            self.wfile.write(shutdownpage)
-            self.base_server.__shutdown_request = True
-        elif self.path == '/refreshorderbook':
-            self.taker.msgchan.request_orderbook()
-            time.sleep(5)
-            self.path = '/'
-            self.do_GET()
+    def render_POST(self, request):
+        log.debug('post', request=request)
+
+        # path = request.uri
+        # pages = ['/shutdown', '/refreshorderbook']
+        # if path not in pages:
+        #     return
+        # if path == '/shutdown':
+        #     self.taker.msgchan.shutdown()
+        #     self.send_response(200)
+        #     self.send_header('Content-Type', 'text/html')
+        #     self.send_header('Content-Length', len(shutdownpage))
+        #     self.end_headers()
+        #     self.wfile.write(shutdownpage)
+        #     self.base_server.__shutdown_request = True
+        # todo: no idea.  come back
+        # elif path == '/refreshorderbook':
+        #     self.taker.msgchan.request_orderbook()
+        #     path = '/'
+        #     self.do_GET()
 
 
-class HTTPDThread(threading.Thread):
+class JmSrv(server.Site):
+    def __init__(self, srv):
+        server.Site.__init__(self, srv)
 
-    def __init__(self, taker, hostport):
-        threading.Thread.__init__(self)
-        self.daemon = True
-        self.taker = taker
+    def log(self, _):
+        pass            # SHUT UP!!!
+
+
+class GUITaker(jm.OrderbookWatch):
+    def __init__(self, block_instance, hostport):
         self.hostport = hostport
-
-    def run(self):
-        # hostport = ('localhost', 62601)
-        httpd = BaseHTTPServer.HTTPServer(self.hostport,
-                                          OrderbookPageRequestHeader)
-        httpd.taker = self.taker
-        print('\nstarted http server, visit http://{0}:{1}/\n'.format(
-            *self.hostport))
-        httpd.serve_forever()
+        super(GUITaker, self).__init__(block_instance)
+        srv = OrderbookPageRequestHeader(self)
+        reactor.listenTCP(self.hostport[1], JmSrv(srv))
 
 
-class GUITaker(OrderbookWatch):
-
-    def __init__(self, msgchan, hostport):
-        self.hostport = hostport
-        super(GUITaker, self).__init__(msgchan)
-
-    def on_welcome(self):
-        OrderbookWatch.on_welcome(self)
-        HTTPDThread(self, self.hostport).start()
-
-
-def main():
-    jm_single().nickname = random_nick(
-    )  # watcher' +binascii.hexlify(os.urandom(4))
-    load_program_config()
+def build_objects(argv=None):
+    if argv is None:
+        argv=sys.argv
 
     parser = OptionParser(
         usage='usage: %prog [options]',
         description='Runs a webservice which shows the orderbook.')
-    parser.add_option('-H',
-                      '--host',
-                      action='store',
-                      type='string',
-                      dest='host',
-                      default='localhost',
-                      help='hostname or IP to bind to, default=localhost')
-    parser.add_option('-p',
-                      '--port',
-                      action='store',
-                      type='int',
-                      dest='port',
-                      help='port to listen on, default=62601',
-                      default=62601)
-    (options, args) = parser.parse_args()
+    parser.add_option(
+            '-H',
+            '--host',
+            action='store',
+            type='string',
+            dest='host',
+            default='localhost',
+            help='hostname or IP to bind to, default=localhost')
+    parser.add_option(
+            '-p',
+            '--port',
+            action='store',
+            type='int',
+            dest='port',
+            help='port to listen on, default=8080',
+            default=8080)
+    (options, args) = parser.parse_args(argv[1:])
 
-    hostport = (options.host, options.port)
+    nickname = jm.random_nick()
+    block_instance = jm.BlockInstance(nickname)
 
-    irc = IRCMessageChannel(jm_single().nickname)
+    GUITaker(block_instance, (options.host, options.port))
 
-    # todo: is the call to GUITaker needed, or the return. taker unused
-    taker = GUITaker(irc, hostport)
-    print('starting irc')
-
-    irc.run()
-
-
-if __name__ == "__main__":
-    main()
-    print('done')
+    return block_instance

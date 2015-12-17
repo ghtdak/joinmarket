@@ -4,10 +4,8 @@ from __future__ import absolute_import, print_function
 import binascii
 import os
 import random
-
 import sys
 
-import signal
 from twisted.internet import reactor
 from twisted.logger import Logger
 
@@ -20,7 +18,7 @@ import bitcoin as btc
 import joinmarket as jm
 
 
-def main(argv=None):
+def build_and_run(argv=None):
     if argv is None:
         argv = sys.argv
 
@@ -66,7 +64,7 @@ def main(argv=None):
                 base = 0.001 if i == 6 else 1.0
                 # average is 0.5 for tumbler, else 1.5
                 amt = base + random.random()
-                amt = float("%.6f" % (amt))
+                amt = float("%.6f" % amt)
                 log.debug('grabbing amount: {}'.format(amt))
                 try:
                     jm.bc_interface.grab_coins(w.get_receive_addr(j), amt)
@@ -80,25 +78,22 @@ def main(argv=None):
 
     for argv in argvv:
         log.debug('launching yielder', argv=argv)
-        def do_irc((block_inst, _, __)):
-            block_inst.build_irc()
-            log.debug('irc done for:', nick=block_inst.nickname)
-        build_yld(argv).addCallback(do_irc)
+        build_yld(argv).build_irc()
 
     log.debug('done building')
 
-def shutdown_handler(*args, **kwargs):
-    log.debug('keyboard interrupt')
-    reactor.stop()
 
-def install_handler():
-    signal.signal(signal.SIGINT, shutdown_handler)
 
+def main():
+    try:
+        build_and_run()
+    except:
+        log.failure('badness')
 
 def run():
-    reactor.callLater(0.1, install_handler)
     reactor.callWhenRunning(main)
     reactor.run()
+
 
 if __name__ == '__main__':
     sys.exit(run())

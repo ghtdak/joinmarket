@@ -1,12 +1,12 @@
 from __future__ import absolute_import, print_function
 
 import io
-
 import sys
+
 from ConfigParser import SafeConfigParser, NoOptionError
+from twisted.logger import Logger, textFileLogObserver, globalLogPublisher
+
 import bitcoin as btc
-from twisted.logger import Logger, textFileLogObserver, globalLogPublisher, \
-    jsonFileLogObserver
 
 globalLogPublisher.addObserver(
         textFileLogObserver(sys.stdout, timeFormat='%Y-%m-%d %H:%M:%S.%f'))

@@ -1,6 +1,5 @@
 from __future__ import absolute_import, print_function
 
-import abc
 import json
 import pprint
 import random
@@ -23,6 +22,7 @@ import treq
 from txzmq import ZmqEndpoint, ZmqFactory, ZmqSubConnection
 
 import bitcoin as btc
+from joinmarket.abstracts import BlockchainInterface
 
 from joinmarket.jsonrpc import JsonRpcConnectionError, JsonRpc
 from joinmarket.support import chunks, system_shutdown
@@ -70,47 +70,6 @@ def is_index_ahead_of_cache(wallet, mix_depth, forchange):
     return wallet.index[mix_depth][forchange] >= wallet.index_cache[mix_depth][
         forchange]
 
-
-class BlockchainInterface(object):
-    __metaclass__ = abc.ABCMeta
-
-    def __init__(self):
-        pass
-
-    def sync_wallet(self, wallet):
-        self.sync_addresses(wallet)
-        self.sync_unspent(wallet)
-
-    @abc.abstractmethod
-    def sync_addresses(self, wallet):
-        """Finds which addresses have been used and sets
-        wallet.index appropriately"""
-        pass
-
-    @abc.abstractmethod
-    def sync_unspent(self, wallet):
-        """Finds the unspent transaction outputs belonging to this wallet,
-        sets wallet.unspent """
-        pass
-
-    @abc.abstractmethod
-    def add_tx_notify(self, txd, unconfirmfun, confirmfun, notifyaddr):
-        """Invokes unconfirmfun and confirmfun when tx is seen on the network"""
-        pass
-
-    @abc.abstractmethod
-    def pushtx(self, txhex):
-        """pushes tx to the network, returns txhash, or None if failed"""
-        pass
-
-    @abc.abstractmethod
-    def query_utxo_set(self, txouts):
-        """
-        takes a utxo or a list of utxos
-        returns None if they are spend or unconfirmed
-        otherwise returns value in satoshis, address and output script
-        """
-        # address and output script contain the same information btw
 
 
 class BlockrInterface(BlockchainInterface):
@@ -205,7 +164,7 @@ class BlockrInterface(BlockchainInterface):
         log.debug('blockr sync_unspent took ' + str((self.last_sync_unspent - st
                                                     )) + 'sec')
 
-    def add_tx_notify(self, txd, unconfirmfun, confirmfun, notifyaddr):
+    def add_tx_notify(self, trw):
         unconfirm_timeout = 10 * 60  # seconds
         unconfirm_poll_period = 5
         confirm_timeout = 2 * 60 * 60
@@ -221,7 +180,7 @@ class BlockrInterface(BlockchainInterface):
         def AsyncWebSucker():
             blockr_domain = self.blockr_domain
             daemon = True
-            tx_output_set = set([(sv['script'], sv['value']) for sv in txd[
+            tx_output_set = set([(sv['script'], sv['value']) for sv in trw.txd[
                 'outs']])
             output_addresses = [
                 btc.script_to_address(scrval[0], get_p2pk_vbyte())
@@ -303,7 +262,8 @@ class BlockrInterface(BlockchainInterface):
                         unconfirmed_txhex = str(txinfo['tx']['hex'])
                         break
 
-            unconfirmfun(btc.deserialize(unconfirmed_txhex), unconfirmed_txid)
+            trw.unconfirmfun(btc.deserialize(unconfirmed_txhex),
+                             unconfirmed_txid)
 
             st = int(time.time())
             confirmed_txid = None
@@ -356,7 +316,7 @@ class BlockrInterface(BlockchainInterface):
                         confirmed_txid = txinfo['tx']['txid']
                         confirmed_txhex = str(txinfo['tx']['hex'])
                         break
-            # d.callback(btc.deserialize(confirmed_txhex), confirmed_txid, 1)
+            trw.confirmfun(btc.deserialize(confirmed_txhex), confirmed_txid, 1)
 
         # AsyncWebSucker returns a deferred.. but it doesn't matter because
         # nobody uses the return... magic!!!
@@ -486,16 +446,16 @@ def process_raw_tx(btcinterface, tx, txid):
             if txdata is not None:
                 break
         assert txdata is not None
-        unconfirmfun, confirmfun = btcinterface.txnotify_fun[tx_output_set]
+        trw = btcinterface.txnotify_fun[tx_output_set]
         if txdata['confirmations'] == 0:
-            unconfirmfun(txd, txid)
+            trw.unconfirmfun(txd, txid)
             # TODO pass the total transfered amount value here somehow
             # wallet_name = self.get_wallet_name()
             # amount =
             # bitcoin-cli move wallet_name "" amount
             log.debug('unconfirmtx: {}'.format(txid))
         else:
-            confirmfun(txd, txid, txdata['confirmations'])
+            trw.confirmfun(txd, txid, txdata['confirmations'])
             del btcinterface.txnotify_fun[tx_output_set]
             log.debug('CoNfIrMeDd: {}'.format(txid))
 
@@ -720,28 +680,25 @@ class BitcoinCoreInterface(BlockchainInterface):
                 srv.using_port = hostport[1]
                 break
 
-    def add_tx_notify(self, txd, unconfirmfun, confirmfun, notifyaddr):
-        log.debug('add_tx_notify: {}'.format(notifyaddr))
+    def add_tx_notify(self, trw):
+        log.debug('add_tx_notify')
         # todo: these maybe could be initialized elsewhere
         if not self.http_server:
             self.start_http_server()
-        # if not self.zmq_server:
-        #     self.zmq_server = JmZmq(self)
 
-        # todo: if using zmq, we don't need to tell the wallet
         one_addr_imported = False
-        for outs in txd['outs']:
+        for outs in trw.txd['outs']:
             addr = btc.script_to_address(outs['script'], get_p2pk_vbyte())
             if self.rpc('getaccount', [addr]) != '':
                 one_addr_imported = True
                 break
         if not one_addr_imported:
             self.rpc('importaddress',
-                     [notifyaddr, 'joinmarket-notify', False],
+                     [trw.notifyaddr, 'joinmarket-notify', False],
                      immediate=True)
         tx_output_set = frozenset([(sv['script'], sv['value'])
-                                   for sv in txd['outs']])
-        self.txnotify_fun[tx_output_set] = (unconfirmfun, confirmfun)
+                                   for sv in trw.txd['outs']])
+        self.txnotify_fun[tx_output_set] = trw
 
     def pushtx(self, txhex):
         try:

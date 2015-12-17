@@ -100,6 +100,7 @@ class SendPayment(jm.Taker):
         #                     self.finishcallback, choose_orders_recover)
         # instead, do...
 
+        # todo: this could be broken
         jm.CoinJoinTX(self, cjamount, orders, utxos, self.destaddr,
                       change_addr, self.txfee)
 
@@ -116,6 +117,7 @@ class SendPayment(jm.Taker):
             self.ignored_makers))
         reactor.callLater(2.0, self.create_tx)
 
+    # todo this could be broken
     def sendpayment_choose_orders(self, cj_amount, makercount,
                                   nonrespondants=None, active_nicks=None):
 

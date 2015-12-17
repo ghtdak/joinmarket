@@ -1,8 +1,6 @@
 from __future__ import absolute_import, print_function
 
 import sys
-import threading
-import time
 from datetime import timedelta
 from optparse import OptionParser
 
@@ -31,6 +29,7 @@ class PatientSendPayment(jm.Maker, jm.Taker):
         self.finished = False
 
     def finishcallback(self, coinjointx):
+        # todo: likely broken with different design
         self.tmaker.msgchan.shutdown()
 
     def start(self):
@@ -41,16 +40,16 @@ class PatientSendPayment(jm.Maker, jm.Taker):
         # presumably it needs to wait here until the tx confirms
         if self.finished:
             return
-        print 'giving up waiting'
+        print('giving up waiting')
         # cancel the remaining order
         self.tmaker.modify_orders([0], [])
         orders, total_cj_fee = jm.choose_orders(
                 self.tmaker.db, self.tmaker.amount, self.tmaker.makercount,
                 jm.weighted_order_choose)
-        print 'chosen orders to fill ' + str(orders) + ' totalcjfee=' + str(
-            total_cj_fee)
+        print('chosen orders to fill ' + str(orders) + ' totalcjfee=' + str(
+                total_cj_fee))
         total_amount = self.tmaker.amount + total_cj_fee + self.tmaker.txfee
-        print 'total amount spent = ' + str(total_amount)
+        print('total amount spent = ' + str(total_amount))
 
         utxos = self.tmaker.wallet.select_utxos(self.tmaker.mixdepth,
                                                 total_amount)
@@ -95,7 +94,7 @@ class PatientSendPayment(jm.Maker, jm.Taker):
         self.amount -= cjorder.cj_amount
         if self.amount == 0:
             self.takerthread.finished = True
-            print 'finished sending, exiting..'
+            print('finished sending, exiting..')
             self.msgchan.shutdown()
             return [], []
         available_balance = self.wallet.get_balance_by_mixdepth()[self.mixdepth]
@@ -198,26 +197,26 @@ def build_objects(argv=None):
 
     addr_valid, errormsg = jm.validate_address(destaddr)
     if not addr_valid:
-        print 'ERROR: Address invalid. ' + errormsg
+        print('ERROR: Address invalid. ' + errormsg)
         return
 
     waittime = timedelta(hours=options.waittime).total_seconds()
-    print 'txfee=%d cjfee=%d waittime=%s makercount=%d' % (
+    print('txfee=%d cjfee=%d waittime=%s makercount=%d' % (
         options.txfee, options.cjfee, str(timedelta(hours=options.waittime)),
-        options.makercount)
+        options.makercount))
 
     # todo: this section doesn't make a lot of sense
     if not options.userpcwallet:
         wallet = jm.Wallet(wallet_name, options.mixdepth + 1)
     else:
-        print 'not implemented yet'
+        print('not implemented yet')
         sys.exit(0)
     # wallet = BitcoinCoreWallet(fromaccount=wallet_name)
     jm.bc_interface.sync_wallet(wallet)
 
     available_balance = wallet.get_balance_by_mixdepth()[options.mixdepth]
     if available_balance < amount:
-        print 'not enough money at mixdepth=%d, exiting' % options.mixdepth
+        print('not enough money at mixdepth=%d, exiting' % options.mixdepth)
         return
 
     nickname = jm.random_nick()

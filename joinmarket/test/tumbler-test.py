@@ -62,7 +62,7 @@ class TumblerTests(unittest.TestCase):
         time.sleep(60)
 
         #start a tumbler
-        amt = amt * 1e8  #in satoshis
+        amt *= 1e8  #in satoshis
         #send to any old address
         dest_address = btc.privkey_to_address(os.urandom(32), get_p2pk_vbyte())
         try:

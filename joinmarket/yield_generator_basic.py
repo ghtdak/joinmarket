@@ -1,16 +1,13 @@
 from __future__ import absolute_import, print_function
 
-import cPickle as pickle
 import datetime
 import os
 import sys
 import time
 
-from twisted.internet import defer, reactor
 from twisted.logger import Logger
 
 import joinmarket as jm
-from joinmarket.jsonrpc import tb_stack_dd
 
 # from joinmarket.jsonrpc import tb_stack_set
 
@@ -134,21 +131,6 @@ class YieldGenerator(jm.Maker):
         return self.on_tx_unconfirmed(cjorder, txid, None)
 
 
-class Monitor(object):
-
-    def __init__(self, delay):
-        self.callgraph = None
-        reactor.callLater(delay, self.pickleStats)
-
-    def pickleStats(self):
-        with open('logs/callstats.pickle', 'wb') as f:
-            pickle.dump(tb_stack_dd, f, -1)
-        log.debug('callgraph pickle dumped')
-
-
-monitor = Monitor(120)
-
-
 def build_objects(argv=None):
     if argv is None:
         argv = sys.argv
@@ -185,20 +167,12 @@ def build_objects(argv=None):
 
     seed = argv[1]
 
-    def make_slow(d):
+    wallet = jm.Wallet(seed, max_mix_depth=mix_levels)
 
-        wallet = jm.Wallet(seed, max_mix_depth=mix_levels)
+    jm.bc_interface.sync_wallet(wallet)
 
-        jm.bc_interface.sync_wallet(wallet)
+    log.debug('starting yield generator')
 
-        log.debug('starting yield generator')
+    YieldGenerator(block_instance, wallet)
 
-        maker = YieldGenerator(block_instance, wallet)
-
-        d.callback((block_instance, maker, wallet))
-
-    d = defer.Deferred()
-
-    reactor.callWhenRunning(make_slow, d)
-
-    return d
+    return block_instance

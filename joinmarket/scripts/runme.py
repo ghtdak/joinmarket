@@ -12,7 +12,7 @@ import os
 
 from joinmarket.test.commontest import make_wallets
 
-from joinmarket.btc_generator_basic import build_objects as btc_gen_build
+from joinmarket.yield_generator_basic import build_objects as btc_gen_build
 from joinmarket.sendpayment import build_objects as sendpay_build
 
 import bitcoin as btc

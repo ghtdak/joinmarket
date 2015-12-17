@@ -2,9 +2,7 @@ from __future__ import absolute_import, print_function
 
 import copy
 import sys
-
 from optparse import OptionParser
-from pprint import pprint
 
 from twisted.internet import defer, reactor
 from twisted.logger import Logger
@@ -112,9 +110,6 @@ class Tumbler(jm.Taker):
     # todo: a kludge for now until we understand how to re-architect
     # finish etc
     def finishcallback(self, coinjointx):
-        # a slight assist to "create_tx and the inlinecallbacks"
-        #coinjointx.cb_deferred.callback(coinjointx)
-        # ^^^ now, that's twisted         ^^^
 
         # we have our own version of double spend
         d = coinjointx.cb_deferred
@@ -234,26 +229,20 @@ class Tumbler(jm.Taker):
                 utxos = self.wallet.select_utxos(
                         tx['srcmixdepth'], total_amount)
 
-            d = defer.Deferred()
-            jm.CoinJoinTX(self, d, cj_amount, orders, utxos, destaddr,
+            cjtx = jm.CoinJoinTX(self, cj_amount, orders, utxos, destaddr,
                           change_addr, self.options.txfee)
 
-            coinjointx = yield d
+            coinjointx = yield cjtx.phase1()
 
             if coinjointx.all_responded:
-                jm.bc_interface.add_tx_notify(
-                        coinjointx.latest_tx,
-                        self.unconfirm_callback,
-                        self.confirm_callback,
-                        coinjointx.my_cj_addr)
+                jm.bc_interface.add_tx_notify(coinjointx)
 
                 self.wallet.remove_old_utxos(coinjointx.latest_tx)
                 coinjointx.self_sign_and_push()
 
                 log.debug('register for notification: ')
 
-                self.confirmDefer = d = defer.Deferred()
-                txd, txid, confirmations = yield d
+                txd, txid, confirmations = yield cjtx.confirm()
                 if confirmations:
                     self.wallet.add_new_utxos(txd, txid)
                     log.debug('confirmed create_tx', txid=txid)
@@ -397,12 +386,13 @@ def build_objects(argv=None):
             default=2,
             help=('The minimum maker count in a transaction, random values '
                   'below this are clamped at this number. default=2'))
-    parser.add_option('-M',
-                      '--mixdepthcount',
-                      type='int',
-                      dest='mixdepthcount',
-                      help='How many mixing depths to mix through',
-                      default=4)
+    parser.add_option(
+            '-M',
+            '--mixdepthcount',
+            type='int',
+            dest='mixdepthcount',
+            help='How many mixing depths to mix through',
+            default=4)
     parser.add_option(
             '-c',
             '--txcountparams',
@@ -556,5 +546,5 @@ def build_objects(argv=None):
     jm.bc_interface.sync_wallet(wallet)
 
     log.debug('starting tumbler')
-    tumbler = Tumbler(block_instance, wallet, tx_list, options)
-    return block_instance, tumbler, wallet
+    Tumbler(block_instance, wallet, tx_list, options)
+    return block_instance

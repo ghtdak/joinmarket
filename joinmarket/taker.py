@@ -11,6 +11,7 @@ from twisted.logger import Logger
 from twisted.internet import defer, reactor
 
 import bitcoin as btc
+from joinmarket.abstracts import CoinJoinerPeer, TransactionWatcher
 from joinmarket.configure import get_p2pk_vbyte, maker_timeout_sec
 from joinmarket.enc_wrapper import init_keypair, as_init_encryption, init_pubkey
 from joinmarket.support import calc_cj_fee
@@ -19,12 +20,11 @@ from joinmarket.blockchaininterface import bc_interface
 log = Logger()
 
 
-class CoinJoinTX(object):
+class CoinJoinTX(TransactionWatcher):
     # soon the taker argument will be removed and just be replaced by wallet
     # or some other interface
     def __init__(self,
                  taker,
-                 cb_deferred,
                  cj_amount,
                  orders,
                  input_utxos,
@@ -40,7 +40,7 @@ class CoinJoinTX(object):
         log.debug('starting cj to {} with change '
                   'at {}'.format(my_change_addr, my_change_addr))
 
-        self.cb_deferred = cb_deferred
+        self.d_phase1 = None
         self.taker = taker
         self.block_instance = self.taker.block_instance
 
@@ -83,6 +83,14 @@ class CoinJoinTX(object):
             return self.block_instance.irc_market
         else:
             raise AttributeError
+
+    def phase1(self):
+        """
+        the creator waits for the results
+        :return: deferred
+        """
+        self.d_phase1 = defer.Deferred()
+        return self.d_phase1
 
     def start_encryption(self, nick, maker_pk):
         if nick not in self.active_orders.keys():
@@ -154,7 +162,7 @@ class CoinJoinTX(object):
             log.debug('nonrespondants = ' + str(self.nonrespondants))
             return
 
-        self.watchdog.success()
+        self.watchdog.cancel()
 
         log.debug('got all parts, enough to build a tx')
         self.nonrespondants = list(self.active_orders.keys())
@@ -253,14 +261,16 @@ class CoinJoinTX(object):
         if not tx_signed:
             return
 
-        self.watchdog.success()
+        self.watchdog.cancel()
 
         log.debug('all makers have sent their signatures')
         for index, ins in enumerate(self.latest_tx['ins']):
             # remove placeholders
             if ins['script'] == 'deadbeef':
                 ins['script'] = ''
-            self.taker.finishcallback(self)
+
+        # self.taker.finishcallback(self)
+        self.d_phase1.callback(self)
 
     def coinjoin_address(self):
         if self.my_cj_addr:
@@ -299,47 +309,45 @@ class CoinJoinTX(object):
         self.self_sign()
         self.push(self.latest_tx)
 
-    def recover_from_nonrespondants(self):
-        log.debug('nonresponding makers = ' + str(self.nonrespondants))
+    def watchdog_timeout(self):
+        log.debug('nonresponding makers', nonrespondents=self.nonrespondants)
 
         # if there is no choose_orders_recover then end and call finishcallback
         # so the caller can handle it in their own way, notable for sweeping
         # where simply replacing the makers wont work
+        # todo: this should be handled by subclassing.  The default
 
-        # this is new
+        # was finishcallback
+        self.d_phase1.callback(self)
 
-        if not self.taker.does_recover():
-            self.taker.finishcallback(self)
-            return
-
-        if self.latest_tx is None:
-            # nonresponding to !fill, recover by finding another maker
-            log.debug('nonresponse to !fill')
-
-            for nr in self.nonrespondants:
-                del self.active_orders[nr]
-
-            def from_choose((new_orders, new_makers_fee)):
-                for nick, order in new_orders.iteritems():
-                    self.active_orders[nick] = order
-
-                self.nonrespondants = list(new_orders.keys())
-
-                self.msgchan.fill_orders(new_orders, self.cj_amount,
-                                         self.kp.hex_pk())
-
-            defer.maybeDeferred(
-                    self.taker.choose_orders_recover,
-                    self.cj_amount, len(self.nonrespondants),
-                    self.nonrespondants,
-                    self.active_orders.keys()).addCallback(from_choose)
-
-        else:
-            log.debug('nonresponse to !sig')
-            # nonresponding to !sig, have to restart tx from the beginning
-            self.taker.finishcallback(self)
-            # finishcallback will check if self.all_responded is True and
-            # will know it came from here
+        # if self.latest_tx is None:
+        #     # nonresponding to !fill, recover by finding another maker
+        #     log.debug('nonresponse to !fill')
+        #
+        #     for nr in self.nonrespondants:
+        #         del self.active_orders[nr]
+        #
+        #     def from_choose((new_orders, new_makers_fee)):
+        #         for nick, order in new_orders.iteritems():
+        #             self.active_orders[nick] = order
+        #
+        #         self.nonrespondants = list(new_orders.keys())
+        #
+        #         self.msgchan.fill_orders(new_orders, self.cj_amount,
+        #                                  self.kp.hex_pk())
+        #
+        #     defer.maybeDeferred(
+        #             self.taker.choose_orders_recover,
+        #             self.cj_amount, len(self.nonrespondants),
+        #             self.nonrespondants,
+        #             self.active_orders.keys()).addCallback(from_choose)
+        #
+        # else:
+        #     log.debug('nonresponse to !sig')
+        #     # nonresponding to !sig, have to restart tx from the beginning
+        #     self.taker.finishcallback(self)
+        #     # finishcallback will check if self.all_responded is True and
+        #     # will know it came from here
 
     class Watchdog(object):
 
@@ -350,9 +358,9 @@ class CoinJoinTX(object):
         def times_up(self):
             self.watchdog = None
             log.debug('CJTX Timeout: Makers didnt respond')
-            self.cjtx.recover_from_nonrespondants()
+            self.cjtx.watchdog_timeout()
 
-        def success(self):
+        def cancel(self):
             self.cjtx.all_responded = True
             if self.watchdog:
                 self.watchdog.cancel()
@@ -366,26 +374,6 @@ class CoinJoinTX(object):
 
             self.watchdog = reactor.callLater(maker_timeout_sec, self.times_up)
 
-
-class CoinJoinerPeer(object):
-
-    def __init__(self, block_instance):
-        self.block_instance = block_instance
-
-        # not the cleanest but it automates what would be an extra step
-        self.block_instance.set_coinjoinerpeer(self)
-
-    def __getattr__(self, name):
-        if name == 'msgchan':
-            return self.block_instance.irc_market
-        if name[:3] == 'on_':
-            log.debug('{} event not implemented'.format(name))
-            return self.do_nothing
-        else:
-            raise AttributeError
-
-    def do_nothing(self, *args, **kwargs):
-        pass
 
 
 class OrderbookWatch(CoinJoinerPeer):

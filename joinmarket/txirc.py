@@ -805,17 +805,20 @@ class BlockInstance(object):
         if self.tx_irc_client:
             raise Exception('irc already built')
 
-        log.debug('build_irc')
-        # todo: hack password
-        cr = {'block_instance': self,
-              'nickname': self.nickname,
-              'password': 'nimDid[Quoc6',
-              'hostname': 'nowhere.com'}
+        try:
+            log.debug('build_irc')
+            # todo: hack password
+            cr = {'block_instance': self,
+                  'nickname': self.nickname,
+                  'password': 'nimDid[Quoc6',
+                  'hostname': 'nowhere.com'}
 
-        factory = LogBotFactory(self.channel, cr)
+            factory = LogBotFactory(self.channel, cr)
 
-        # todo: hack!!!
-        serverport = ('192.168.1.200', 6667)
+            # todo: hack!!!
+            serverport = ('192.168.1.200', 6667)
 
-        self.tcp_connector = reactor.connectTCP(
-                serverport[0], serverport[1], factory)
+            self.tcp_connector = reactor.connectTCP(
+                    serverport[0], serverport[1], factory)
+        except:
+            log.failure('build_irc')

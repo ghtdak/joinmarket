@@ -1,8 +1,7 @@
 from __future__ import absolute_import, print_function
 
-import sys
-
 import io
+import signal
 
 """
 Random functions - replacing some NumPy features
@@ -24,6 +23,17 @@ from twisted.internet import defer, reactor
 from twisted.logger import Logger, eventsFromJSONLogFile
 
 log = Logger()
+
+def signal_shutdown_handler(*args, **kwargs):
+    log.debug('keyboard interrupt')
+    reactor.stop()
+
+def keyboard_signal_handler():
+    signal.signal(signal.SIGINT, signal_shutdown_handler)
+
+# todo: this might be risky. but control-c is kinda critical
+
+reactor.callWhenRunning(keyboard_signal_handler)
 
 # observer = twisted_log.PythonLoggingObserver()
 # observer.start()

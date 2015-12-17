@@ -5,80 +5,18 @@ import os
 from decimal import Decimal
 from getpass import getpass
 
-from ConfigParser import NoSectionError
 from twisted.logger import Logger
 
 import bitcoin as btc
+from joinmarket.abstracts import AbstractWallet
 from joinmarket.blockchaininterface import BitcoinCoreInterface, bc_interface
-from joinmarket.configure import get_network, get_p2pk_vbyte, config
+from joinmarket.configure import get_network, get_p2pk_vbyte
 from joinmarket.jsonrpc import JsonRpcError
 from joinmarket.slowaes import decryptData
-from joinmarket.support import select_gradual, select_greedy, \
-    select_greediest, system_shutdown
+from joinmarket.support import system_shutdown
 
 log = Logger()
 
-
-class AbstractWallet(object):
-    """
-    Abstract wallet for use with JoinMarket
-    Mostly written with Wallet in mind, the default JoinMarket HD wallet
-    """
-
-    def __init__(self):
-        self.max_mix_depth = 0
-        self.utxo_selector = btc.select  # default fallback: upstream
-        try:
-            if config.get("POLICY", "merge_algorithm") == "gradual":
-                self.utxo_selector = select_gradual
-            elif config.get("POLICY", "merge_algorithm") == "greedy":
-                self.utxo_selector = select_greedy
-            elif config.get("POLICY", "merge_algorithm") == "greediest":
-                self.utxo_selector = select_greediest
-            elif config.get("POLICY", "merge_algorithm") != "default":
-                raise Exception("Unknown merge algorithm")
-        except NoSectionError:
-            pass
-
-    def get_key_from_addr(self, addr):
-        return None
-
-    def get_utxos_by_mixdepth(self):
-        return None
-
-    def get_change_addr(self, mixing_depth):
-        return None
-
-    def update_cache_index(self):
-        pass
-
-    def remove_old_utxos(self, tx):
-        pass
-
-    def add_new_utxos(self, tx, txid):
-        pass
-
-    def select_utxos(self, mixdepth, amount):
-        utxo_list = self.get_utxos_by_mixdepth()[mixdepth]
-        unspent = [{'utxo': utxo,
-                    'value': addrval['value']}
-                   for utxo, addrval in utxo_list.iteritems()]
-        inputs = self.utxo_selector(unspent, amount)
-        log.debug('for mixdepth={} amount={} selected:'.format(
-                mixdepth, amount))
-        # log.debug('select_utxos: {}'.format(inputs))
-        return dict([(i['utxo'], {'value': i['value'],
-                                  'address': utxo_list[i['utxo']]['address']})
-                     for i in inputs])
-
-    def get_balance_by_mixdepth(self):
-        mix_balance = {}
-        for m in range(self.max_mix_depth):
-            mix_balance[m] = 0
-        for mixdepth, utxos in self.get_utxos_by_mixdepth().iteritems():
-            mix_balance[mixdepth] = sum([addrval['value']
-                                         for addrval in utxos.values()])
-        return mix_balance
 
 
 class Wallet(AbstractWallet):

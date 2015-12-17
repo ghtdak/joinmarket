@@ -22,8 +22,11 @@ def main(wallet, tumbler):
         import traceback
         log.debug(traceback.format_exc())
 
+def run():
+
+    d = build_objects()
+    d.addCallback(lambda b: b.build_irc())
+    d.addErrback(lambda f: log.failure, 'while in build_irc')
 
 if __name__ == "__main__":
-    wallet, tumbler = build_objects()
-    main(wallet, tumbler)
     print('done')
