@@ -34,32 +34,39 @@ class CoinJoinOrder(TransactionWatcher):
         self.cj_amount = amount
         if self.cj_amount <= DUST_THRESHOLD:
             self.maker.msgchan.send_error(nick, 'amount below dust threshold')
+
         # the btc pubkey of the utxo that the taker plans to use as input
         self.taker_pk = taker_pk
+
         # create DH keypair on the fly for this Order object
         self.kp = init_keypair()
+
         # the encryption channel crypto box for this Order object
         self.crypto_box = as_init_encryption(self.kp, init_pubkey(taker_pk))
 
         order_s = [o for o in maker.orderlist if o['oid'] == oid]
         if len(order_s) == 0:
             self.maker.msgchan.send_error(nick, 'oid not found')
+
         order = order_s[0]
         if amount < order['minsize'] or amount > order['maxsize']:
             self.maker.msgchan.send_error(nick, 'amount out of range')
+
         self.ordertype = order['ordertype']
         self.txfee = order['txfee']
         self.cjfee = order['cjfee']
         log.debug('new cjorder nick=%s oid=%d amount=%d' % (nick, oid, amount))
+
         self.utxos, self.cj_addr, self.change_addr = maker.oid_to_order(
             self, oid, amount)
         self.maker.wallet.update_cache_index()
         if not self.utxos:
             self.maker.msgchan.send_error(
                 nick, 'unable to fill order constrained by dust avoidance')
-            # TODO make up orders offers in a way that this error cant appear
-            #  check nothing has messed up with the wallet code, remove this
-            # code after a while
+
+        # TODO make up orders offers in a way that this error cant appear
+        #  check nothing has messed up with the wallet code, remove this
+        # code after a while
         # log.debug('maker utxos = ' + pprint.pformat(self.utxos))
         utxo_list = self.utxos.keys()
         utxo_data = bc_interface.query_utxo_set(
@@ -240,7 +247,7 @@ class Maker(CoinJoinerPeer):
         if nick not in self.active_orders or self.active_orders[nick] is None:
             self.msgchan.send_error(nick, 'No open order from this nick')
         self.active_orders[nick].auth_counterparty(nick, pubkey, sig)
-        # TODO if auth_counterparty returns false, remove this order from active_orders
+        # TODO if auth_counterparty returns false, remove from active_orders
         # and send an error
 
     def on_seen_tx(self, nick, txhex):

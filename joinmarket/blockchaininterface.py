@@ -1,5 +1,6 @@
 from __future__ import absolute_import, print_function
 
+import hashlib
 import json
 import pprint
 import random
@@ -12,6 +13,7 @@ from decimal import Decimal
 # This can be removed once CliJsonRpc is gone.
 import subprocess
 
+import binascii
 from twisted.web import server as twisted_server
 from twisted.web import resource as twisted_resource
 from twisted.internet import defer, task, reactor
@@ -366,8 +368,7 @@ class BlockrInterface(BlockchainInterface):
         return result
 
 class JmZmq(object):
-    def __init__(self, btcinterface):
-        self.btcinterface = btcinterface
+    def __init__(self):
         reactor.callLater(0.0, self.do_init)
 
     def do_init(self):
@@ -384,19 +385,27 @@ class JmZmq(object):
             log.error(traceback.format_exc())
             # nobody to raise it to
 
+    def binhashRaw(self, raw):
+        # raw transaction (as provided by Zmq) to binhash
+        return hashlib.sha256(hashlib.sha256(raw).digest()).digest()[::-1]
+
     def receive(self, *args):
         msg, channel = args
 
-        # if channel == 'hashtx' or channel == 'hashblock':
-        #     log.debug('{} | {}'.format(channel, binascii.hexlify(msg)))
+        if channel == 'hashtx' or channel == 'hashblock':
+             log.debug('ZMQ: {:7} | {}'.format(channel,
+                                               binascii.hexlify(msg)))
+
         if channel == 'rawtx':
-            process_raw_tx(self.btcinterface, msg, btc.txhash(msg))
+            txhash = self.binhashRaw(msg)
+            log.debug('ZMQ: {:7} | {}'.format(channel,
+                                              binascii.hexlify(txhash)))
+            process_raw_tx(msg, txhash)
 
 
 class MultiCast(DatagramProtocol):
 
-    def __init__(self, btcinterface):
-        self.btcinterface = btcinterface
+    def __init__(self):
         reactor.listenMulticast(8005, self, listenMultiple=True)
 
     def startProtocol(self):
@@ -412,7 +421,7 @@ class MultiCast(DatagramProtocol):
         self.process(datagram)
 
     def process(self, path):
-
+        log.debug(path)
         pages = ('/walletnotify?', '/alertnotify?')
 
         if path.startswith('/walletnotify?'):
@@ -420,11 +429,11 @@ class MultiCast(DatagramProtocol):
             if not re.match('^[0-9a-fA-F]*$', txid):
                 log.debug('not a txid: {}'.format(txid))
                 return
-            tx = self.btcinterface.rpc('getrawtransaction', [txid])
+            tx = bc_interface.rpc('getrawtransaction', [txid])
             if not re.match('^[0-9a-fA-F]*$', tx):
                 log.debug('not a txhex')
                 return
-            process_raw_tx(self.btcinterface, tx, txid)
+            process_raw_tx(tx, txid)
 
         elif path.startswith('/alertnotify?'):
             # todo: I got rid of the core_alert thing... rearchitect!!
@@ -432,21 +441,22 @@ class MultiCast(DatagramProtocol):
             log.debug('Got an alert!\nMessage=' + core_alert)
 
 
-def process_raw_tx(btcinterface, tx, txid):
+def process_raw_tx(tx, txid):
     txd = btc.deserialize(tx)
+    pprint.pprint(txd)
     tx_output_set = frozenset([(sv['script'], sv['value'])
                                for sv in txd['outs']])
 
-    if tx_output_set in btcinterface.txnotify_fun:
+    if tx_output_set in bc_interface.txnotify_fun:
         # on rare occasions people spend their output without waiting
         #  for a confirm
         txdata = None
         for n in range(len(txd['outs'])):
-            txdata = btcinterface.rpc('gettxout', [txid, n, True])
+            txdata = bc_interface.rpc('gettxout', [txid, n, True])
             if txdata is not None:
                 break
         assert txdata is not None
-        trw = btcinterface.txnotify_fun[tx_output_set]
+        trw = bc_interface.txnotify_fun[tx_output_set]
         if txdata['confirmations'] == 0:
             trw.unconfirmfun(txd, txid)
             # TODO pass the total transfered amount value here somehow
@@ -456,7 +466,7 @@ def process_raw_tx(btcinterface, tx, txid):
             log.debug('unconfirmtx: {}'.format(txid))
         else:
             trw.send_confirm(txd, txid, txdata['confirmations'])
-            del btcinterface.txnotify_fun[tx_output_set]
+            del bc_interface.txnotify_fun[tx_output_set]
             log.debug('CoNfIrMeDd: {}'.format(txid))
 
 
@@ -465,12 +475,11 @@ class NotifyHttpServer(twisted_resource.Resource):
 
     isLeaf = True
 
-    def __init__(self, btcinterface):
+    def __init__(self):
         log.debug('firing up http and multicast')
-        self.btcinterface = btcinterface
         self.using_port = None
         # launch multicast
-        self.multicast = MultiCast(btcinterface)
+        self.multicast = MultiCast()
 
     def render_GET(self, request):
         # log.debug('url received: {}'.format(request.uri))
@@ -496,8 +505,8 @@ class BitcoinCoreInterface(BlockchainInterface):
         self.http_server = None
         self.txnotify_fun = {}
         self.wallet_synced = False
-        # self.zmq_server = JmZmq(self)
-
+        self.zmq_server = JmZmq()
+        self.start_http_server()
 
     @staticmethod
     def get_wallet_name(wallet):
@@ -658,7 +667,7 @@ class BitcoinCoreInterface(BlockchainInterface):
             def log(self, _):
                 pass            # SHUT UP!!!
 
-        srv = NotifyHttpServer(self)
+        srv = NotifyHttpServer()
         self.http_server = JmSrv(srv)
         notify_host = 'localhost'
         notify_port = 62602  # defaults
@@ -682,7 +691,6 @@ class BitcoinCoreInterface(BlockchainInterface):
 
     def add_tx_notify(self, trw):
         log.debug('add_tx_notify')
-        # todo: these maybe could be initialized elsewhere
         if not self.http_server:
             self.start_http_server()
 

@@ -1,23 +1,25 @@
 #! /usr/bin/env python
 from __future__ import absolute_import
 
-from twisted.logger import Logger
+# Some helper functions for testing
 
-'''Some helper functions for testing'''
-
+import platform
 import os
 import binascii
 import random
 import subprocess
 
+from twisted.logger import Logger
+
 import joinmarket as jm
 
 log = Logger()
+
 '''This code is intended to provide
 subprocess startup cross-platform with
 some useful options; it could do with
 some simplification/improvement.'''
-import platform
+
 OS = platform.system()
 PINL = '\r\n' if OS == 'Windows' else '\n'
 

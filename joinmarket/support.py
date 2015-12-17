@@ -3,6 +3,8 @@ from __future__ import absolute_import, print_function
 import io
 import signal
 
+import sys
+
 """
 Random functions - replacing some NumPy features
 NOTE THESE ARE NEITHER CRYPTOGRAPHICALLY SECURE
@@ -25,7 +27,8 @@ log = Logger()
 
 def signal_shutdown_handler(*args, **kwargs):
     log.debug('keyboard interrupt')
-    reactor.stop()
+    # reactor.stop()
+    sys.exit(-1)
 
 def keyboard_signal_handler():
     signal.signal(signal.SIGINT, signal_shutdown_handler)

@@ -30,12 +30,19 @@ class Wallet(AbstractWallet):
         super(Wallet, self).__init__()
         self.max_mix_depth = max_mix_depth
         self.storepassword = storepassword
-        # key is address, value is (mixdepth, forchange, index) if mixdepth =
-        #  -1 it's an imported key and index refers to imported_privkeys
         self.addr_cache = {}
         self.unspent = {}
         self.spent_utxos = []
         self.imported_privkeys = {}
+        self.path = None
+        self.index_cache = None
+        self.password_key = None
+        self.walletdata = None
+        self.doInit(seedarg, extend_mixdepth, max_mix_depth, gaplimit)
+
+    def doInit(self, seedarg, extend_mixdepth, max_mix_depth, gaplimit):
+        # key is address, value is (mixdepth, forchange, index) if mixdepth =
+        #  -1 it's an imported key and index refers to imported_privkeys
         self.seed = self.read_wallet_file_data(seedarg)
         if extend_mixdepth and len(self.index_cache) > max_mix_depth:
             self.max_mix_depth = len(self.index_cache)
@@ -72,7 +79,7 @@ class Wallet(AbstractWallet):
             system_shutdown('wallet network(%s) does not match '
                             'joinmarket configured network(%s)' % (
                                 walletdata['network'], get_network()))
-            # sys.exit(0)
+
         if 'index_cache' in walletdata:
             self.index_cache = walletdata['index_cache']
         decrypted = False

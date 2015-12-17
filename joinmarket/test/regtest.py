@@ -13,7 +13,7 @@ import unittest
 
 from .commontest import local_command, make_wallets
 
-from joinmarket.btc_generator_basic import build_objects as btc_gen_build
+from joinmarket.yield_generator_basic import build_objects as yield_gen_build
 from joinmarket.sendpayment import build_objects as sendpay_build
 
 import bitcoin as btc
@@ -60,7 +60,9 @@ class Join2PTests(unittest.TestCase):
 
         # for yield generator with wallet1
         argv = ['yield-gen-bas-test.py', str(self.wallets[0]['seed'])]
-        btc_inst, _, _ = btc_gen_build(argv)
+        btc_inst, _, _ = yield_gen_build(argv)
+
+        btc_inst.build_irc()
 
         #run a single sendpayment call with wallet2
         amt = n * 100000000  #in satoshis
@@ -71,8 +73,7 @@ class Join2PTests(unittest.TestCase):
                 str(amt), dest_address]
         send_inst, _, _ = sendpay_build(argv)
 
-        btc_inst.build_irc()  # right away
-        reactor.callLater(30, send_inst.build_irc)
+        reactor.callLater(10, send_inst.build_irc)
         reactor.run()
 
         received = jm.bc_interface.get_received_by_addr(

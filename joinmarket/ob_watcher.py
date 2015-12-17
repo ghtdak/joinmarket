@@ -3,6 +3,7 @@ from __future__ import absolute_import
 import base64
 import io
 import json
+import os
 import sys
 import urllib2
 from decimal import Decimal
@@ -213,6 +214,13 @@ class OrderbookPageRequestHeader(resource.Resource):
 
     def __init__(self, taker):
         self.taker = taker
+        self.orderbook_static = None
+        path = os.path.realpath(__file__)
+        try:
+            with open(path + '/orderbook.html', 'r') as fd:
+                self.orderbook_static = fd.read()
+        except:
+            log.failure('orderbook.html not home')
 
     def create_orderbook_obj(self):
         rows = self.taker.db.execute('SELECT * FROM orderbook;').fetchall()
@@ -245,8 +253,7 @@ class OrderbookPageRequestHeader(resource.Resource):
         if path not in pages:
             return
 
-        with open('orderbook.html', 'r') as fd:
-            orderbook_fmt = fd.read()
+        orderbook_fmt = self.orderbook_static
         alert_msg = ''
         if path == '/':
             btc_unit = args['btcunit'][

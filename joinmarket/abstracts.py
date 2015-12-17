@@ -16,8 +16,8 @@ class TransactionWatcher(object):
 
     def __init__(self):
         self.d_confirm = None
-        # self.tx = None
-        # self.cj_addr = None
+        self._tx = None
+        self._cj_addr = None
 
     @property
     def tx(self):
