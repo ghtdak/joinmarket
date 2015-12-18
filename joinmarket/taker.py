@@ -41,7 +41,7 @@ class CoinJoinTX(TransactionWatcher):
                   'at {}'.format(my_change_addr, my_change_addr))
 
         # properties from superclass
-        self.tx = None
+        self.txd = None
         self.cj_addr = cj_addr
 
         self.d_phase1 = None
@@ -201,8 +201,8 @@ class CoinJoinTX(TransactionWatcher):
         # log.debug('obtained tx\n' + pprint.pformat(btc.deserialize(tx)))
         self.msgchan.send_tx(self.active_orders.keys(), tx)
 
-        self.tx = btc.deserialize(tx)
-        for index, ins in enumerate(self.tx['ins']):
+        self.txd = btc.deserialize(tx)
+        for index, ins in enumerate(self.txd['ins']):
             utxo = ins['outpoint']['hash'] + ':' + str(ins['outpoint']['index'])
             if utxo not in self.input_utxos.keys():
                 continue
@@ -217,12 +217,12 @@ class CoinJoinTX(TransactionWatcher):
             return
         sig = base64.b64decode(sigb64).encode('hex')
         inserted_sig = False
-        txhex = btc.serialize(self.tx)
+        txhex = btc.serialize(self.txd)
 
         # batch retrieval of utxo data
         utxo = {}
         ctr = 0
-        for index, ins in enumerate(self.tx['ins']):
+        for index, ins in enumerate(self.txd['ins']):
             utxo_for_checking = ins['outpoint']['hash'] + ':' + str(ins[
                 'outpoint']['index'])
             if (ins['script'] != '' or
@@ -241,7 +241,7 @@ class CoinJoinTX(TransactionWatcher):
                                            *btc.deserialize_script(sig))
             if sig_good:
                 log.debug('found good sig at index=%d' % (u[0]))
-                self.tx['ins'][u[0]]['script'] = sig
+                self.txd['ins'][u[0]]['script'] = sig
                 inserted_sig = True
                 # check if maker has sent everything possible
                 self.utxos[nick].remove(u[1])
@@ -257,7 +257,7 @@ class CoinJoinTX(TransactionWatcher):
             # other guy sent a failed signature
 
         tx_signed = True
-        for ins in self.tx['ins']:
+        for ins in self.txd['ins']:
             if ins['script'] == '':
                 tx_signed = False
         if not tx_signed:
@@ -266,7 +266,7 @@ class CoinJoinTX(TransactionWatcher):
         self.watchdog.cancel()
 
         log.debug('all makers have sent their signatures')
-        for index, ins in enumerate(self.tx['ins']):
+        for index, ins in enumerate(self.txd['ins']):
             # remove placeholders
             if ins['script'] == 'deadbeef':
                 ins['script'] = ''
@@ -288,14 +288,14 @@ class CoinJoinTX(TransactionWatcher):
 
     def self_sign(self):
         # now sign it ourselves
-        tx = btc.serialize(self.tx)
-        for index, ins in enumerate(self.tx['ins']):
+        tx = btc.serialize(self.txd)
+        for index, ins in enumerate(self.txd['ins']):
             utxo = ins['outpoint']['hash'] + ':' + str(ins['outpoint']['index'])
             if utxo not in self.input_utxos.keys():
                 continue
             addr = self.input_utxos[utxo]['address']
             tx = self.sign_tx(tx, index, self.wallet.get_key_from_addr(addr))
-        self.tx = btc.deserialize(tx)
+        self.txd = btc.deserialize(tx)
 
     def push(self, txd):
         tx = btc.serialize(txd)
@@ -309,7 +309,7 @@ class CoinJoinTX(TransactionWatcher):
 
     def self_sign_and_push(self):
         self.self_sign()
-        self.push(self.tx)
+        self.push(self.txd)
 
     def watchdog_timeout(self):
         log.debug('nonresponding makers', nonrespondents=self.nonrespondants)

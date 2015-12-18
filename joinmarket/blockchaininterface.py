@@ -182,7 +182,7 @@ class BlockrInterface(BlockchainInterface):
         def AsyncWebSucker():
             blockr_domain = self.blockr_domain
             daemon = True
-            tx_output_set = set([(sv['script'], sv['value']) for sv in trw.tx[
+            tx_output_set = set([(sv['script'], sv['value']) for sv in trw.txd[
                 'outs']])
             output_addresses = [
                 btc.script_to_address(scrval[0], get_p2pk_vbyte())
@@ -385,9 +385,12 @@ class JmZmq(object):
             log.error(traceback.format_exc())
             # nobody to raise it to
 
-    def binhashRaw(self, raw):
+    def hexHashRaw(self, raw):
         # raw transaction (as provided by Zmq) to binhash
-        return hashlib.sha256(hashlib.sha256(raw).digest()).digest()[::-1]
+        return binascii.hexlify(
+                hashlib.sha256(
+                        hashlib.sha256(raw).digest()
+                ).digest()[::-1])
 
     def receive(self, *args):
         msg, channel = args
@@ -397,7 +400,7 @@ class JmZmq(object):
         #                                        binascii.hexlify(msg)))
 
         if channel == 'rawtx':
-            txhash = self.binhashRaw(msg)
+            txhash_hex = self.hexHashRaw(msg)
 
             # log.debug('ZMQ: {:7} | {}'.format(channel,
             #                                   binascii.hexlify(txhash)))
@@ -405,7 +408,7 @@ class JmZmq(object):
             txd = btc.json_changebase(btc.deserialize(msg),
                                 lambda x: btc.safe_hexlify(x))
             # pprint.pprint(txd)
-            process_raw_tx(txd, txhash)
+            process_raw_tx(txd, txhash_hex)
 
 
 class MultiCast(DatagramProtocol):
@@ -448,7 +451,6 @@ class MultiCast(DatagramProtocol):
 
 
 def process_raw_tx(txd, txid):
-    pprint.pprint(txd)
     tx_output_set = frozenset([(sv['script'], sv['value'])
                                for sv in txd['outs']])
 
@@ -700,7 +702,7 @@ class BitcoinCoreInterface(BlockchainInterface):
             self.start_http_server()
 
         one_addr_imported = False
-        for outs in trw.tx['outs']:
+        for outs in trw.txd['outs']:
             addr = btc.script_to_address(outs['script'], get_p2pk_vbyte())
             if self.rpc('getaccount', [addr]) != '':
                 one_addr_imported = True
@@ -710,7 +712,7 @@ class BitcoinCoreInterface(BlockchainInterface):
                      [trw.cj_addr, 'joinmarket-notify', False],
                      immediate=True)
         tx_output_set = frozenset([(sv['script'], sv['value'])
-                                   for sv in trw.tx['outs']])
+                                   for sv in trw.txd['outs']])
         self.txnotify_fun[tx_output_set] = trw
 
     def pushtx(self, txhex):

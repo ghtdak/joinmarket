@@ -237,7 +237,7 @@ class Tumbler(jm.Taker):
             if coinjointx.all_responded:
                 jm.bc_interface.add_tx_notify(coinjointx)
 
-                self.wallet.remove_old_utxos(coinjointx.tx)
+                self.wallet.remove_old_utxos(coinjointx.txd)
                 coinjointx.self_sign_and_push()
 
                 log.debug('register for notification: ')

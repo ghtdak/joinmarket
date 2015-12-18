@@ -20,11 +20,11 @@ class TransactionWatcher(object):
         self._cj_addr = None
 
     @property
-    def tx(self):
+    def txd(self):
         return self._tx
 
-    @tx.setter
-    def tx(self, value):
+    @txd.setter
+    def txd(self, value):
         self._tx = value
 
     @property

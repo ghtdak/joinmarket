@@ -167,7 +167,9 @@ class JsonRpc(object):
             js = json.loads(content)
         except:
             log.debug('conversion exception', content=content)
+            print('conversion exception: ', content)
             js = {'jm_error':'exception',
+                  'jm_content': content,
                   'error':'error'}
         else:
             # log.debug('json conversion success: {}'.format(js))

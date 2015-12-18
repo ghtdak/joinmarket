@@ -25,7 +25,7 @@ class CoinJoinOrder(TransactionWatcher):
 
     # todo: way too much stuff going on in init
     def __init__(self, maker, nick, oid, amount, taker_pk):
-        self.tx = None
+        self.txd = None
         self.i_utxo_pubkey = None
 
         self.maker = maker
@@ -113,18 +113,18 @@ class CoinJoinOrder(TransactionWatcher):
 
     def recv_tx(self, nick, txhex):
         try:
-            self.tx = btc.deserialize(txhex)
+            self.txd = btc.deserialize(txhex)
         except IndexError as e:
             self.maker.msgchan.send_error(nick, 'malformed txhex. ' + repr(e))
         # log.debug('obtained tx\n' + pprint.pformat(self.tx))
-        goodtx, errmsg = self.verify_unsigned_tx(self.tx)
+        goodtx, errmsg = self.verify_unsigned_tx(self.txd)
         if not goodtx:
             log.debug('not a good tx, reason=' + errmsg)
             self.maker.msgchan.send_error(nick, errmsg)
         # TODO: the above 3 errors should be encrypted, but it's a bit messy.
         log.debug('goodtx')
         sigs = []
-        for index, ins in enumerate(self.tx['ins']):
+        for index, ins in enumerate(self.txd['ins']):
             utxo = ins['outpoint']['hash'] + ':' + str(ins['outpoint']['index'])
             if utxo not in self.utxos:
                 continue
@@ -145,7 +145,7 @@ class CoinJoinOrder(TransactionWatcher):
         self.maker.active_orders[nick] = None
 
     def unconfirmfun(self, txd, txid):
-        removed_utxos = self.maker.wallet.remove_old_utxos(self.tx)
+        removed_utxos = self.maker.wallet.remove_old_utxos(self.txd)
 
         # log.debug('saw tx on network, removed_utxos=\n{}'.format(pprint.pformat(
         #     removed_utxos)))
@@ -153,7 +153,7 @@ class CoinJoinOrder(TransactionWatcher):
                                                               removed_utxos)
         self.maker.modify_orders(to_cancel, to_announce)
 
-    def confirmfun(self, txd, txid, confirmations):
+    def confirmfun(self, (txd, txid, confirmations)):
         bc_interface.sync_unspent(self.maker.wallet)
         log.debug('tx in a block')
         log.debug('earned = ' + str(self.real_cjfee - self.txfee))
@@ -363,7 +363,7 @@ class Maker(CoinJoinerPeer):
     # the blockchain explorer api method and the bitcoid walletnotify
     def on_tx_confirmed(self, cjorder, confirmations, txid):
         to_announce = []
-        for i, out in enumerate(cjorder.tx['outs']):
+        for i, out in enumerate(cjorder.txd['outs']):
             addr = btc.script_to_address(out['script'], get_p2pk_vbyte())
             if addr == cjorder.change_addr:
                 neworder = {'oid': self.get_next_oid(),

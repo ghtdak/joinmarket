@@ -11,7 +11,7 @@ log.debug('wtf')
 
 def main():
 
-    argv = ['tumbler.py', '-N', '2', '0', '-a', '0', '-M', '5', '-w', '3', '-l', '0.2', '-s', '100000000', '53f9326', 'mkh4SJ9qSWTR5TUsegosUrwMHwT4FNHXZ3']
+    argv = ['tumbler.py', '-N', '2', '0', '-a', '0', '-M', '5', '-w', '3', '-l', '0.2', '-s', '100000000', '4a1ea14', 'muvUXwYByQhMizhFRncLpuwyW4NpLYzPZq']
 
     log.debug('launching tumblrr: {}'.format(str(argv)))
 

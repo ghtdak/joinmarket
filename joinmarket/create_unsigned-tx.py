@@ -79,8 +79,8 @@ class PaymentThread(object):
     def finishcallback(self, coinjointx):
         if coinjointx.all_responded:
             # now sign it ourselves
-            tx = btc.serialize(coinjointx.tx)
-            for index, ins in enumerate(coinjointx.tx['ins']):
+            tx = btc.serialize(coinjointx.txd)
+            for index, ins in enumerate(coinjointx.txd['ins']):
                 utxo = ins['outpoint']['hash'] + ':' + str(ins['outpoint'][
                     'index'])
                 if utxo != self.taker.auth_utxo:
