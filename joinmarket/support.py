@@ -27,8 +27,8 @@ log = Logger()
 
 def signal_shutdown_handler(*args, **kwargs):
     log.debug('keyboard interrupt')
-    # reactor.stop()
-    sys.exit(-1)
+    reactor.stop()
+    # sys.exit(-1)
 
 def keyboard_signal_handler():
     signal.signal(signal.SIGINT, signal_shutdown_handler)
@@ -445,3 +445,8 @@ def debug_dump_object(obj, skip_fields=None):
             log.debug(pprint.pformat(v))
         else:
             log.debug(str(v))
+
+__all__ = ('calc_cj_fee', 'debug_dump_object', 'choose_sweep_orders',
+           'choose_orders', 'chunks', 'sleepGenerator', 'pick_order',
+           'cheapest_order_choose', 'weighted_order_choose', 'rand_norm_array',
+           'rand_pow_array', 'rand_exp_array', 'system_shutdown')

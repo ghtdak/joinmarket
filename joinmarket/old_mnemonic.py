@@ -273,3 +273,5 @@ if __name__ == '__main__':
         print ' '.join(mn_encode(sys.argv[1]))
     else:
         print mn_decode(sys.argv[1:])
+
+__all__ = ('mn_decode', 'mn_encode')

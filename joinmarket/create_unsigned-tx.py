@@ -10,6 +10,8 @@ from twisted.internet import reactor
 
 import bitcoin as btc
 import joinmarket as jm
+from joinmarket.sendpayment import check_high_fee
+
 
 log = Logger()
 
@@ -49,7 +51,7 @@ class PaymentThread(object):
                 total_fee_pc = 1.0 * total_cj_fee / cjamount
                 log.debug('total coinjoin fee = ' + str(float('%.3g' % (
                     100.0 * total_fee_pc))) + '%')
-                jm.sendpayment.check_high_fee(total_fee_pc)
+                check_high_fee(total_fee_pc)
                 if raw_input('send with these orders? (y/n):')[0] != 'y':
                     # noinspection PyTypeChecker
                     self.finishcallback(None)
@@ -120,7 +122,7 @@ class PaymentThread(object):
             total_fee_pc = 1.0 * total_cj_fee / cj_amount
             log.debug(noun + ' coinjoin fee = ' + str(float('%.3g' % (
                 100.0 * total_fee_pc))) + '%')
-            jm.sendpayment.check_high_fee(total_fee_pc)
+            check_high_fee(total_fee_pc)
             if raw_input('send with these orders? (y/n):')[0] != 'y':
                 log.debug('ending')
                 self.taker.msgchan.shutdown()

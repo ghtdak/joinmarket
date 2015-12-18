@@ -131,3 +131,6 @@ DUST_THRESHOLD = 2730
 
 JM_VERSION = 2
 
+__all__ = ('config', 'get_network', 'maker_timeout_sec',
+           'get_config_irc_channel', 'get_p2pk_vbyte', 'validate_address',
+           'DUST_THRESHOLD')

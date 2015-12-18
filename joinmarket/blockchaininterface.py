@@ -377,8 +377,8 @@ class JmZmq(object):
             # todo: obviously,we need entries in the config
             e = ZmqEndpoint('connect', 'tcp://192.168.1.200:28333')
             s = ZmqSubConnection(zf, e)
-            s.subscribe('hashblock')
-            s.subscribe('hashtx')
+            # s.subscribe('hashblock')
+            # s.subscribe('hashtx')
             s.subscribe('rawtx')
             s.gotMessage = self.receive
         except Exception as e:
@@ -392,15 +392,20 @@ class JmZmq(object):
     def receive(self, *args):
         msg, channel = args
 
-        if channel == 'hashtx' or channel == 'hashblock':
-             log.debug('ZMQ: {:7} | {}'.format(channel,
-                                               binascii.hexlify(msg)))
+        # if channel == 'hashtx' or channel == 'hashblock':
+        #      log.debug('ZMQ: {:7} | {}'.format(channel,
+        #                                        binascii.hexlify(msg)))
 
         if channel == 'rawtx':
             txhash = self.binhashRaw(msg)
-            log.debug('ZMQ: {:7} | {}'.format(channel,
-                                              binascii.hexlify(txhash)))
-            process_raw_tx(msg, txhash)
+
+            # log.debug('ZMQ: {:7} | {}'.format(channel,
+            #                                   binascii.hexlify(txhash)))
+
+            txd = btc.json_changebase(btc.deserialize(msg),
+                                lambda x: btc.safe_hexlify(x))
+            # pprint.pprint(txd)
+            process_raw_tx(txd, txhash)
 
 
 class MultiCast(DatagramProtocol):
@@ -433,7 +438,8 @@ class MultiCast(DatagramProtocol):
             if not re.match('^[0-9a-fA-F]*$', tx):
                 log.debug('not a txhex')
                 return
-            process_raw_tx(tx, txid)
+            txd = btc.deserialize(tx)
+            process_raw_tx(txd, txid)
 
         elif path.startswith('/alertnotify?'):
             # todo: I got rid of the core_alert thing... rearchitect!!
@@ -441,8 +447,7 @@ class MultiCast(DatagramProtocol):
             log.debug('Got an alert!\nMessage=' + core_alert)
 
 
-def process_raw_tx(tx, txid):
-    txd = btc.deserialize(tx)
+def process_raw_tx(txd, txid):
     pprint.pprint(txd)
     tx_output_set = frozenset([(sv['script'], sv['value'])
                                for sv in txd['outs']])
@@ -506,7 +511,7 @@ class BitcoinCoreInterface(BlockchainInterface):
         self.txnotify_fun = {}
         self.wallet_synced = False
         self.zmq_server = JmZmq()
-        self.start_http_server()
+        # self.start_http_server()
 
     @staticmethod
     def get_wallet_name(wallet):
@@ -846,3 +851,5 @@ bc_interface = _get_blockchain_interface_instance()
 #     if not _global_bc_interface:
 #         _global_bc_interface = _get_blockchain_interface_instance()
 #     return _global_bc_interface
+
+__all__ = ('bc_interface', 'BlockrInterface')

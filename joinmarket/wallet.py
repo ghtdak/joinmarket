@@ -263,3 +263,5 @@ class BitcoinCoreWallet(AbstractWallet):
                     if exc.code != -14:
                         raise exc
                         # Wrong passphrase, try again.
+
+__all__ = ('BitcoinCoreInterface', 'Wallet', 'BitcoinCoreWallet')

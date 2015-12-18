@@ -824,3 +824,5 @@ class BlockInstance(object):
                     serverport[0], serverport[1], factory)
         except:
             log.failure('build_irc')
+
+__all__ = ('random_nick', 'BlockInstance')

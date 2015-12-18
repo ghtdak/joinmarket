@@ -45,8 +45,8 @@ def json_changebase(obj, changer):
 def deserialize(tx):
     if isinstance(tx, str) and re.match('^[0-9a-fA-F]*$', tx):
         #tx = bytes(bytearray.fromhex(tx))
-        return json_changebase(
-            deserialize(binascii.unhexlify(tx)), lambda x: safe_hexlify(x))
+        return json_changebase(deserialize(
+                binascii.unhexlify(tx)), lambda x: safe_hexlify(x))
     # http://stackoverflow.com/questions/4851463/python-closure-write-to-variable-in-parent-scope
     # Python's scoping rules are demented, requiring me to make pos an object
     # so that it is call-by-reference

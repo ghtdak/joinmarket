@@ -685,3 +685,5 @@ if __name__ == "__main__":
     decr = moo.decrypt(ciph, orig_len, mode, cypherkey,
                        moo.aes.keySize["SIZE_128"], iv)
     print decr
+
+__all__ = ('decryptData', 'encryptData')

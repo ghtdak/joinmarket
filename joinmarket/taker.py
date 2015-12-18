@@ -553,3 +553,5 @@ def donation_address(cjtx):
     sender_address = btc.pubtoaddr(sender_pubkey, get_p2pk_vbyte())
     log.debug('sending coins to ' + sender_address)
     return sender_address
+
+__all__ = ('Taker', 'OrderbookWatch', 'CoinJoinTX')

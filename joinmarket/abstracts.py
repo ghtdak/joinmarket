@@ -167,3 +167,5 @@ class CoinJoinerPeer(object):
 
     def do_nothing(self, *args, **kwargs):
         pass
+
+__all__ = ('AbstractWallet',)

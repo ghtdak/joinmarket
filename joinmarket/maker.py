@@ -396,7 +396,7 @@ def main():
 
     binst = BlockInstance(nickname)
     wallet = Wallet(seed, max_mix_depth=5)
-    binst.get_bci().sync_wallet(wallet)
+    bc_interface.sync_wallet(wallet)
 
     maker = Maker(binst, wallet)
     try:
@@ -414,3 +414,5 @@ def main():
 if __name__ == "__main__":
     main()
     log.info('done')
+
+__all__ = ('Maker',)

@@ -155,3 +155,5 @@ if __name__ == "__main__":
     test_case("1 char", alice_box, bob_box, '\x00', '\x00', 5)
     log.info("All test cases passed - encryption "
              "and decryption should work correctly.")
+
+__all__ = ('decode_decrypt', 'encrypt_encode', 'get_pubkey')
