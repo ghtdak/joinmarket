@@ -14,7 +14,11 @@ log = Logger()
 
 class TransactionWatcher(object):
 
-    def __init__(self):
+    def __init__(self, cjpeer):
+        self.cjpeer = cjpeer
+        ns = self.__module__ + '@' + cjpeer.nickname
+        self.log = Logger(namespace=ns)
+
         self.d_confirm = None
         self._tx = None
         self._cj_addr = None
@@ -96,6 +100,8 @@ class AbstractWallet(object):
 
     def __init__(self):
         self.max_mix_depth = 0
+        self._nickname = 'unk'
+        self.log = Logger(self.nickname)
         self.utxo_selector = btc.select  # default fallback: upstream
         try:
             if config.get("POLICY", "merge_algorithm") == "gradual":
@@ -109,23 +115,33 @@ class AbstractWallet(object):
         except NoSectionError:
             pass
 
+    @property
+    def nickname(self):
+        return self._nickname
+
+    @nickname.setter
+    def nickname(self, value):
+        self._nickname = value
+        ns = self.__module__ + '@' + self._nickname
+        self.log = Logger(namespace=ns)
+
     def get_key_from_addr(self, addr):
-        return None
+        raise NotImplementedError()
 
     def get_utxos_by_mixdepth(self):
-        return None
+        raise NotImplementedError
 
     def get_change_addr(self, mixing_depth):
-        return None
+        raise NotImplementedError
 
     def update_cache_index(self):
-        pass
+        return
 
     def remove_old_utxos(self, tx):
-        pass
+        return
 
     def add_new_utxos(self, tx, txid):
-        pass
+        return
 
     def select_utxos(self, mixdepth, amount):
         utxo_list = self.get_utxos_by_mixdepth()[mixdepth]
@@ -155,6 +171,7 @@ class CoinJoinerPeer(object):
         ns = self.__module__ + '@' + block_instance.nickname
         self.log = Logger(namespace=ns)
         self.block_instance = block_instance
+        self.nickname = block_instance.nickname  # convenience - unsafe?
 
         # not the cleanest but it automates what would be an extra step
         self.block_instance.set_coinjoinerpeer(self)

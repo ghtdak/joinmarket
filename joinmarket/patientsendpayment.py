@@ -43,9 +43,9 @@ class PatientSendPayment(jm.Maker, jm.Taker):
         print('giving up waiting')
         # cancel the remaining order
         self.tmaker.modify_orders([0], [])
-        orders, total_cj_fee = jm.choose_orders(
+        orders, total_cj_fee = self.choose_orders(
                 self.tmaker.db, self.tmaker.amount, self.tmaker.makercount,
-                jm.weighted_order_choose)
+                self.weighted_order_choose)
         print('chosen orders to fill ' + str(orders) + ' totalcjfee=' + str(
                 total_cj_fee))
         total_amount = self.tmaker.amount + total_cj_fee + self.tmaker.txfee

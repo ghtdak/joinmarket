@@ -28,6 +28,7 @@ from joinmarket.abstracts import BlockchainInterface
 from joinmarket.jsonrpc import JsonRpcConnectionError, JsonRpc
 from joinmarket.support import chunks, system_shutdown
 from joinmarket.configure import config, get_p2pk_vbyte, get_network
+from joinmarket.wallet import BitcoinCoreWallet
 
 log = Logger()
 
@@ -367,22 +368,18 @@ class BlockrInterface(BlockchainInterface):
         return result
 
 class JmZmq(object):
-    def __init__(self):
-        reactor.callLater(0.0, self.do_init)
-
-    def do_init(self):
+    def __init__(self, endpoint):
         try:
             zf = ZmqFactory()
             # todo: obviously,we need entries in the config
-            e = ZmqEndpoint('connect', 'tcp://192.168.1.200:28333')
+            e = ZmqEndpoint('connect', endpoint)
             s = ZmqSubConnection(zf, e)
             # s.subscribe('hashblock')
             # s.subscribe('hashtx')
             s.subscribe('rawtx')
             s.gotMessage = self.receive
-        except Exception as e:
-            log.error(traceback.format_exc())
-            # nobody to raise it to
+        except:
+            log.failure('ZMQ failure')
 
     def hexHashRaw(self, raw):
         # raw transaction (as provided by Zmq) to binhash
@@ -511,8 +508,11 @@ class BitcoinCoreInterface(BlockchainInterface):
         self.http_server = None
         self.txnotify_fun = {}
         self.wallet_synced = False
-        self.zmq_server = JmZmq()
-        # self.start_http_server()
+        if 'zmq_endpoint' in config.options('BLOCKCHAIN'):
+            endpoint = config.get('BLOCKCHAIN', 'zmq_endpoint')
+            self.zmq_server = JmZmq(endpoint)
+        if 'notify_port' in config.options('BLOCKCHAIN'):
+            self.start_http_server()
 
     @staticmethod
     def get_wallet_name(wallet):

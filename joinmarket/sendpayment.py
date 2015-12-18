@@ -28,7 +28,7 @@ def check_high_fee(total_fee_pc):
 class SendPayment(jm.Taker):
 
     def __init__(self, block_instance, wallet, destaddr, amount, makercount,
-                 txfee, waittime, mixdepth, answeryes, chooseOrdersFunc):
+                 txfee, waittime, mixdepth, answeryes):
         super(SendPayment, self).__init__(block_instance)
         self.wallet = wallet
         self.destaddr = destaddr
@@ -38,7 +38,6 @@ class SendPayment(jm.Taker):
         self.waittime = waittime
         self.mixdepth = mixdepth
         self.answeryes = answeryes
-        self.chooseOrdersFunc = chooseOrdersFunc
         self.daemon = True
         self.ignored_makers = []
 
@@ -66,10 +65,9 @@ class SendPayment(jm.Taker):
                 self.mixdepth]
             total_value = sum([va['value'] for va in utxos.values()])
 
-            orders, cjamount = jm.choose_sweep_orders(
+            orders, cjamount = self.choose_sweep_orders(
                 self.db, total_value, self.txfee,
-                self.makercount, self.chooseOrdersFunc,
-                self.ignored_makers)
+                self.makercount, self.ignored_makers)
 
             if not self.answeryes:
                 total_cj_fee = total_value - cjamount - self.txfee
@@ -117,7 +115,7 @@ class SendPayment(jm.Taker):
             self.ignored_makers))
         reactor.callLater(2.0, self.create_tx)
 
-    # todo this could be broken
+    # todo: spaghetti hunt marker
     def sendpayment_choose_orders(self, cj_amount, makercount,
                                   nonrespondants=None, active_nicks=None):
 
@@ -128,9 +126,8 @@ class SendPayment(jm.Taker):
 
         self.ignored_makers += nonrespondants
 
-        orders, total_cj_fee = jm.choose_orders(
-            self.db, cj_amount, makercount, self.chooseOrdersFunc,
-            self.ignored_makers + active_nicks)
+        orders, total_cj_fee = self.choose_orders(
+            self.db, cj_amount, makercount, self.ignored_makers + active_nicks)
 
         if not orders:
             return None, 0
@@ -156,7 +153,7 @@ class SendPayment(jm.Taker):
 
         return orders, total_cj_fee
 
-    # for callback
+    # todo: spaghetti hunt marker
     choose_orders_recover = sendpayment_choose_orders
 
     # --------------------------------------------------------
@@ -265,12 +262,6 @@ def build_objects(argv=None):
         log.info('ERROR: Address invalid. ' + errormsg)
         return
 
-    if options.pickorders and amount != 0:  # cant use for sweeping
-        chooseOrdersFunc = jm.pick_order
-    elif options.choosecheapest:
-        chooseOrdersFunc = jm.cheapest_order_choose
-    else:  # choose randomly (weighted)
-        chooseOrdersFunc = jm.weighted_order_choose
 
     log.debug('starting sendpayment')
 
@@ -282,5 +273,14 @@ def build_objects(argv=None):
 
     taker = SendPayment(block_instance, wallet, destaddr, amount,
                         options.makercount, options.txfee, options.waittime,
-                        options.mixdepth, options.answeryes, chooseOrdersFunc)
+                        options.mixdepth, options.answeryes)
+
+    # todo: spaghetti hunt marker
+    if options.pickorders and amount != 0:  # cant use for sweeping
+        taker.chooseOrdersFunc = taker.pick_order
+    elif options.choosecheapest:
+        taker.chooseOrdersFunc = taker.cheapest_order_choose
+    else:  # choose randomly (weighted)
+        taker.chooseOrdersFunc = taker.weighted_order_choose
+
     return block_instance, taker, wallet

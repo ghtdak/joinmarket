@@ -5,6 +5,7 @@ import os
 from decimal import Decimal
 from getpass import getpass
 
+import time
 from twisted.logger import Logger
 
 import bitcoin as btc
@@ -255,13 +256,12 @@ class BitcoinCoreWallet(AbstractWallet):
                 if password == '':
                     raise RuntimeError('Aborting wallet unlock')
                 try:
-                    # TODO cleanly unlock wallet after use, not with arbitrary timeout
-                    bc_interface.rpc('walletpassphrase',
-                                                  [password, 10])
+                    # TODO cleanly unlock wallet after use - arbitrary timeout
+                    bc_interface.rpc('walletpassphrase', [password, 10])
                     break
                 except JsonRpcError as exc:
                     if exc.code != -14:
                         raise exc
                         # Wrong passphrase, try again.
 
-__all__ = ('BitcoinCoreInterface', 'Wallet', 'BitcoinCoreWallet')
+__all__ = ('Wallet', 'BitcoinCoreWallet')

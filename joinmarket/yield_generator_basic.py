@@ -102,6 +102,8 @@ class YieldGenerator(jm.Maker):
 
         return utxos, cj_addr, change_addr
 
+    # todo: spaghetti hunt marker.  gets called by on_tx_confirmed?
+    # also note that no superclass methods called
     def on_tx_unconfirmed(self, cjorder, txid, removed_utxos):
         self.tx_unconfirm_timestamp[cjorder.cj_addr] = int(time.time())
         # if the balance of the highest-balance mixing depth change then
@@ -117,7 +119,10 @@ class YieldGenerator(jm.Maker):
         # announce new order, replacing the old order
         return [], [neworders[0]]
 
+    # todo: spaghetti hunt marker.  superclass callbacks missing
     def on_tx_confirmed(self, cjorder, confirmations, txid):
+        # super(YieldGenerator, self).on_tx_confirmed(
+        #         cjorder, confirmations, txid)
         if cjorder.cj_addr in self.tx_unconfirm_timestamp:
             confirm_time = int(time.time()) - self.tx_unconfirm_timestamp[
                 cjorder.cj_addr]
@@ -129,6 +134,7 @@ class YieldGenerator(jm.Maker):
                  sum([av['value'] for av in cjorder.utxos.values()]),
                  cjorder.real_cjfee, cjorder.real_cjfee - cjorder.txfee,
                  round(confirm_time / 60.0, 2), ''])
+        # todo: was calling on_tx_unconfirmed
         return self.on_tx_unconfirmed(cjorder, txid, None)
 
 

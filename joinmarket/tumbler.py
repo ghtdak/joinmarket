@@ -147,8 +147,11 @@ class Tumbler(jm.Taker):
         self.ignored_makers += nonrespondants
         orders, total_cj_fee = None, None
         while True:
-            orders, total_cj_fee = jm.choose_orders(
-                self.db, cj_amount, makercount, jm.weighted_order_choose,
+
+            # todo: spaghetti hunt marker
+            self.chooseOrdersFunc = self.weighted_order_choose
+            orders, total_cj_fee = self.choose_orders(
+                self.db, cj_amount, makercount,
                 self.ignored_makers + active_nicks)
             abs_cj_fee = 1.0 * total_cj_fee / makercount
             rel_cj_fee = abs_cj_fee / cj_amount
@@ -173,6 +176,7 @@ class Tumbler(jm.Taker):
 
         defer.returnValue((orders, total_cj_fee))
 
+    # todo: spaghetti hunt marker
     choose_orders_recover = tumbler_choose_orders
 
     @defer.inlineCallbacks
@@ -188,10 +192,9 @@ class Tumbler(jm.Taker):
                 total_value = sum([addrval['value']
                                    for addrval in utxos.values()])
                 while True:
-                    orders, cj_amount = jm.choose_sweep_orders(
+                    orders, cj_amount = self.choose_sweep_orders(
                         self.db, total_value, self.options.txfee,
-                        tx['makercount'], jm.weighted_order_choose,
-                        self.ignored_makers)
+                        tx['makercount'], self.ignored_makers)
                     if orders is None:
                         self.log.debug('waiting for liquidity ',
                                   delay=self.options.liquiditywait)

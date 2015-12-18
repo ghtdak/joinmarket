@@ -21,9 +21,6 @@ log = Logger()
 log.info('log started')
 
 
-# FIXME: Add rpc_* options here in the future!
-required_options = {'BLOCKCHAIN': ['blockchain_source', 'network'],
-                    'MESSAGING': ['host', 'channel', 'port']}
 
 defaultconfig = \
     """
@@ -63,6 +60,10 @@ merge_algorithm = default
 
 config = SafeConfigParser()
 config_location = 'joinmarket.cfg'
+
+# FIXME: Add rpc_* options here in the future!
+required_options = {'BLOCKCHAIN': ['blockchain_source', 'network'],
+                    'MESSAGING': ['host', 'channel', 'port']}
 
 loadedFiles = config.read([config_location])
 # Create default config file if not found

@@ -21,83 +21,105 @@ from joinmarket.blockchaininterface import bc_interface
 
 class CoinJoinOrder(TransactionWatcher):
 
-    log = Logger()
+    def __init__(self, maker, oid, amount, taker_pk):
+        super(CoinJoinOrder, self).__init__(maker)
 
-    # todo: way too much stuff going on in init
-    def __init__(self, maker, nick, oid, amount, taker_pk):
-        ns = self.__module__ + '@' + nick
-        self.log = Logger(namespace=ns)
+        self.maker = maker
         self.txd = None
         self.i_utxo_pubkey = None
 
-        self.maker = maker
         self.block_instance = maker.block_instance
         self.oid = oid
         self.cj_amount = amount
-        if self.cj_amount <= DUST_THRESHOLD:
-            self.maker.msgchan.send_error(nick, 'amount below dust threshold')
 
-        # the btc pubkey of the utxo that the taker plans to use as input
-        self.taker_pk = taker_pk
+        self.ordertype = None
+        self.txfee = None
+        self.cjfee = None
 
-        # create DH keypair on the fly for this Order object
-        self.kp = init_keypair()
+        self.taker_pk = None
+        self.kp = None
+        self.crypto_box = None
 
-        # the encryption channel crypto box for this Order object
-        self.crypto_box = as_init_encryption(self.kp, init_pubkey(taker_pk))
+    def initialize(self):
+        try:
+            """
+            separated from __init__
+            :return:
+            """
 
-        order_s = [o for o in maker.orderlist if o['oid'] == oid]
-        if len(order_s) == 0:
-            self.maker.msgchan.send_error(nick, 'oid not found')
+            # create DH keypair on the fly for this Order object
+            self.kp = init_keypair()
 
-        order = order_s[0]
-        if amount < order['minsize'] or amount > order['maxsize']:
-            self.maker.msgchan.send_error(nick, 'amount out of range')
+            # the encryption channel crypto box for this Order object
+            self.crypto_box = as_init_encryption(
+                    self.kp, init_pubkey(self.taker_pk))
 
-        self.ordertype = order['ordertype']
-        self.txfee = order['txfee']
-        self.cjfee = order['cjfee']
-        self.log.debug('new cjorder nick=%s oid=%d amount=%d' % (nick, oid, amount))
+            if self.cj_amount <= DUST_THRESHOLD:
+                self.maker.msgchan.send_error(
+                        self.maker.nickname, 'amount below dust threshold')
 
-        self.utxos, self.cj_addr, self.change_addr = maker.oid_to_order(
-            self, oid, amount)
-        self.maker.wallet.update_cache_index()
-        if not self.utxos:
-            self.maker.msgchan.send_error(
-                nick, 'unable to fill order constrained by dust avoidance')
+            order_s = [o for o in self.maker.orderlist if o['oid'] == self.oid]
 
-        # TODO make up orders offers in a way that this error cant appear
-        #  check nothing has messed up with the wallet code, remove this
-        # code after a while
-        # log.debug('maker utxos = ' + pprint.pformat(self.utxos))
-        utxo_list = self.utxos.keys()
-        utxo_data = bc_interface.query_utxo_set(
-            utxo_list)
-        if None in utxo_data:
-            log.error('using spent utxo')
-            pprint.pprint(utxo_data)
-            raise Exception('spent utxo')
-            # system_shutdown('wrongly using an already spent utxo. '
-            #                 'utxo_data = '.format(pprint.pformat(utxo_data)))
-            # sys.exit(0)
-        for utxo, data in zip(utxo_list, utxo_data):
-            if self.utxos[utxo]['value'] != data['value']:
-                # fmt = 'wrongly labeled utxo, expected value: {} got {}'.format
-                # system_shutdown(fmt(self.utxos[utxo]['value'], data['value']))
+            if len(order_s) == 0:
+                self.maker.msgchan.send_error(self.maker.nickname,
+                                              'oid not found')
+
+            order = order_s[0]
+            if (self.cj_amount < order['minsize'] or
+                        self.cj_amount > order['maxsize']):
+                self.maker.msgchan.send_error(self.maker.nickname,
+                                              'amount out of range')
+
+            self.ordertype = order['ordertype']
+            self.txfee = order['txfee']
+            self.cjfee = order['cjfee']
+            self.log.debug('new cjorder nick={nick} oid={odi} amount={amount}',
+                           nick=self.maker.nickname, oid=self.oid,
+                           amount=self.cj_amount)
+
+            self.utxos, self.cj_addr, self.change_addr = self.maker.oid_to_order(
+                    self, self.oid, self.cj_amount)
+            self.maker.wallet.update_cache_index()
+            if not self.utxos:
+                self.maker.msgchan.send_error(
+                        self.maker.nickname,
+                        'unable to fill order constrained by dust avoidance')
+
+            # TODO make up orders offers in a way that this error cant appear
+            #  check nothing has messed up with the wallet code, remove this
+            # code after a while
+            # log.debug('maker utxos = ' + pprint.pformat(self.utxos))
+            utxo_list = self.utxos.keys()
+            utxo_data = bc_interface.query_utxo_set(
+                utxo_list)
+            if None in utxo_data:
+                log.error('using spent utxo')
+                pprint.pprint(utxo_data)
+                raise Exception('spent utxo')
+                # system_shutdown('wrongly using an already spent utxo. '
+                #                 'utxo_data = '.format(pprint.pformat(utxo_data)))
                 # sys.exit(0)
+            for utxo, data in zip(utxo_list, utxo_data):
+                if self.utxos[utxo]['value'] != data['value']:
+                    # fmt = 'wrongly labeled utxo, expected value: {} got {}'.format
+                    # system_shutdown(fmt(self.utxos[utxo]['value'], data['value']))
+                    # sys.exit(0)
 
-                log.error('utxo label - expected: {value} got: {got}',
-                          value=self.utxos[utxo]['value'], got=data['value'])
+                    log.error('utxo label - expected: {value} got: {got}',
+                              value=self.utxos[utxo]['value'], got=data['value'])
 
-                raise Exception('utxo label badness')
+                    raise Exception('utxo label badness')
 
-                # always a new address even if the order ends up never being
-                # furfilled, you dont want someone pretending to fill all your
-                # orders to find out which addresses you use
-        self.maker.msgchan.send_pubkey(nick, self.kp.hex_pk())
+                    # always a new address even if the order ends up never being
+                    # furfilled, you dont want someone pretending to fill all your
+                    # orders to find out which addresses you use
+            self.maker.msgchan.send_pubkey(self.maker.nickname, self.kp.hex_pk())
+        except:
+            self.log.failure('CoinJoinOrder fails initialization')
+            raise
 
     def __getattr__(self, name):
-        # legacy support
+        # todo: legacy - rename .msgchan
         if name == 'msgchan':
             return self.block_instance.irc_market
         else:
@@ -155,19 +177,29 @@ class CoinJoinOrder(TransactionWatcher):
         self.maker.active_orders[nick] = None
 
     def unconfirmfun(self, txd, txid):
+        self.log.debug('unconfirmfun: {txid}', txid=txid)
+
+        # todo: spaghetti hunt marker
         removed_utxos = self.maker.wallet.remove_old_utxos(self.txd)
 
         # log.debug('saw tx on network,
         # removed_utxos=\n{}'.format(pprint.pformat(
         #     removed_utxos)))
-        to_cancel, to_announce = self.maker.on_tx_unconfirmed(self, txid,
-                                                              removed_utxos)
+        to_cancel, to_announce = self.maker.on_tx_unconfirmed(
+                self, txid, removed_utxos)
         self.maker.modify_orders(to_cancel, to_announce)
 
     def confirmfun(self, (txd, txid, confirmations)):
-        bc_interface.sync_unspent(self.maker.wallet)
-        self.log.debug('tx in a block')
-        self.log.debug('earned = ' + str(self.real_cjfee - self.txfee))
+        self.log.debug('confirmfun: {txid}', txid=txid)
+        try:
+            # todo: spaghetti hunt marker
+            bc_interface.sync_unspent(self.maker.wallet, self.maker.nickname)
+        except:
+            self.log.failure('confirmfun')
+        self.log.debug('confirmed: {txid}, earned:{earned}',
+                       txid=txid, earned=self.real_cjfee - self.txfee)
+
+        # todo: spaghetti hunt marker
         to_cancel, to_announce = self.maker.on_tx_confirmed(
                 self, confirmations, txid)
         self.maker.modify_orders(to_cancel, to_announce)
@@ -231,6 +263,8 @@ class Maker(CoinJoinerPeer):
     def __init__(self, block_instance, wallet):
         CoinJoinerPeer.__init__(self, block_instance)
 
+        # wallet can be named for logging
+        wallet.nickname = block_instance.nickname
         self.active_orders = {}
         self.wallet = wallet
         self.nextoid = -1
@@ -255,10 +289,12 @@ class Maker(CoinJoinerPeer):
             self.log.debug('had a partially filled order but starting over now')
 
         try:
-            self.active_orders[nick] = CoinJoinOrder(self, nick, oid, amount,
-                                                     taker_pubkey)
-        finally:
-            pass
+            cjo = CoinJoinOrder(self, oid, amount, taker_pubkey)
+            cjo.initialize()
+        except:
+            log.failure('creating CoinJoinOrder')
+        else:
+            self.active_orders[nick] = cjo
 
     def on_seen_auth(self, nick, pubkey, sig):
         self.log.debug('on_seen_auth')
@@ -282,12 +318,13 @@ class Maker(CoinJoinerPeer):
             self.msgchan.send_error(nick, 'Unable to push tx')
 
     def on_welcome(self):
+        self.log.debug('on_welcome')
         self.msgchan.announce_orders(self.orderlist)
         self.active_orders = {}
 
     def on_nick_leave(self, nick):
         if nick in self.active_orders:
-            self.log.debug('nick ' + nick + ' has left')
+            self.log.debug('on_nick_leave: {nick}', nick=nick)
             del self.active_orders[nick]
 
     def modify_orders(self, to_cancel, to_announce):

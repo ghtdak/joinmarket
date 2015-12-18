@@ -3,8 +3,6 @@ from __future__ import absolute_import, print_function
 import io
 import signal
 
-import sys
-
 """
 Random functions - replacing some NumPy features
 NOTE THESE ARE NEITHER CRYPTOGRAPHICALLY SECURE
@@ -17,8 +15,6 @@ import random
 import traceback
 
 from decimal import Decimal
-
-from math import exp
 
 from twisted.internet import defer, reactor
 from twisted.logger import Logger, eventsFromJSONLogFile
@@ -116,22 +112,6 @@ def rand_pow_array(power, n):
                 xrange(10000), n)]]
 
 
-def rand_weighted_choice(n, p_arr):
-    """
-    Choose a value in 0..n-1
-    with the choice weighted by the probabilities
-    in the list p_arr. Note that there will be some
-    floating point rounding errors, but see the note
-    at the top of this section.
-    """
-    if abs(sum(p_arr) - 1.0) > 1e-4:
-        raise ValueError("Sum of probabilities must be 1")
-    if len(p_arr) != n:
-        raise ValueError("Need: " + str(n) + " probabilities.")
-    cum_pr = [sum(p_arr[:i + 1]) for i in xrange(len(p_arr))]
-    r = random.random()
-    return sorted(cum_pr + [r]).index(r)
-
 # End random functions
 
 
@@ -226,209 +206,6 @@ def calc_cj_fee(ordertype, cjfee, cj_amount):
     return real_cjfee
 
 
-def weighted_order_choose(orders, n, feekey):
-    """
-    Algorithm for choosing the weighting function
-    it is an exponential
-    P(f) = exp(-(f - fmin) / phi)
-    P(f) - probability of order being chosen
-    f - order fee
-    fmin - minimum fee in the order book
-    phi - scaling parameter, 63% of the distribution is within
-
-    define number M, related to the number of counterparties in this coinjoin
-    phi has a value such that it contains up to the Mth order
-    unless M < orderbook size, then phi goes up to the last order
-    """
-    minfee = feekey(orders[0])
-    M = int(3 * n)
-    if len(orders) > M:
-        phi = feekey(orders[M]) - minfee
-    else:
-        phi = feekey(orders[-1]) - minfee
-    fee = [feekey(o) for o in orders]
-    if phi > 0:
-        weight = [exp(-(1.0 * f - minfee) / phi) for f in fee]
-    else:
-        weight = [1.0] * len(fee)
-    weight = [x / sum(weight) for x in weight]
-    log.debug('phi=' + str(phi) + ' weights = ' + str(weight))
-    chosen_order_index = rand_weighted_choice(len(orders), weight)
-    return orders[chosen_order_index]
-
-
-def cheapest_order_choose(orders, n, feekey):
-    """
-    Return the cheapest order from the orders.
-    """
-    return sorted(orders, key=feekey)[0]
-
-
-def pick_order(orders, n, feekey):
-    i = -1
-    log.info("Considered orders:")
-    for o in orders:
-        i += 1
-        log.info("    %2d. %20s, CJ fee: %6d, tx fee: %6d" %
-                 (i, o[0], o[2], o[3]))
-    pickedOrderIndex = -1
-    if i == 0:
-        log.info("Only one possible pick, picking it.")
-        return orders[0]
-    while pickedOrderIndex == -1:
-        try:
-            pickedOrderIndex = int(raw_input('Pick an order between 0 and ' +
-                                             str(i) + ': '))
-        except ValueError:
-            pickedOrderIndex = -1
-            continue
-
-        if 0 <= pickedOrderIndex < len(orders):
-            return orders[pickedOrderIndex]
-        pickedOrderIndex = -1
-
-
-def choose_orders(db, cj_amount, n, chooseOrdersBy, ignored_makers=None):
-    if ignored_makers is None:
-        ignored_makers = []
-    sqlorders = db.execute('SELECT * FROM orderbook;').fetchall()
-    orders = [(o['counterparty'], o['oid'],
-               calc_cj_fee(o['ordertype'], o['cjfee'], cj_amount), o['txfee'])
-              for o in sqlorders
-              if o['minsize'] <= cj_amount <= o['maxsize'] and o[
-                  'counterparty'] not in ignored_makers]
-
-    # function that returns the fee for a given order
-    def feekey(o):
-        return o[2] - o[3]
-
-    counterparties = set([o[0] for o in orders])
-    if n > len(counterparties):
-        log.debug(('ERROR not enough liquidity in the orderbook n=%d '
-                   'suitable-counterparties=%d amount=%d totalorders=%d') %
-                  (n, len(counterparties), cj_amount, len(orders)))
-        # TODO handle not enough liquidity better, maybe an Exception
-        return None, 0
-    """
-    restrict to one order per counterparty, choose the one with the lowest
-    cjfee this is done in advance of the order selection algo, so applies to
-    all of them. however, if orders are picked manually, allow duplicates.
-    """
-    if chooseOrdersBy != pick_order:
-        orders = sorted(
-            dict((v[0], v) for v in sorted(orders,
-                                           key=feekey,
-                                           reverse=True)).values(),
-            key=feekey)
-    else:
-        orders = sorted(orders,
-                        key=feekey)  # sort from smallest to biggest cj fee
-
-    log.debug('considered orders = \n' + '\n'.join([str(o) for o in orders]))
-    total_cj_fee = 0
-    chosen_orders = []
-    for i in range(n):
-        chosen_order = chooseOrdersBy(orders, n, feekey)
-        # remove all orders from that same counterparty
-        orders = [o for o in orders if o[0] != chosen_order[0]]
-        chosen_orders.append(chosen_order)
-        total_cj_fee += chosen_order[2]
-    log.debug('chosen orders = \n' + '\n'.join([str(o) for o in chosen_orders]))
-    chosen_orders = [o[:2] for o in chosen_orders]
-    return dict(chosen_orders), total_cj_fee
-
-
-def choose_sweep_orders(db,
-                        total_input_value,
-                        total_txfee,
-                        n,
-                        chooseOrdersBy,
-                        ignored_makers=None):
-    """
-    choose an order given that we want to be left with no change
-    i.e. sweep an entire group of utxos
-
-    solve for cjamount when mychange = 0
-    for an order with many makers, a mixture of absorder and relorder
-    mychange = totalin - cjamount - total_txfee - sum(absfee) - sum(relfee*cjamount)
-    => 0 = totalin - mytxfee - sum(absfee) - cjamount*(1 + sum(relfee))
-    => cjamount = (totalin - mytxfee - sum(absfee)) / (1 + sum(relfee))
-    """
-
-    if ignored_makers is None:
-        ignored_makers = []
-
-    def calc_zero_change_cj_amount(ordercombo):
-        sumabsfee = 0
-        sumrelfee = Decimal('0')
-        sumtxfee_contribution = 0
-        for order in ordercombo:
-            sumtxfee_contribution += order[0]['txfee']
-            if order[0]['ordertype'] == 'absorder':
-                sumabsfee += int(order[0]['cjfee'])
-            elif order[0]['ordertype'] == 'relorder':
-                sumrelfee += Decimal(order[0]['cjfee'])
-            else:
-                raise RuntimeError('unknown order type: {}'.format(order[0][
-                    'ordertype']))
-
-        my_txfee = max(total_txfee - sumtxfee_contribution, 0)
-        cjamount = (total_input_value - my_txfee - sumabsfee) / (1 + sumrelfee)
-        cjamount = int(cjamount.quantize(Decimal(1)))
-        return cjamount, int(sumabsfee + sumrelfee * cjamount)
-
-    log.debug('choosing sweep orders for total_input_value = ' + str(
-        total_input_value))
-    sqlorders = db.execute('SELECT * FROM orderbook WHERE minsize <= ?;',
-                           (total_input_value,)).fetchall()
-    orderkeys = ['counterparty', 'oid', 'ordertype', 'minsize', 'maxsize',
-                 'txfee', 'cjfee']
-    orderlist = [dict([(k, o[k]) for k in orderkeys])
-                 for o in sqlorders if o['counterparty'] not in ignored_makers]
-
-    # uncomment this and comment previous two lines for faster runtime but
-    # less readable output
-    # orderlist = sqlorders
-    for n, order in enumerate(orderlist):
-        log.debug('orderlist: {n}, {order}', n=n, order=order)
-
-    # choose N amount of orders
-    available_orders = [(o, calc_cj_fee(o['ordertype'], o['cjfee'],
-                                        total_input_value), o['txfee'])
-                        for o in orderlist]
-
-    def feekey(o):
-        return o[1] - o[2]
-
-    # sort from smallest to biggest cj fee
-    available_orders = sorted(available_orders, key=feekey)
-    chosen_orders = []
-    while len(chosen_orders) < n:
-        if len(available_orders) < n - len(chosen_orders):
-            log.debug('ERROR not enough liquidity in the orderbook')
-            # TODO handle not enough liquidity better, maybe an Exception
-            return None, 0
-        for i in range(n - len(chosen_orders)):
-            chosen_order = chooseOrdersBy(available_orders, n, feekey)
-            log.debug('chosen = {chosen}', chosen=chosen_order)
-            # remove all orders from that same counterparty
-            available_orders = [o for o in available_orders
-                                if o[0]['counterparty'] !=
-                                chosen_order[0][ 'counterparty']]
-            chosen_orders.append(chosen_order)
-        # calc cj_amount and check its in range
-        cj_amount, total_fee = calc_zero_change_cj_amount(chosen_orders)
-        for c in list(chosen_orders):
-            minsize = c[0]['minsize']
-            maxsize = c[0]['maxsize']
-            if cj_amount > maxsize or cj_amount < minsize:
-                chosen_orders.remove(c)
-        for n, c in enumerate(chosen_orders):
-            log.debug('chosen: {n}, {chosen}', n=n, chosen=c)
-    result = dict([(o[0]['counterparty'], o[0]['oid']) for o in chosen_orders])
-    log.debug('cj amount = ' + str(cj_amount))
-    return result, cj_amount
-
 
 def debug_dump_object(obj, skip_fields=None):
     if skip_fields is None:
@@ -448,7 +225,6 @@ def debug_dump_object(obj, skip_fields=None):
         else:
             log.debug(str(v))
 
-__all__ = ('calc_cj_fee', 'debug_dump_object', 'choose_sweep_orders',
-           'choose_orders', 'chunks', 'sleepGenerator', 'pick_order',
-           'cheapest_order_choose', 'weighted_order_choose', 'rand_norm_array',
-           'rand_pow_array', 'rand_exp_array', 'system_shutdown')
+__all__ = ('calc_cj_fee', 'debug_dump_object', 'chunks', 'sleepGenerator',
+           'rand_norm_array', 'rand_pow_array', 'rand_exp_array',
+           'system_shutdown')

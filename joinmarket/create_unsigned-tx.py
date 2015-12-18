@@ -16,14 +16,22 @@ from joinmarket.sendpayment import check_high_fee
 log = Logger()
 
 
-# thread which does the buy-side algorithm
-# chooses which coinjoins to initiate and when
-class PaymentThread(object):
+class CreateUnsignedTx(jm.Taker):
 
-    def __init__(self, taker):
+    def __init__(self, msgchan, wallet, auth_utxo, cjamount, destaddr,
+                 changeaddr, utxo_data, options):
+        jm.Taker.__init__(self, msgchan)
+        self.wallet = wallet
+        self.auth_utxo = auth_utxo
+        self.cjamount = cjamount
+        self.destaddr = destaddr
+        self.changeaddr = changeaddr
+        self.utxo_data = utxo_data
+        self.options = options
+        self.chooseOrdersFunc = None
         self.daemon = True
-        self.taker = taker
         self.ignored_makers = []
+
 
     def create_tx(self):
         crow = self.taker.db.execute(
@@ -32,25 +40,25 @@ class PaymentThread(object):
         counterparty_count = crow['COUNT(DISTINCT counterparty)']
         counterparty_count -= len(self.ignored_makers)
         if counterparty_count < self.taker.options.makercount:
-            log.info('not enough counterparties to fill order, ending')
+            self.log.info('not enough counterparties to fill order, ending')
             self.taker.msgchan.shutdown()
             return
 
         utxos = self.taker.utxo_data
         change_addr = None
-        choose_orders_recover = None
+        # todo: spaghetti hunt marker
         if self.taker.cjamount == 0:
             total_value = sum([va['value'] for va in utxos.values()])
-            orders, cjamount = jm.choose_sweep_orders(
+            orders, cjamount = self.choose_sweep_orders(
                 self.taker.db, total_value, self.taker.options.txfee,
-                self.taker.options.makercount, self.taker.chooseOrdersFunc,
-                self.ignored_makers)
+                self.taker.options.makercount, self.ignored_makers)
             if not self.taker.options.answeryes:
                 total_cj_fee = total_value - cjamount - self.taker.options.txfee
-                log.debug('total cj fee = ' + str(total_cj_fee))
+                self.log.debug('total cj fee = {tcjf}', tcjf=total_cj_fee)
                 total_fee_pc = 1.0 * total_cj_fee / cjamount
-                log.debug('total coinjoin fee = ' + str(float('%.3g' % (
-                    100.0 * total_fee_pc))) + '%')
+                self.log.debug('total coinjoin fee = {fee}',
+                               fee=float('%.3g' % (100.0 * total_fee_pc)))
+
                 check_high_fee(total_fee_pc)
                 if raw_input('send with these orders? (y/n):')[0] != 'y':
                     # noinspection PyTypeChecker
@@ -60,21 +68,25 @@ class PaymentThread(object):
             orders, total_cj_fee = self.sendpayment_choose_orders(
                 self.taker.cjamount, self.taker.options.makercount)
             if not orders:
-                log.debug(
+                self.log.debug(
                     'ERROR not enough liquidity in the orderbook, exiting')
                 return
             total_amount = self.taker.cjamount + total_cj_fee + \
                            self.taker.options.txfee
-            log.info('total amount spent = ' + str(total_amount))
+            self.log.info('total amount spent = {tot}', tot=total_amount)
             cjamount = self.taker.cjamount
             change_addr = self.taker.changeaddr
-            choose_orders_recover = self.sendpayment_choose_orders
 
         auth_addr = self.taker.utxo_data[self.taker.auth_utxo]['address']
-        self.taker.start_cj(self.taker.wallet, cjamount, orders, utxos,
-                            self.taker.destaddr, change_addr,
-                            self.taker.options.txfee, self.finishcallback,
-                            choose_orders_recover, auth_addr)
+
+        # self.taker.start_cj(self.taker.wallet, cjamount, orders, utxos,
+        #                     self.taker.destaddr, change_addr,
+        #                     self.taker.options.txfee, self.finishcallback,
+        #                     choose_orders_recover, auth_addr)
+
+        jm.CoinJoinTX(self, cjamount, orders, utxos, self.destaddr,
+                      change_addr, self.txfee, auth_addr)
+
 
     def finishcallback(self, coinjointx):
         if coinjointx.all_responded:
@@ -88,70 +100,59 @@ class PaymentThread(object):
                 addr = coinjointx.input_utxos[utxo]['address']
                 tx = btc.sign(tx, index,
                               coinjointx.wallet.get_key_from_addr(addr))
-            log.info('unsigned tx = \n\n' + tx + '\n')
-            log.debug('created unsigned tx, ending')
+            self.log.info('unsigned tx = \n\n' + tx + '\n')
+            self.log.debug('created unsigned tx, ending')
             self.taker.msgchan.shutdown()
             return
         self.ignored_makers += coinjointx.nonrespondants
-        log.debug('recreating the tx, ignored_makers=' + str(
+        self.log.debug('recreating the tx, ignored_makers=' + str(
             self.ignored_makers))
         self.create_tx()
 
-    def sendpayment_choose_orders(self,
-                                  cj_amount,
-                                  makercount,
-                                  nonrespondants=None,
-                                  active_nicks=None):
+    def sendpayment_choose_orders(
+            self, cj_amount, makercount, nonrespondants=None,
+            active_nicks=None):
+
         if active_nicks is None:
             active_nicks = []
         if nonrespondants is None:
             nonrespondants = []
         self.ignored_makers += nonrespondants
-        orders, total_cj_fee = jm.choose_orders(
-            self.taker.db, cj_amount, makercount, self.taker.chooseOrdersFunc,
+        orders, total_cj_fee = self.choose_orders(
+            self.taker.db, cj_amount, makercount,
             self.ignored_makers + active_nicks)
         if not orders:
             return None, 0
-        log.info('chosen orders to fill ' + str(orders) + ' totalcjfee=' + str(
-            total_cj_fee))
+
+        self.log.info('chosen orders to fill, totalcjfee = {tcjf}',
+                 tcjf = total_cj_fee)
+        for o in orders:
+            # todo: need to get a handle on order / json stringification
+            self.log.info('chosen orders to fill {order}', order=str(o))
+
         if not self.taker.options.answeryes:
             if len(self.ignored_makers) > 0:
                 noun = 'total'
             else:
                 noun = 'additional'
             total_fee_pc = 1.0 * total_cj_fee / cj_amount
-            log.debug(noun + ' coinjoin fee = ' + str(float('%.3g' % (
+            self.log.debug(noun + ' coinjoin fee = ' + str(float('%.3g' % (
                 100.0 * total_fee_pc))) + '%')
             check_high_fee(total_fee_pc)
             if raw_input('send with these orders? (y/n):')[0] != 'y':
-                log.debug('ending')
+                self.log.debug('ending')
                 self.taker.msgchan.shutdown()
                 return None, -1
         return orders, total_cj_fee
 
-    def start(self):
-        log.info('PaymentWatchdog waiting for stuff to arrive')
-        # time.sleep(self.taker.options.waittime)
-        reactor.callLater(self.taker.options.waittime, self.create_tx)
-
-
-class CreateUnsignedTx(jm.Taker):
-
-    def __init__(self, msgchan, wallet, auth_utxo, cjamount, destaddr,
-                 changeaddr, utxo_data, options, chooseOrdersFunc):
-        jm.Taker.__init__(self, msgchan)
-        self.wallet = wallet
-        self.auth_utxo = auth_utxo
-        self.cjamount = cjamount
-        self.destaddr = destaddr
-        self.changeaddr = changeaddr
-        self.utxo_data = utxo_data
-        self.options = options
-        self.chooseOrdersFunc = chooseOrdersFunc
+    # todo: spaghetti hunt marker
+    choose_orders_recover = sendpayment_choose_orders
 
     def on_welcome(self):
         jm.Taker.on_welcome(self)
-        PaymentThread(self).start()
+        self.log.info('on_welcome: PaymentWatchdog waiting for stuff to arrive')
+        reactor.callLater(self.options.waittime, self.create_tx)
+
 
 
 def build_objects(argv=None):
@@ -261,13 +262,6 @@ def build_objects(argv=None):
         log.info('ERROR: privkey does not match auth utxo')
         return
 
-    if options.pickorders and cjamount != 0:  # cant use for sweeping
-        chooseOrdersFunc = jm.pick_order
-    elif options.choosecheapest:
-        chooseOrdersFunc = jm.cheapest_order_choose
-    else:  # choose randomly (weighted)
-        chooseOrdersFunc = jm.weighted_order_choose
-
     nickname = jm.random_nick()
     log.debug('starting sendpayment')
 
@@ -281,7 +275,16 @@ def build_objects(argv=None):
 
     wallet = UnsignedTXWallet()
     block_instance = jm.BlockInstance(nickname)
-    taker = CreateUnsignedTx(block_instance, wallet, auth_utxo, cjamount, destaddr,
-                             changeaddr, utxo_data, options, chooseOrdersFunc)
+
+    taker = CreateUnsignedTx(block_instance, wallet, auth_utxo, cjamount,
+                             destaddr, changeaddr, utxo_data, options)
+
+    # todo: spaghetti hunt marker
+    if options.pickorders and cjamount != 0:  # cant use for sweeping
+        taker.chooseOrdersFunc = taker.pick_order
+    elif options.choosecheapest:
+        taker.chooseOrdersFunc = taker.cheapest_order_choose
+    else:  # choose randomly (weighted)
+        taker.chooseOrdersFunc = taker.weighted_order_choose
 
     return block_instance, taker, wallet
