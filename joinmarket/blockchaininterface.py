@@ -2,7 +2,6 @@ from __future__ import absolute_import, print_function
 
 import hashlib
 import json
-import pprint
 import random
 import re
 import time
@@ -189,8 +188,8 @@ class BlockrInterface(BlockchainInterface):
                 for scrval in tx_output_set
             ]
 
-            log.debug('txoutset=' + pprint.pformat(tx_output_set))
-            log.debug('outaddrs=' + ','.join(output_addresses))
+            # log.debug('txoutset=' + pprint.pformat(tx_output_set))
+            # log.debug('outaddrs=' + ','.join(output_addresses))
 
             def sleepGenerator(seconds):
                 d = defer.Deferred()

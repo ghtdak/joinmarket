@@ -24,6 +24,8 @@ log.debug('Twisted Logging Starts in txirc')
 
 class txIRC_Client(irc.IRCClient, object):
 
+    log = Logger()
+
     # lineRate is a class variable in the superclass used to limit
     # messages / second.  heartbeat is what you'd think
     lineRate = 1
@@ -67,26 +69,26 @@ class txIRC_Client(irc.IRCClient, object):
         return irc.IRCClient.dccSend(self, user, _file)
 
     def connectionMade(self):
-        log.debug('connectionMade: ')
+        self.log.debug('connectionMade: ')
         reactor.callLater(0.0, self.irc_market.connectionMade)
         return irc.IRCClient.connectionMade(self)
 
     def connectionLost(self, reason=protocol.connectionDone):
-        log.debug('connectionLost: {}'.format(reason))
+        self.log.debug('connectionLost: {}'.format(reason))
         reactor.callLater(0.0, self.irc_market.connectionLost, reason)
         return irc.IRCClient.connectionLost(self, reason)
 
     def signedOn(self):
-        log.debug('signedOn:')
+        self.log.debug('signedOn:')
         self.join(self.factory.channel)
 
     def joined(self, channel):
-        log.debug('joined: {}'.format(channel))
+        self.log.debug('joined: {channel}', channel=channel)
         reactor.callLater(0.0, self.irc_market.joined, channel)
 
     def privmsg(self, userIn, channel, msg):
-        log.debug('privmsg: {} {} {:d} {}...'.format(userIn, channel, len(msg),
-                                                  msg[:40]))
+        self.log.debug('privmsg: {userIn} {channel} {msg}...',
+                  userIn=userIn, channel=channel, msg=msg[:80])
 
         reactor.callLater(0.0, self.irc_market.handle_privmsg,
                           userIn, channel, msg)
@@ -104,7 +106,8 @@ class txIRC_Client(irc.IRCClient, object):
         #     std_log.debug('- sent: {} {}'.format((self.nickname, msg)))
 
     def action(self, user, channel, msg):
-        log.debug('action: {} {] {}'.format(user, channel, msg))
+        self.log.debug('action: {user}, {channel}, {msg}',
+                  user=user, channel=channel, msg=msg)
 
     def alterCollidedNick(self, nickname):
         """
@@ -115,59 +118,60 @@ class txIRC_Client(irc.IRCClient, object):
         return nickname + '^'
 
     def modeChanged(self, user, channel, _set, modes, args):
-        log.debug('modeChanged: {} {} {} {} {}'.format(
-                user, channel, _set, modes, args))
+        self.log.debug('modeChanged: {user}, {channel}, {_set}, {modes}, {args}',
+                  user=user, channel=channel, _set=_set, modes=modes,
+                  args=args)
 
     def pong(self, user, secs):
-        log.debug('pong: {:d}'.format(secs))
+        self.log.debug('pong: {:d}'.format(secs))
 
     def userJoined(self, user, channel):
-        log.debug('user joined: {} {}'.format(user, channel))
+        self.log.debug('user joined: {user}, {channel}', user=user, channel=channel)
         reactor.callLater(0.0, self.irc_market.userJoined, user, channel)
 
     def userKicked(self, kickee, channel, kicker, message):
-        log.debug('kicked: {} {} by {} {}'.format(kickee, channel, kicker,
+        self.log.debug('kicked: {} {} by {} {}'.format(kickee, channel, kicker,
                                                   message))
 
     def userLeft(self, user, channel):
-        log.debug('left: {} {}'.format(user, channel))
+        self.log.debug('left: {} {}'.format(user, channel))
         reactor.callLater(0.0, self.irc_market.userLeft, user, channel)
 
     def userRenamed(self, oldname, newname):
-        log.debug('rename: {} {}'.format(oldname, newname))
+        self.log.debug('rename: {} {}'.format(oldname, newname))
         reactor.callLater(0.0, self.irc_market.userRenamed, oldname, newname)
 
     def userQuit(self, user, quitMessage):
-        log.debug(('quit: {} {}'.format(user, quitMessage)))
+        self.log.debug(('quit: {} {}'.format(user, quitMessage)))
 
     def topicUpdated(self, user, channel, newTopic):
-        log.debug('topic: {}, {}, {}'.format(user, channel, newTopic))
+        self.log.debug('topic: {}, {}, {}'.format(user, channel, newTopic))
         reactor.callLater(0.0, self.irc_market.topicUpdated, channel, newTopic)
 
     def receivedMOTD(self, motd):
-        log.debug('motd: {}'.format(motd))
+        self.log.debug('motd: {}'.format(motd))
 
     def created(self, when):
-        log.debug('created: {}'.format(when))
+        self.log.debug('created: {}'.format(when))
 
     def yourHost(self, info):
-        log.debug('yourhost: {}'.format(info))
+        self.log.debug('yourhost: {}'.format(info))
 
     def myInfo(self, servername, version, umodes, cmodes):
-        log.debug('myInfo: {} {} {} {}'.format(servername, version, umodes,
+        self.log.debug('myInfo: {} {} {} {}'.format(servername, version, umodes,
                                                cmodes))
 
     def luserChannels(self, channels):
-        log.debug('luserChannels: {}'.format(channels))
+        self.log.debug('luserChannels: {}'.format(channels))
 
     def bounce(self, info):
-        log.debug('bounce: {}'.format(info))
+        self.log.debug('bounce: {}'.format(info))
 
     def left(self, channel):
-        log.debug('left: {}'.format(channel))
+        self.log.debug('left: {}'.format(channel))
 
     def noticed(self, user, channel, message):
-        log.debug('notice: {} {} {}'.format(user, channel, message))
+        self.log.debug('notice: {} {} {}'.format(user, channel, message))
 
 
 MAX_PRIVMSG_LEN = 400
@@ -204,7 +208,8 @@ def random_nick(nick_len=9):
     # - u always follows q
     # - generate different length nicks
     # - append two or more of these words together
-    # - randomly combine phonetic sounds instead consonants, which may be two consecutive consonants
+    # - randomly combine phonetic sounds instead consonants,
+    #     which may be two consecutive consonants
     #  - e.g. th, dj, g, p, gr, ch, sh, kr,
     # - neutral network that generates nicks
 
@@ -271,6 +276,8 @@ class CommSuper(object):
 
 class IRC_Market(CommSuper):
 
+    log = Logger()
+
     def __init__(self,
                  channel,
                  block_instance,
@@ -316,28 +323,32 @@ class IRC_Market(CommSuper):
         Run defined here for consistency
         :return:
         """
-        log.debug('Inside IRC_Market.run()')
+        self.log.debug('Inside IRC_Market.run()')
 
         def reactor_running():
-            log.debug('***** RUNNING!!!')
+            self.log.debug('***** RUNNING!!!')
 
         reactor.callWhenRunning(reactor_running)
         reactor.run()
 
     def shutdown(self, errno=-1):
         self.errno = errno
-        log.debug('SHUTDOWN Called: Death Imminent')
+        self.log.debug('SHUTDOWN Called (kidding): errno: {errno}',
+                       errno=errno)
+        traceback.print_stack()
+
         # todo: disconnection policy
         # disconnect will cause connectionLost which stops the reactor
-        self.block_instance.tcp_connector.disconnect()
+
+        # self.block_instance.tcp_connector.disconnect()
 
     def send(self, send_to, msg):
-        log.debug('send: ', send_to=send_to, mesg=msg)
+        self.log.debug('send: {send_to} {msg}...', send_to=send_to, msg=msg[:80])
         omsg = 'PRIVMSG %s :' % (send_to,) + msg
         self.block_instance.tx_irc_client.sendLine(omsg.encode('ascii'))
 
     def send_error(self, nick, errormsg):
-        log.debug('send_error', nick=nick, errormsg=errormsg)
+        self.log.debug('send_error', nick=nick, errormsg=errormsg)
         if 'Unknown format code' in errormsg:
             raise Exception('The Susquehanna Hat Company!!!')
         self.__privmsg(nick, 'error', errormsg)
@@ -353,7 +364,7 @@ class IRC_Market(CommSuper):
         try:
             self.cjp.on_welcome()
         except:
-            log.error(traceback.format_exc())
+            self.log.error(traceback.format_exc())
             self.shutdown()
 
     def userJoined(self, user, channel):
@@ -362,21 +373,21 @@ class IRC_Market(CommSuper):
     # noinspection PyBroadException
     def connectionMade(self, *args, **kwargs):
         try:
-            log.debug('IRC connection made')
+            self.log.debug('IRC connection made')
             self.cjp.on_connect(*args, **kwargs)
         except:
-            log.failure('connectionMade')
+            self.log.failure('connectionMade')
             self.shutdown()
 
     # noinspection PyBroadException
     def connectionLost(self, reason):
         try:
-            log.debug('IRC connection lost: {}'.format(reason))
+            self.log.debug('IRC connection lost: {}'.format(reason))
             self.cjp.on_disconnect(reason)
             # todo: I'm making policy to shut down
             # system_shutdown(self.errno, reason)
         except:
-            log.failure('connectionLost')
+            self.log.failure('connectionLost')
             self.shutdown()
 
     # noinspection PyBroadException
@@ -384,7 +395,7 @@ class IRC_Market(CommSuper):
         try:
             self.cjp.on_nick_leave(*args, **kwargs)
         except:
-            log.failure('userLeft')
+            self.log.failure('userLeft')
             self.shutdown()
 
     # noinspection PyBroadException
@@ -392,7 +403,7 @@ class IRC_Market(CommSuper):
         try:
             self.cjp.on_nick_change(*args, **kwargs)
         except:
-            log.failure('userRenamed')
+            self.log.failure('userRenamed')
             self.shutdown()
 
     # noinspection PyBroadException
@@ -400,7 +411,7 @@ class IRC_Market(CommSuper):
         try:
             self.cjp.on_set_topic(*args, **kwargs)
         except:
-            log.failure('topicUpdated')
+            self.log.failure('topicUpdated')
             self.shutdown()
 
     # OrderbookWatch callback
@@ -442,8 +453,8 @@ class IRC_Market(CommSuper):
         header = ''  # todo: HACK!! fix this
         orderlines = []
         for i, order in enumerate(orderlist):
-            orderparams = COMMAND_PREFIX + order['ordertype'] + \
-                          ' ' + ' '.join([str(order[k]) for k in order_keys])
+            orderparams = (COMMAND_PREFIX + order['ordertype'] +
+                           ' ' + ' '.join([str(order[k]) for k in order_keys]))
             orderlines.append(orderparams)
             line = header + ''.join(orderlines) + ' ~'
             if len(line) > MAX_PRIVMSG_LEN or i == len(orderlist) - 1:
@@ -470,19 +481,20 @@ class IRC_Market(CommSuper):
             self.__privmsg(nick, 'sig', s)
 
     def __pubmsg(self, message):
-        log.debug('>>pubmsg ' + message)
+        # self.log.debug('>>pubmsg ' + message)
         # self.send_raw("PRIVMSG " + self.channel + " :" + message)
         self.send(self.channel, message)
 
     def __privmsg(self, nick, cmd, message):
-        log.debug('>>privmsg ', nick=nick, cmd=cmd, message=message)
+        self.log.debug('>>privmsg {nick}, {cmd}, {msg}...',
+                  nick=nick, cmd=cmd, msg=message[:80])
         # should we encrypt?
         box, encrypt = self.__get_encryption_box(cmd, nick)
         # encrypt before chunking
         if encrypt:
             if not box:
-                log.debug('error, dont have encryption box object for ' + nick +
-                          ', dropping message')
+                self.log.debug('error, dont have encryption box object for {nick}, '
+                          'dropping message', nick=nick)
                 return
             message = encrypt_encode(message, box)
 
@@ -511,7 +523,7 @@ class IRC_Market(CommSuper):
                 maxsize = _chunks[3]
                 txfee = _chunks[4]
                 cjfee = _chunks[5]
-                log.debug('check_for_orders->on_order_seen',
+                self.log.debug('check_for_orders->on_order_seen',
                           counterparty=counterparty, oid=oid,
                           ordertype=ordertype,
                           minsize=minsize, maxsize=maxsize,
@@ -520,7 +532,7 @@ class IRC_Market(CommSuper):
                         counterparty, oid, ordertype, minsize, maxsize,
                         txfee, cjfee)
             except:
-                log.failure('check_for_orders')
+                self.log.failure('check_for_orders')
                 # TODO what now? just ignore iirc
             finally:
                 return True
@@ -588,7 +600,7 @@ class IRC_Market(CommSuper):
                     self.cjp.on_push_tx(nick, txhex)
             except CJPeerError:
                 # TODO proper error handling
-                log.debug('cj peer error TODO handle')
+                self.log.debug('cj peer error TODO handle')
 
             # continue ^
 
@@ -607,7 +619,7 @@ class IRC_Market(CommSuper):
                     self.cjp.on_order_cancel(
                             nick, oid)
                 except ValueError as e:
-                    log.debug("!cancel " + repr(e))
+                    self.log.debug("!cancel " + repr(e))
                     return
             elif _chunks[0] == 'orderbook':
                 self.cjp.on_orderbook_requested(nick)
@@ -638,13 +650,14 @@ class IRC_Market(CommSuper):
             if sent_to == self.nickname:
                 if nick not in self.built_privmsg:
                     if message[0] != COMMAND_PREFIX:
-                        log.debug('bad command', msg=message[0])
+                        self.log.debug('bad command', msg=message[0])
                         return
 
                     # new message starting
                     cmd_string = message[1:].split(' ')[0]
-                    if cmd_string not in plaintext_commands + encrypted_commands:
-                        log.debug('cmd not in cmd_list', cmd_string=cmd_string)
+                    if (cmd_string not in
+                                plaintext_commands + encrypted_commands):
+                        self.log.debug('cmd not in cmd_list', cmd_string=cmd_string)
                         return
                     self.built_privmsg[nick] = [cmd_string, message[:-2]]
                 else:
@@ -659,15 +672,15 @@ class IRC_Market(CommSuper):
                     self.waiting[nick] = False
                     if encrypt:
                         if not box:
-                            log.debug('no encryption box, dropping', nick=nick)
+                            self.log.debug('no encryption box, dropping', nick=nick)
                             return
                         # need to decrypt everything after the command string
-                        to_decrypt = ''.join(self.built_privmsg[nick][1].split(
-                            ' ')[1])
+                        to_decrypt = ''.join(
+                                self.built_privmsg[nick][1].split(' ')[1])
                         try:
                             decrypted = decode_decrypt(to_decrypt, box)
                         except ValueError:
-                            log.failure('bad format decrypt')
+                            self.log.failure('bad format decrypt')
                             return
                         parsed = self.built_privmsg[nick][1].split(' ')[0]
                         parsed += ' ' + decrypted
@@ -677,21 +690,22 @@ class IRC_Market(CommSuper):
                     # todo: kinda tricky here.  rearchitect!!
                     del self.built_privmsg[nick]
 
-                    log.debug("<<privmsg", nick=nick, parsed=parsed)
+                    # self.log.debug("<<privmsg:", nick=nick, parsed=parsed)
                     self.__on_privmsg(nick, parsed)
                 else:
                     # drop the bad nick
                     del self.built_privmsg[nick]
             elif sent_to == self.channel:
-                log.debug("<<pubmsg", nick=nick, message=message)
+                # self.log.debug("<<pubmsg", nick=nick, message=message)
                 self.__on_pubmsg(nick, message)
             else:
-                log.debug('what is this?', sent_from=sent_from, sent_to=sent_to,
-                          message=message)
+                self.log.debug('what is this?: {sent_from}, {sent_to}, {msg}',
+                          sent_from=sent_from, sent_to=sent_to,
+                          msg=message[:80])
         except JsonRpcError:
-            log.failure('general I guess')
+            self.log.failure('general I guess')
         except:
-            log.failure('severe')
+            self.log.failure('severe')
             self.shutdown()
 
 # -----------------------------------------------------

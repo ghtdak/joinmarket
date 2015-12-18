@@ -18,13 +18,15 @@ from joinmarket.taker import CoinJoinerPeer
 from joinmarket.wallet import Wallet
 from joinmarket.blockchaininterface import bc_interface
 
-log = Logger()
-
 
 class CoinJoinOrder(TransactionWatcher):
 
+    log = Logger()
+
     # todo: way too much stuff going on in init
     def __init__(self, maker, nick, oid, amount, taker_pk):
+        ns = self.__module__ + '@' + nick
+        self.log = Logger(namespace=ns)
         self.txd = None
         self.i_utxo_pubkey = None
 
@@ -55,7 +57,7 @@ class CoinJoinOrder(TransactionWatcher):
         self.ordertype = order['ordertype']
         self.txfee = order['txfee']
         self.cjfee = order['cjfee']
-        log.debug('new cjorder nick=%s oid=%d amount=%d' % (nick, oid, amount))
+        self.log.debug('new cjorder nick=%s oid=%d amount=%d' % (nick, oid, amount))
 
         self.utxos, self.cj_addr, self.change_addr = maker.oid_to_order(
             self, oid, amount)
@@ -72,14 +74,22 @@ class CoinJoinOrder(TransactionWatcher):
         utxo_data = bc_interface.query_utxo_set(
             utxo_list)
         if None in utxo_data:
-            system_shutdown('wrongly using an already spent utxo. '
-                            'utxo_data = '.format(pprint.pformat(utxo_data)))
+            log.error('using spent utxo')
+            pprint.pprint(utxo_data)
+            raise Exception('spent utxo')
+            # system_shutdown('wrongly using an already spent utxo. '
+            #                 'utxo_data = '.format(pprint.pformat(utxo_data)))
             # sys.exit(0)
         for utxo, data in zip(utxo_list, utxo_data):
             if self.utxos[utxo]['value'] != data['value']:
-                fmt = 'wrongly labeled utxo, expected value: {} got {}'.format
-                system_shutdown(fmt(self.utxos[utxo]['value'], data['value']))
+                # fmt = 'wrongly labeled utxo, expected value: {} got {}'.format
+                # system_shutdown(fmt(self.utxos[utxo]['value'], data['value']))
                 # sys.exit(0)
+
+                log.error('utxo label - expected: {value} got: {got}',
+                          value=self.utxos[utxo]['value'], got=data['value'])
+
+                raise Exception('utxo label badness')
 
                 # always a new address even if the order ends up never being
                 # furfilled, you dont want someone pretending to fill all your
@@ -98,7 +108,7 @@ class CoinJoinOrder(TransactionWatcher):
 
         if not btc.ecdsa_verify(self.taker_pk, btc_sig, self.i_utxo_pubkey):
             # todo: says didn't match.  warning / info / error?
-            log.warn('signature didnt match pubkey and message')
+            self.log.warn('signature didnt match pubkey and message')
             return False
         # authorisation of taker passed
         # (but input utxo pubkey is checked in verify_unsigned_tx).
@@ -119,10 +129,10 @@ class CoinJoinOrder(TransactionWatcher):
         # log.debug('obtained tx\n' + pprint.pformat(self.tx))
         goodtx, errmsg = self.verify_unsigned_tx(self.txd)
         if not goodtx:
-            log.debug('not a good tx, reason=' + errmsg)
+            self.log.debug('not a good tx, reason=' + errmsg)
             self.maker.msgchan.send_error(nick, errmsg)
         # TODO: the above 3 errors should be encrypted, but it's a bit messy.
-        log.debug('goodtx')
+        self.log.debug('goodtx')
         sigs = []
         for index, ins in enumerate(self.txd['ins']):
             utxo = ins['outpoint']['hash'] + ':' + str(ins['outpoint']['index'])
@@ -140,14 +150,15 @@ class CoinJoinOrder(TransactionWatcher):
         self.d_confirm = defer.Deferred()
         self.d_confirm.addCallback(self.confirmfun)
 
-        log.debug('sending sigs ' + str(sigs))
+        self.log.debug('sending sigs{sigs}...', sigs=sigs[:80])
         self.maker.msgchan.send_sigs(nick, sigs)
         self.maker.active_orders[nick] = None
 
     def unconfirmfun(self, txd, txid):
         removed_utxos = self.maker.wallet.remove_old_utxos(self.txd)
 
-        # log.debug('saw tx on network, removed_utxos=\n{}'.format(pprint.pformat(
+        # log.debug('saw tx on network,
+        # removed_utxos=\n{}'.format(pprint.pformat(
         #     removed_utxos)))
         to_cancel, to_announce = self.maker.on_tx_unconfirmed(self, txid,
                                                               removed_utxos)
@@ -155,10 +166,10 @@ class CoinJoinOrder(TransactionWatcher):
 
     def confirmfun(self, (txd, txid, confirmations)):
         bc_interface.sync_unspent(self.maker.wallet)
-        log.debug('tx in a block')
-        log.debug('earned = ' + str(self.real_cjfee - self.txfee))
-        to_cancel, to_announce = self.maker.on_tx_confirmed(self, confirmations,
-                                                            txid)
+        self.log.debug('tx in a block')
+        self.log.debug('earned = ' + str(self.real_cjfee - self.txfee))
+        to_cancel, to_announce = self.maker.on_tx_confirmed(
+                self, confirmations, txid)
         self.maker.modify_orders(to_cancel, to_announce)
 
     def verify_unsigned_tx(self, txd):
@@ -185,9 +196,9 @@ class CoinJoinOrder(TransactionWatcher):
                                       self.cj_amount)
         expected_change_value = (
             my_total_in - self.cj_amount - self.txfee + self.real_cjfee)
-        log.debug('potentially earned = {}'.format(self.real_cjfee -
+        self.log.debug('potentially earned = {}'.format(self.real_cjfee -
                                                    self.txfee))
-        log.debug('exchange info', cj_addr=self.cj_addr,
+        self.log.debug('exchange info', cj_addr=self.cj_addr,
                   change_addr=self.change_addr)
 
         times_seen_cj_addr = 0
@@ -227,7 +238,7 @@ class Maker(CoinJoinerPeer):
 
     def get_crypto_box_from_nick(self, nick):
         if nick not in self.active_orders:
-            log.debug('wrong ordering of protocol events, no crypto '
+            self.log.debug('wrong ordering of protocol events, no crypto '
                       'object, nick=' + nick)
             return None
         else:
@@ -237,13 +248,20 @@ class Maker(CoinJoinerPeer):
         self.msgchan.announce_orders(self.orderlist, nick)
 
     def on_order_fill(self, nick, oid, amount, taker_pubkey):
+        self.log.debug('on_order_fill: {nick}, {oid}, {amount}', nick=nick,
+                       oid=oid, amount=amount)
         if nick in self.active_orders and self.active_orders[nick] is not None:
             self.active_orders[nick] = None
-            log.debug('had a partially filled order but starting over now')
-        self.active_orders[nick] = CoinJoinOrder(self, nick, oid, amount,
-                                                 taker_pubkey)
+            self.log.debug('had a partially filled order but starting over now')
+
+        try:
+            self.active_orders[nick] = CoinJoinOrder(self, nick, oid, amount,
+                                                     taker_pubkey)
+        finally:
+            pass
 
     def on_seen_auth(self, nick, pubkey, sig):
+        self.log.debug('on_seen_auth')
         if nick not in self.active_orders or self.active_orders[nick] is None:
             self.msgchan.send_error(nick, 'No open order from this nick')
         self.active_orders[nick].auth_counterparty(nick, pubkey, sig)
@@ -256,9 +274,10 @@ class Maker(CoinJoinerPeer):
         self.active_orders[nick].recv_tx(nick, txhex)
 
     def on_push_tx(self, nick, txhex):
-        log.debug('received txhex from ' + nick + ' to push\n' + txhex)
+        self.log.debug('received txhex from {nick} to push {txhex}',
+                       nick=nick, txhex=txhex)
         txid = bc_interface.pushtx(txhex)
-        log.debug('pushed tx ' + str(txid))
+        self.log.debug('pushed tx ' + str(txid))
         if txid is None:
             self.msgchan.send_error(nick, 'Unable to push tx')
 
@@ -268,17 +287,17 @@ class Maker(CoinJoinerPeer):
 
     def on_nick_leave(self, nick):
         if nick in self.active_orders:
-            log.debug('nick ' + nick + ' has left')
+            self.log.debug('nick ' + nick + ' has left')
             del self.active_orders[nick]
 
     def modify_orders(self, to_cancel, to_announce):
-        log.debug('modifying orders',
+        self.log.debug('modifying orders',
                   to_cancel=to_cancel, to_announce=to_announce)
         for oid in to_cancel:
             order = [o for o in self.orderlist if o['oid'] == oid]
             if len(order) == 0:
                 fmt = 'didnt cancel order which doesnt exist, oid={}'.format
-                log.debug(fmt(oid))
+                self.log.debug(fmt(oid))
             self.orderlist.remove(order[0])
         if len(to_cancel) > 0:
             self.msgchan.cancel_orders(to_cancel)
@@ -292,17 +311,20 @@ class Maker(CoinJoinerPeer):
                     self.orderlist.remove(oldorder_s[0])
             self.orderlist += to_announce
 
-    # these functions
-    # create_my_orders()
-    # oid_to_uxto()
-    # on_tx_unconfirmed()
-    # on_tx_confirmed()
-    # define the sell-side pricing algorithm of this bot
-    # still might be a bad way of doing things, we'll see
+    """
+    these functions:
+    create_my_orders()
+    oid_to_uxto()
+    on_tx_unconfirmed()
+    on_tx_confirmed()
+    define the sell-side pricing algorithm of this bot
+    still might be a bad way of doing things, we'll see
+    """
+
     def create_my_orders(self):
         """
-		#tells the highest value possible made by combining all utxos
-		#fee is 0.2% of the cj amount
+		calculates the highest value possible by combining all utxos
+		fee is 0.2% of the cj amount
 		total_value = 0
 		for utxo, addrvalue in self.wallet.unspent.iteritems():
 			total_value += addrvalue['value']
@@ -385,6 +407,7 @@ class Maker(CoinJoinerPeer):
                 to_announce.append(neworder)
         return [], to_announce
 
+log = Logger()
 
 def main():
     from socket import gethostname

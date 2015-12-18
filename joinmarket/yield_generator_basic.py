@@ -55,7 +55,7 @@ class YieldGenerator(jm.Maker):
     def create_my_orders(self):
         mix_balance = self.wallet.get_balance_by_mixdepth()
         if len([b for m, b in mix_balance.iteritems() if b > 0]) == 0:
-            log.debug('No coins left!!!')
+            self.log.debug('No coins left!!!')
             return []
 
         # print mix_balance
@@ -74,7 +74,7 @@ class YieldGenerator(jm.Maker):
 
         # algo attempts to make the largest-balance mixing depth get an even
         # larger balance
-        log.debug('finding suitable mixdepth')
+        self.log.debug('finding suitable mixdepth')
         mixdepth = (max_mix - 1) % self.wallet.max_mix_depth
         while True:
             if mixdepth in mix_balance and mix_balance[mixdepth] >= amount:
@@ -90,13 +90,13 @@ class YieldGenerator(jm.Maker):
         real_cjfee = jm.calc_cj_fee(cjorder.ordertype, cjorder.cjfee, amount)
         change_value = my_total_in - amount - cjorder.txfee + real_cjfee
         if change_value <= jm.DUST_THRESHOLD:
-            log.debug(('change value={} below dust threshold, '
+            self.log.debug(('change value={} below dust threshold, '
                        'finding new utxos'), change_value=change_value)
             try:
                 utxos = self.wallet.select_utxos(
                     mixdepth, amount + self.block_instance.DUST_THRESHOLD)
             except Exception:
-                log.debug('dont have the required UTXOs to make a '
+                self.log.debug('dont have the required UTXOs to make a '
                           'output above the dust threshold, quitting')
                 return None, None, None
 
@@ -124,10 +124,11 @@ class YieldGenerator(jm.Maker):
         else:
             confirm_time = 0
         timestamp = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
-        self.log_statement([timestamp, cjorder.cj_amount, len(
-            cjorder.utxos), sum([av['value'] for av in cjorder.utxos.values(
-            )]), cjorder.real_cjfee, cjorder.real_cjfee - cjorder.txfee, round(
-                confirm_time / 60.0, 2), ''])
+        self.log_statement(
+                [timestamp, cjorder.cj_amount, len(cjorder.utxos),
+                 sum([av['value'] for av in cjorder.utxos.values()]),
+                 cjorder.real_cjfee, cjorder.real_cjfee - cjorder.txfee,
+                 round(confirm_time / 60.0, 2), ''])
         return self.on_tx_unconfirmed(cjorder, txid, None)
 
 

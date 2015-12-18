@@ -45,6 +45,7 @@ class TransactionWatcher(object):
     def unconfirmfun(self, txd, txid):
         pass
 
+
 class BlockchainInterface(object):
     __metaclass__ = abc.ABCMeta
 
@@ -151,6 +152,8 @@ class AbstractWallet(object):
 class CoinJoinerPeer(object):
 
     def __init__(self, block_instance):
+        ns = self.__module__ + '@' + block_instance.nickname
+        self.log = Logger(namespace=ns)
         self.block_instance = block_instance
 
         # not the cleanest but it automates what would be an extra step

@@ -76,9 +76,11 @@ def loggerMath():
 def system_shutdown(errno, reason='none given'):
 
     if errno:
-        log.error('Unhappy Shutdown: {:d} {}'.format(errno, reason))
+        log.error('Unhappy Shutdown: {errno} {reason}',
+                  errno=errno, reason=reason)
         traceback.print_stack()
     else:
+        traceback.print_stack()
         log.info('Normal Shutdown')
 
     reactor.stop()
@@ -387,7 +389,8 @@ def choose_sweep_orders(db,
     # uncomment this and comment previous two lines for faster runtime but
     # less readable output
     # orderlist = sqlorders
-    log.debug('orderlist = \n' + '\n'.join([str(o) for o in orderlist]))
+    for n, order in enumerate(orderlist):
+        log.debug('orderlist: {n}, {order}', n=n, order=order)
 
     # choose N amount of orders
     available_orders = [(o, calc_cj_fee(o['ordertype'], o['cjfee'],
@@ -407,13 +410,11 @@ def choose_sweep_orders(db,
             return None, 0
         for i in range(n - len(chosen_orders)):
             chosen_order = chooseOrdersBy(available_orders, n, feekey)
-            log.debug('chosen = ' + str(chosen_order))
+            log.debug('chosen = {chosen}', chosen=chosen_order)
             # remove all orders from that same counterparty
-            available_orders = [
-                o
-                for o in available_orders
-                if o[0]['counterparty'] != chosen_order[0]['counterparty']
-            ]
+            available_orders = [o for o in available_orders
+                                if o[0]['counterparty'] !=
+                                chosen_order[0][ 'counterparty']]
             chosen_orders.append(chosen_order)
         # calc cj_amount and check its in range
         cj_amount, total_fee = calc_zero_change_cj_amount(chosen_orders)
@@ -422,7 +423,8 @@ def choose_sweep_orders(db,
             maxsize = c[0]['maxsize']
             if cj_amount > maxsize or cj_amount < minsize:
                 chosen_orders.remove(c)
-    log.debug('chosen orders = \n' + '\n'.join([str(o) for o in chosen_orders]))
+        for n, c in enumerate(chosen_orders):
+            log.debug('chosen: {n}, {chosen}', n=n, chosen=c)
     result = dict([(o[0]['counterparty'], o[0]['oid']) for o in chosen_orders])
     log.debug('cj amount = ' + str(cj_amount))
     return result, cj_amount

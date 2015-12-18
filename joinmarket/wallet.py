@@ -150,7 +150,7 @@ class Wallet(AbstractWallet):
             # do not import in the middle of sync_wallet()
             if bc_interface.wallet_synced:
                 if bc_interface.rpc('getaccount', [addr]) == '':
-                    log.debug('importing address ' + addr + ' to bitcoin core')
+                    log.debug('importing {addr}', addr=addr)
                     bc_interface.rpc(
                         'importaddress',
                         [addr, bc_interface.get_wallet_name(self), False])

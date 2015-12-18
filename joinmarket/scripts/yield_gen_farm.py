@@ -10,6 +10,7 @@ from twisted.internet import reactor
 from twisted.logger import Logger
 
 from joinmarket.yield_generator_basic import build_objects as build_yld
+from joinmarket.tumbler import build_objects as build_tumbler
 
 log = Logger()
 log.debug('wtf')
@@ -18,7 +19,7 @@ import bitcoin as btc
 import joinmarket as jm
 
 
-def build_and_run(argv=None):
+def buildWallets(argv=None):
     if argv is None:
         argv = sys.argv
 
@@ -76,17 +77,34 @@ def build_and_run(argv=None):
 
     printTumblr(argvv)
 
-    for argv in argvv:
-        log.debug('launching yielder', argv=argv)
+
+def launchYields():
+    yield_argv = [['btc_generator_basic.py', '79d18ce'],
+                  ['btc_generator_basic.py', '41d158b'],
+                  ['btc_generator_basic.py', 'c5417cf'],
+                  ['btc_generator_basic.py', '7ba4b63'],
+                  ['btc_generator_basic.py', '732ad8c'],
+                  ['btc_generator_basic.py', '8bf5fcd']]
+
+    for argv in yield_argv:
+        log.debug('launchYield: {argv}', argv=argv)
         build_yld(argv).build_irc()
 
-    log.debug('done building')
 
+def launchTumbler():
+    tumblr_argv = ['tumbler.py', '-N', '2', '0', '-a', '0', '-M', '5',
+                   '-w', '3', '-l', '0.2', '-s', '100000000', '59bf49a',
+                   'mhyGR4qBKDWoCdFZuzoSyVeCrphtPXtbgD']
+
+    log.debug('launchTumbler: {argv}', argv=tumblr_argv)
+    build_tumbler(tumblr_argv).build_irc()
 
 
 def main():
     try:
-        build_and_run()
+        # build_and_run()
+        launchYields()
+        reactor.callLater(10, launchTumbler)
     except:
         log.failure('badness')
 
