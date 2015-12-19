@@ -192,8 +192,7 @@ class CoinJoinOrder(TransactionWatcher):
     def confirmfun(self, (txd, txid, confirmations)):
         self.log.debug('confirmfun: {txid}', txid=txid)
         try:
-            # todo: spaghetti hunt marker
-            bc_interface.sync_unspent(self.maker.wallet, self.maker.nickname)
+            self.maker.wallet.sync_unspent()
         except:
             self.log.failure('confirmfun')
         self.log.debug('confirmed: {txid}, earned:{earned}',
@@ -456,7 +455,7 @@ def main():
 
     binst = BlockInstance(nickname)
     wallet = Wallet(seed, max_mix_depth=5)
-    bc_interface.sync_wallet(wallet)
+    wallet.sync_wallet()
 
     maker = Maker(binst, wallet)
     try:

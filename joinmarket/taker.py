@@ -431,10 +431,10 @@ class OrderbookWatch(CoinJoinerPeer):
                                txfee=txfee, counterparty=counterparty)
                 return
             if int(minsize) > int(maxsize):
-
-                fmt = ("Got minsize bigger than maxsize: {} - {} "
-                       "from {}").format
-                self.log.debug(fmt(minsize, maxsize, counterparty))
+                self.log.debug("Got minsize bigger than maxsize: {minsize} - "
+                               "{maxsize} from {counterparty}",
+                               minsize=minsize, maxsize=maxsize,
+                               counterparty=counterparty)
                 return
             self.db.execute(
                 'INSERT INTO orderbook VALUES(?, ?, ?, ?, ?, ?, ?);',
@@ -507,9 +507,8 @@ class Taker(OrderbookWatch):
 
     def get_crypto_box_from_nick(self, nick):
         if nick in self.cjtx.crypto_boxes:
-            return self.cjtx.crypto_boxes[nick][
-                1
-            ]  # libsodium encryption object
+            # libsodium encryption object
+            return self.cjtx.crypto_boxes[nick][1]
         else:
             self.log.debug('something wrong, no crypto object, nick={nick}, '
                            'message will be dropped', nick=nick)
@@ -533,12 +532,15 @@ class Taker(OrderbookWatch):
         if ignored_makers is None:
             ignored_makers = []
         sqlorders = db.execute('SELECT * FROM orderbook;').fetchall()
-        orders = [(o['counterparty'], o['oid'],
-                   calc_cj_fee(o['ordertype'], o['cjfee'], cj_amount),
-                   o['txfee'])
-                  for o in sqlorders
-                  if o['minsize'] <= cj_amount <= o['maxsize'] and o[
-                      'counterparty'] not in ignored_makers]
+
+        orders = []
+        for o in sqlorders:
+            if (o['minsize'] <= cj_amount <= o['maxsize'] and
+                        o['counterparty'] not in ignored_makers):
+                orders.append(
+                        (o['counterparty'], o['oid'], calc_cj_fee(
+                                o['ordertype'], o['cjfee'], cj_amount),
+                         o['txfee']))
 
         # function that returns the fee for a given order
         def feekey(o):
@@ -751,7 +753,8 @@ class Taker(OrderbookWatch):
                     chosen_orders.remove(c)
             for n, c in enumerate(chosen_orders):
                 self.log.debug('chosen: {n}, {chosen}', n=n, chosen=c)
-        result = dict([(o[0]['counterparty'], o[0]['oid']) for o in chosen_orders])
+        result = dict([(o[0]['counterparty'], o[0]['oid'])
+                       for o in chosen_orders])
         self.log.debug('cj amount = {cj_amount}', cj_amount=cj_amount)
         return result, cj_amount
 

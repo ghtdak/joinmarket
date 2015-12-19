@@ -176,7 +176,7 @@ def build_objects(argv=None):
 
     wallet = jm.Wallet(seed, max_mix_depth=mix_levels)
 
-    jm.bc_interface.sync_wallet(wallet)
+    wallet.sync_wallet()
 
     log.debug('starting yield generator')
 

@@ -102,7 +102,7 @@ def build_objects(argv=None):
                            extend_mixdepth=not maxmixdepth_configured,
                            storepassword=(method == 'importprivkey'))
         if method not in noscan_methods:
-            jm.bc_interface.sync_wallet(wallet)
+            wallet.sync_wallet()
 
     if method == 'display' or method == 'displayall' or method == 'summary':
 

@@ -212,7 +212,7 @@ def build_objects(argv=None):
         print('not implemented yet')
         sys.exit(0)
     # wallet = BitcoinCoreWallet(fromaccount=wallet_name)
-    jm.bc_interface.sync_wallet(wallet)
+    wallet.sync_wallet()
 
     available_balance = wallet.get_balance_by_mixdepth()[options.mixdepth]
     if available_balance < amount:

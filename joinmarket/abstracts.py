@@ -56,22 +56,6 @@ class BlockchainInterface(object):
     def __init__(self):
         pass
 
-    def sync_wallet(self, wallet):
-        self.sync_addresses(wallet)
-        self.sync_unspent(wallet)
-
-    @abc.abstractmethod
-    def sync_addresses(self, wallet):
-        """Finds which addresses have been used and sets
-        wallet.index appropriately"""
-        pass
-
-    @abc.abstractmethod
-    def sync_unspent(self, wallet):
-        """Finds the unspent transaction outputs belonging to this wallet,
-        sets wallet.unspent """
-        pass
-
     @abc.abstractmethod
     def add_tx_notify(self, transaction_watcher):
         """Invokes unconfirmfun and confirmfun when tx is seen on the network"""
@@ -115,6 +99,22 @@ class AbstractWallet(object):
         except NoSectionError:
             pass
 
+    # moved from blockchaininterface
+    def sync_wallet(self):
+        self.sync_addresses()
+        self.sync_unspent()
+
+    # moved from blockchaininterface
+    def sync_addresses(self):
+        """Finds which addresses have been used and sets
+        wallet.index appropriately"""
+        pass
+
+    def sync_unspent(self):
+        """Finds the unspent transaction outputs belonging to this wallet,
+        sets wallet.unspent """
+        pass
+
     @property
     def nickname(self):
         return self._nickname
@@ -143,6 +143,7 @@ class AbstractWallet(object):
     def add_new_utxos(self, tx, txid):
         return
 
+    # todo: looks like way too much code for an abstract interface
     def select_utxos(self, mixdepth, amount):
         utxo_list = self.get_utxos_by_mixdepth()[mixdepth]
         unspent = [{'utxo': utxo,
@@ -156,6 +157,7 @@ class AbstractWallet(object):
                                   'address': utxo_list[i['utxo']]['address']})
                      for i in inputs])
 
+    # todo: looks like way too much code for an abstract interface
     def get_balance_by_mixdepth(self):
         mix_balance = {}
         for m in range(self.max_mix_depth):
@@ -164,6 +166,7 @@ class AbstractWallet(object):
             mix_balance[mixdepth] = sum([addrval['value']
                                          for addrval in utxos.values()])
         return mix_balance
+
 
 class CoinJoinerPeer(object):
 

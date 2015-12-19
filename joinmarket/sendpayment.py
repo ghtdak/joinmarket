@@ -269,7 +269,7 @@ def build_objects(argv=None):
         wallet = jm.Wallet(wallet_name, options.mixdepth + 1)
     else:
         wallet = jm.BitcoinCoreWallet(fromaccount=wallet_name)
-    jm.bc_interface.sync_wallet(wallet)
+    wallet.sync_wallet()
 
     taker = SendPayment(block_instance, wallet, destaddr, amount,
                         options.makercount, options.txfee, options.waittime,

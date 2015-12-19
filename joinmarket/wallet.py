@@ -10,7 +10,8 @@ from twisted.logger import Logger
 
 import bitcoin as btc
 from joinmarket.abstracts import AbstractWallet
-from joinmarket.blockchaininterface import BitcoinCoreInterface, bc_interface
+from joinmarket.blockchaininterface import BitcoinCoreInterface, \
+    bc_interface, is_index_ahead_of_cache
 from joinmarket.configure import get_network, get_p2pk_vbyte
 from joinmarket.jsonrpc import JsonRpcError
 from joinmarket.slowaes import decryptData
@@ -215,6 +216,126 @@ class Wallet(AbstractWallet):
         return mix_utxo_list
 
 
+    def sync_unspent(self):
+
+        st = time.time()
+        wallet_name = bc_interface.get_wallet_name(self)
+        self.unspent = {}
+        unspent_list = self.rpc('listunspent', [])
+        self.log.debug('sync_unspent: {num} returned', num=len(unspent_list))
+        for u in unspent_list:
+            if 'account' not in u:
+                continue
+            if u['account'] != wallet_name:
+                continue
+            if u['address'] not in self.addr_cache:
+                continue
+
+            self.unspent[u['txid'] + ':' + str(u['vout'])] = {
+                'address': u['address'],
+                'value': int(Decimal(str(u['amount'])) * Decimal('1e8'))
+            }
+        et = time.time()
+        self.log.debug('bitcoind sync_unspent took ' + str((et - st)) + 'sec')
+
+
+    def sync_addresses(self):
+
+        self.log.debug('requesting wallet history')
+        wallet_name = bc_interface.get_wallet_name(self)
+        addr_req_count = 20
+        wallet_addr_list = []
+        for mix_depth in range(self.max_mix_depth):
+            for forchange in [0, 1]:
+                wallet_addr_list += [self.get_new_addr(mix_depth, forchange)
+                                     for _ in range(addr_req_count)]
+                self.index[mix_depth][forchange] = 0
+
+        # makes more sense to add these in an account called
+        # "joinmarket-imported" but its much simpler to add to the same
+        # account here
+
+        for privkey_list in self.imported_privkeys.values():
+            for privkey in privkey_list:
+                imported_addr = btc.privtoaddr(
+                    privkey, get_p2pk_vbyte())
+                wallet_addr_list.append(imported_addr)
+        imported_addr_list = bc_interface.rpc(
+                'getaddressesbyaccount', [wallet_name])
+
+        if not set(wallet_addr_list).issubset(set(imported_addr_list)):
+            bc_interface.add_watchonly_addresses(wallet_addr_list, wallet_name)
+            return
+
+        buf = bc_interface.rpc('listtransactions', [wallet_name, 1000, 0, True])
+        txs = buf
+        # If the buffer's full, check for more, until it ain't
+        while len(buf) == 1000:
+            buf = bc_interface.rpc('listtransactions',
+                           [wallet_name, 1000, len(txs), True])
+            txs += buf
+        # TODO check whether used_addr_list can be a set, may be faster (if
+        # its a hashset) and allows using issubset() here and setdiff() for
+        # finding which addresses need importing
+
+        # TODO also check the fastest way to build up python lists, i suspect
+        #  using += is slow
+        used_addr_list = [tx['address']
+                          for tx in txs if tx['category'] == 'receive']
+
+        too_few_addr_mix_change = []
+        for mix_depth in range(self.max_mix_depth):
+            for forchange in [0, 1]:
+                unused_addr_count = 0
+                last_used_addr = ''
+                breakloop = False
+                while not breakloop:
+                    if unused_addr_count >= self.gaplimit and \
+                            is_index_ahead_of_cache(self, mix_depth,
+                                                    forchange):
+                        break
+                    mix_change_addrs = [
+                        self.get_new_addr(mix_depth, forchange)
+                        for _ in range(addr_req_count)
+                    ]
+                    for mc_addr in mix_change_addrs:
+                        if mc_addr not in imported_addr_list:
+                            too_few_addr_mix_change.append(
+                                    (mix_depth, forchange))
+
+                            breakloop = True
+                            break
+                        if mc_addr in used_addr_list:
+                            last_used_addr = mc_addr
+                            unused_addr_count = 0
+                        else:
+                            unused_addr_count += 1
+
+                if last_used_addr == '':
+                    self.index[mix_depth][forchange] = 0
+                else:
+                    self.index[mix_depth][forchange] = \
+                        self.addr_cache[last_used_addr][2] + 1
+
+        wallet_addr_list = []
+        if len(too_few_addr_mix_change) > 0:
+            log.debug('too few addresses in ' + str(too_few_addr_mix_change))
+            for mix_depth, forchange in too_few_addr_mix_change:
+                wallet_addr_list += [
+                    self.get_new_addr(mix_depth, forchange)
+                    for _ in range(addr_req_count * 3)
+                ]
+
+            bc_interface.add_watchonly_addresses(wallet_addr_list, wallet_name)
+            return
+
+        bc_interface.wallet_synced = True
+
+
+# --------------------------------------------------
+# BitcoinCoreWallet
+# --------------------------------------------------
+
 class BitcoinCoreWallet(AbstractWallet):
 
     def __init__(self, fromaccount):
@@ -263,5 +384,6 @@ class BitcoinCoreWallet(AbstractWallet):
                     if exc.code != -14:
                         raise exc
                         # Wrong passphrase, try again.
+
 
 __all__ = ('Wallet', 'BitcoinCoreWallet')

@@ -551,7 +551,7 @@ def build_objects(argv=None):
     mmd = options.mixdepthsrc + options.mixdepthcount
     wallet = jm.Wallet(wallet_file, max_mix_depth=mmd)
 
-    jm.bc_interface.sync_wallet(wallet)
+    wallet.sync_wallet()
 
     log.debug('starting tumbler')
     Tumbler(block_instance, wallet, tx_list, options)
