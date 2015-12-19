@@ -7,6 +7,7 @@ from joinmarket.yield_generator_basic import build_objects
 
 log = Logger()
 
+
 def main():
     try:
         block_inst = build_objects()
@@ -16,6 +17,7 @@ def main():
 
     # d = deferredFrob(knob)
     # d.addErrback(lambda f: log.failure, "While frobbing {knob}", f, knob=knob)
+
 
 def run():
     reactor.callWhenRunning(main)

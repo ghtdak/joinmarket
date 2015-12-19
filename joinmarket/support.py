@@ -21,10 +21,12 @@ from twisted.logger import Logger, eventsFromJSONLogFile
 
 log = Logger()
 
+
 def signal_shutdown_handler(*args, **kwargs):
     log.debug('keyboard interrupt')
     reactor.stop()
     # sys.exit(-1)
+
 
 def keyboard_signal_handler():
     signal.signal(signal.SIGINT, signal_shutdown_handler)

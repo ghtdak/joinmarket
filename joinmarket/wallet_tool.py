@@ -25,6 +25,7 @@ import joinmarket as jm
 # m/0/n/0/k kth receive address, for mixing depth n
 # m/0/n/1/k kth change address, for mixing depth n
 
+
 def build_objects(argv=None):
     if argv is None:
         argv = sys.argv
@@ -111,6 +112,7 @@ def build_objects(argv=None):
                 print(s)
 
         total_balance = 0
+        # todo: wallet referenced before assignment
         for m in range(wallet.max_mix_depth):
             cus_print('mixing depth %d m/0/%d/' % (m, m))
             balance_depth = 0
@@ -125,12 +127,13 @@ def build_objects(argv=None):
                         if addr == addrvalue['address']:
                             balance += addrvalue['value']
                     balance_depth += balance
-                    used = ('used' if k < wallet.index[m][forchange] else ' new')
+                    used = ('used' if k < wallet.index[m][forchange] else
+                            ' new')
                     privkey = btc.encode_privkey(
                         wallet.get_key(m, forchange, k), 'wif_compressed',
                         jm.get_p2pk_vbyte()) if options.showprivkey else ''
                     if (method == 'displayall' or balance > 0 or
-                        (used == ' new' and forchange == 0)):
+                            (used == ' new' and forchange == 0)):
                         cus_print(
                                 '  m/0/%d/%d/%03d %-35s%s %.8f btc %s' %
                                 (m, forchange, k, addr, used, balance / 1e8,
@@ -174,6 +177,7 @@ def build_objects(argv=None):
             print('ERROR. Passwords did not match')
             sys.exit(0)
         password_key = btc.bin_dbl_sha256(password)
+        # todo: seed referenced before assignment
         encrypted_seed = jm.encryptData(password_key, seed.decode('hex'))
         timestamp = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
         walletfile = json.dumps(
@@ -195,6 +199,7 @@ def build_objects(argv=None):
             fd.close()
             print('saved to ' + walletname)
     elif method == 'showseed':
+        # todo: wallet referenced before assignment
         hexseed = wallet.seed
         print('hexseed = ' + hexseed)
         words = jm.mn_encode(hexseed)

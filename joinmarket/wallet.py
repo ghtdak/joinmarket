@@ -10,15 +10,13 @@ from twisted.logger import Logger
 
 import bitcoin as btc
 from joinmarket.abstracts import AbstractWallet
-from joinmarket.blockchaininterface import BitcoinCoreInterface, \
-    bc_interface, is_index_ahead_of_cache
+from joinmarket.blockchaininterface import BitcoinCoreInterface, bc_interface
 from joinmarket.configure import get_network, get_p2pk_vbyte
 from joinmarket.jsonrpc import JsonRpcError
 from joinmarket.slowaes import decryptData
 from joinmarket.support import system_shutdown
 
 log = Logger()
-
 
 
 class Wallet(AbstractWallet):
@@ -40,15 +38,18 @@ class Wallet(AbstractWallet):
         self.index_cache = None
         self.password_key = None
         self.walletdata = None
+        self.seed = None
+        self.gaplimit = gaplimit
+        self.keys = None
+        self.index = None
         self.doInit(seedarg, extend_mixdepth, max_mix_depth, gaplimit)
 
-    def doInit(self, seedarg, extend_mixdepth, max_mix_depth, gaplimit):
+    def doInit(self, seedarg, extend_mixdepth, max_mix_depth):
         # key is address, value is (mixdepth, forchange, index) if mixdepth =
         #  -1 it's an imported key and index refers to imported_privkeys
         self.seed = self.read_wallet_file_data(seedarg)
         if extend_mixdepth and len(self.index_cache) > max_mix_depth:
             self.max_mix_depth = len(self.index_cache)
-        self.gaplimit = gaplimit
         master = btc.bip32_master_key(self.seed)
         m_0 = btc.bip32_ckd(master, 0)
         mixing_depth_keys = [btc.bip32_ckd(m_0, c)
@@ -60,6 +61,15 @@ class Wallet(AbstractWallet):
         self.index = []
         for i in range(self.max_mix_depth):
             self.index.append([0, 0])
+
+    def get_wallet_name(self):
+        return 'joinmarket-wallet-' + btc.dbl_sha256(self.keys[0][0])[:6]
+
+    def is_index_ahead_of_cache(self, mix_depth, forchange):
+        if mix_depth >= len(self.index_cache):
+            return True
+        return (self.index[mix_depth][forchange] >=
+                self.index_cache[mix_depth][forchange])
 
     def read_wallet_file_data(self, filename):
         self.path = None
@@ -103,6 +113,7 @@ class Wallet(AbstractWallet):
                 log.error('Incorrect password')
                 decrypted = False
         if self.storepassword:
+            # todo: password_key referenced before assignment
             self.password_key = password_key
             self.walletdata = walletdata
         if 'imported_keys' in walletdata:
@@ -117,6 +128,7 @@ class Wallet(AbstractWallet):
                     epk_m['mixdepth'], -1,
                     len(self.imported_privkeys[epk_m['mixdepth']]))
                 self.imported_privkeys[epk_m['mixdepth']].append(privkey)
+        # todo: decrpted_seed referened before assignment
         return decrypted_seed
 
     def update_cache_index(self):
@@ -155,7 +167,7 @@ class Wallet(AbstractWallet):
                     log.debug('importing {addr}', addr=addr)
                     bc_interface.rpc(
                         'importaddress',
-                        [addr, bc_interface.get_wallet_name(self), False])
+                        [addr, self.get_wallet_name(), False])
         return addr
 
     def get_receive_addr(self, mixing_depth):
@@ -217,11 +229,10 @@ class Wallet(AbstractWallet):
 
 
     def sync_unspent(self):
-
         st = time.time()
-        wallet_name = bc_interface.get_wallet_name(self)
+        wallet_name = self.get_wallet_name()
         self.unspent = {}
-        unspent_list = self.rpc('listunspent', [])
+        unspent_list = bc_interface.rpc('listunspent', [])
         self.log.debug('sync_unspent: {num} returned', num=len(unspent_list))
         for u in unspent_list:
             if 'account' not in u:
@@ -242,7 +253,7 @@ class Wallet(AbstractWallet):
     def sync_addresses(self):
 
         self.log.debug('requesting wallet history')
-        wallet_name = bc_interface.get_wallet_name(self)
+        wallet_name = self.get_wallet_name()
         addr_req_count = 20
         wallet_addr_list = []
         for mix_depth in range(self.max_mix_depth):
@@ -290,9 +301,9 @@ class Wallet(AbstractWallet):
                 last_used_addr = ''
                 breakloop = False
                 while not breakloop:
-                    if unused_addr_count >= self.gaplimit and \
-                            is_index_ahead_of_cache(self, mix_depth,
-                                                    forchange):
+                    if (unused_addr_count >= self.gaplimit and
+                            self.is_index_ahead_of_cache(
+                                    mix_depth, forchange)):
                         break
                     mix_change_addrs = [
                         self.get_new_addr(mix_depth, forchange)
@@ -368,7 +379,8 @@ class BitcoinCoreWallet(AbstractWallet):
     def get_change_addr(self, mixing_depth):
         return bc_interface.rpc('getrawchangeaddress', [])
 
-    def ensure_wallet_unlocked(self):
+    @staticmethod
+    def ensure_wallet_unlocked():
         wallet_info = bc_interface.rpc('getwalletinfo', [])
         if 'unlocked_until' in wallet_info and wallet_info[
                 'unlocked_until'] <= 0:

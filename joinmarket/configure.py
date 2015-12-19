@@ -4,8 +4,7 @@ import io
 import sys
 
 from ConfigParser import SafeConfigParser, NoOptionError
-from twisted.logger import Logger, textFileLogObserver, globalLogPublisher, \
-    jsonFileLogObserver
+from twisted.logger import Logger, textFileLogObserver, globalLogPublisher
 
 import bitcoin as btc
 
@@ -19,7 +18,6 @@ globalLogPublisher.addObserver(
 
 log = Logger()
 log.info('log started')
-
 
 
 defaultconfig = \

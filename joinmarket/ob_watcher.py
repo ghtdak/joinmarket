@@ -17,6 +17,7 @@ from twisted.web import server, resource
 import joinmarket as jm
 
 matplotlib.use('Agg')
+# noinspection PyPep8
 import matplotlib.pyplot as plt
 
 log = Logger()
@@ -151,6 +152,7 @@ def create_orderbook_table(db, btc_unit, rel_unit):
     # somewhat complex sorting to sort by cjfee but with absorders on top
 
     ol = ['absorder', 'relorder']
+
     def orderby_cmp(x, y):
         if x['ordertype'] == y['ordertype']:
             return cmp(Decimal(x['cjfee']), Decimal(y['cjfee']))
@@ -196,6 +198,7 @@ def create_choose_units_form(selected_btc, selected_rel):
     return choose_units_form
 
 
+# noinspection PyMissingConstructor
 class NotifyHttpServer(resource.Resource):
 
     isLeaf = True
@@ -208,6 +211,7 @@ class NotifyHttpServer(resource.Resource):
         return ''
 
 
+# noinspection PyMissingConstructor
 class OrderbookPageRequestHeader(resource.Resource):
 
     isLeaf = True
@@ -304,6 +308,7 @@ class OrderbookPageRequestHeader(resource.Resource):
             replacements = {}
             orderbook_fmt = json.dumps(self.create_orderbook_obj())
         orderbook_page = orderbook_fmt
+        # todo: replacements referenced before assignment
         for key, rep in replacements.iteritems():
             orderbook_page = orderbook_page.replace(key, rep)
         # self.send_response(200)

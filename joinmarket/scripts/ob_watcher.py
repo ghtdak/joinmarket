@@ -7,6 +7,7 @@ from joinmarket.ob_watcher import build_objects
 
 log = Logger()
 
+
 def main():
     try:
         block_inst = build_objects()
@@ -14,12 +15,14 @@ def main():
     except:
         log.failure('badness')
 
-    # d = deferredFrob(knob)
-    # d.addErrback(lambda f: log.failure, "While frobbing {knob}", f, knob=knob)
+# d = deferredFrob(knob)
+# d.addErrback(lambda f: log.failure, "While frobbing {knob}", f, knob=knob)
+
 
 def run():
     reactor.callWhenRunning(main)
     reactor.run()
+
 
 if __name__ == '__main__':
     run()

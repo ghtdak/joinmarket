@@ -32,7 +32,6 @@ class CreateUnsignedTx(jm.Taker):
         self.daemon = True
         self.ignored_makers = []
 
-
     def create_tx(self):
         crow = self.taker.db.execute(
             'SELECT COUNT(DISTINCT counterparty) FROM orderbook;').fetchone()
@@ -71,8 +70,8 @@ class CreateUnsignedTx(jm.Taker):
                 self.log.debug(
                     'ERROR not enough liquidity in the orderbook, exiting')
                 return
-            total_amount = self.taker.cjamount + total_cj_fee + \
-                           self.taker.options.txfee
+            total_amount = (self.taker.cjamount + total_cj_fee +
+                            self.taker.options.txfee)
             self.log.info('total amount spent = {tot}', tot=total_amount)
             cjamount = self.taker.cjamount
             change_addr = self.taker.changeaddr
@@ -86,7 +85,6 @@ class CreateUnsignedTx(jm.Taker):
 
         jm.CoinJoinTX(self, cjamount, orders, utxos, self.destaddr,
                       change_addr, self.txfee, auth_addr)
-
 
     def finishcallback(self, coinjointx):
         if coinjointx.all_responded:
@@ -125,7 +123,7 @@ class CreateUnsignedTx(jm.Taker):
             return None, 0
 
         self.log.info('chosen orders to fill, totalcjfee = {tcjf}',
-                 tcjf = total_cj_fee)
+                      tcjf=total_cj_fee)
         for o in orders:
             # todo: need to get a handle on order / json stringification
             self.log.info('chosen orders to fill {order}', order=str(o))
@@ -152,7 +150,6 @@ class CreateUnsignedTx(jm.Taker):
         jm.Taker.on_welcome(self)
         self.log.info('on_welcome: PaymentWatchdog waiting for stuff to arrive')
         reactor.callLater(self.options.waittime, self.create_tx)
-
 
 
 def build_objects(argv=None):

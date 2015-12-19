@@ -59,7 +59,6 @@ class PatientSendPayment(jm.Maker, jm.Taker):
             self.tmaker.wallet.get_change_addr(self.tmaker.mixdepth),
             self.tmaker.txfee, self.finishcallback)
 
-
     def get_crypto_box_from_nick(self, nick):
         if self.cjtx:
             return jm.Taker.get_crypto_box_from_nick(self, nick)

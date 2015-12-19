@@ -40,9 +40,10 @@ def generate_tumbler_tx(destaddrs, options):
         waits = jm.rand_exp_array(options.timelambda, txcount)
         # number of makers to use follows a normal distribution
         makercounts = jm.rand_norm_array(options.makercountrange[0],
-                                      options.makercountrange[1], txcount)
+                                         options.makercountrange[1], txcount)
         makercounts = lower_bounded_int(makercounts, options.minmakercount)
-        if m == options.mixdepthcount - options.addrcount and options.donateamount:
+        if (m == options.mixdepthcount - options.addrcount and
+                options.donateamount):
             tx_list.append({'amount_fraction': 0,
                             'wait': round(waits[0], 2),
                             'srcmixdepth': m + options.mixdepthsrc,
@@ -90,19 +91,20 @@ class Tumbler(jm.Taker):
         self.daemon = True
         self.ignored_makers = []
         self.sweeping = False
-        # todo: HHHHAAAAACCCCCCKKKKKK!!!!!
-        self.confirmDefer = None
+        self.balance_by_mixdepth = {}
+        self.current_tx = None
 
     def unconfirm_callback(self, txd, txid):
         self.log.debug('unconfirm_callback', txd=txd, txid=txid)
         self.log.debug('that was %d tx out of %d' %
-                  (self.current_tx + 1, len(self.tx_list)))
+                       (self.current_tx + 1, len(self.tx_list)))
 
     def confirm_callback(self, txd, txid, confirmations):
-        self.log.debug('confirm_callback',txd=txd, txid=txid)
-        if self.confirmDefer:
-            self.confirmDefer.callback((txd, txid, confirmations))
-            self.confirmDefer = None
+        self.log.error('confirm_callback shouldn\'t be called')
+        # self.log.debug('confirm_callback',txd=txd, txid=txid)
+        # if self.confirmDefer:
+        #     self.confirmDefer.callback((txd, txid, confirmations))
+        #     self.confirmDefer = None
 
     #     self.wallet.add_new_utxos(txd, txid)
         # previous twiddling of the conditional lock...
@@ -110,12 +112,12 @@ class Tumbler(jm.Taker):
     # todo: a kludge for now until we understand how to re-architect
     # finish etc
     def finishcallback(self, coinjointx):
-
+        log.error('finishcallback no call')
         # we have our own version of double spend
-        d = coinjointx.cb_deferred
-        coinjointx.cb_deferred = None
-        if d:
-            d.callback(coinjointx)
+        # d = coinjointx.cb_deferred
+        # coinjointx.cb_deferred = None
+        # if d:
+        #     d.callback(coinjointx)
 
     #     if coinjointx.all_responded:
     #         jm.bc_interface.add_tx_notify(
@@ -155,12 +157,12 @@ class Tumbler(jm.Taker):
                 self.ignored_makers + active_nicks)
             abs_cj_fee = 1.0 * total_cj_fee / makercount
             rel_cj_fee = abs_cj_fee / cj_amount
-            self.log.debug('rel/abs average fee = {} / {}'.format(rel_cj_fee,
-                                                             abs_cj_fee))
+            self.log.debug('rel/abs average fee = {rel_cj_fee} / {abs_cj_fee}',
+                           rel_cj_fee=rel_cj_fee, abs_cj_fee=abs_cj_fee)
             if rel_cj_fee > self.options.maxcjfee[
                     0] and abs_cj_fee > self.options.maxcjfee[1]:
-                self.log.debug('cj fee higher than maxcjfee, waiting ',
-                          delay=self.options.liquiditywait)
+                self.log.debug('cj fee higher than maxcjfee, waiting {delay}',
+                               delay=self.options.liquiditywait)
 
                 yield jm.sleepGenerator(self.options.liquiditywait)
                 continue
@@ -292,20 +294,21 @@ class Tumbler(jm.Taker):
         relorder_fee = float(orders[0])
         self.log.debug('set relorder fee',relorder_fee=relorder_fee)
         maker_count = sum([tx['makercount'] for tx in self.tx_list])
+
+        # todo: this needs cleanup
         self.log.debug('status', maker_count=maker_count, relorder_fee=relorder_fee)
         self.log.debug('uses ' + str(maker_count) + ' makers, at ' + str(
-            relorder_fee * 100) + '% per maker, estimated total cost ' + str(
-                round(
-                    (1 - (1 - relorder_fee)**maker_count) * 100, 3)) + '%')
+                relorder_fee * 100) + '% per maker, estimated total cost ' + str(
+                round((1 - (1 - relorder_fee)**maker_count) * 100, 3)) + '%')
         self.log.debug('starting the big tumbler loop')
 
         self.balance_by_mixdepth = {}
 
         for i, tx in enumerate(self.tx_list):
+            # todo: what happens if it is in there? is that an error?
             if tx['srcmixdepth'] not in self.balance_by_mixdepth:
-                self.balance_by_mixdepth[tx[
-                    'srcmixdepth']] = self.wallet.get_balance_by_mixdepth(
-                    )[tx['srcmixdepth']]
+                bbm = self.wallet.get_balance_by_mixdepth()[tx['srcmixdepth']]
+                self.balance_by_mixdepth[tx['srcmixdepth']] = bbm
             sweep = True
             for later_tx in self.tx_list[i + 1:]:
                 if later_tx['srcmixdepth'] == tx['srcmixdepth']:
@@ -552,6 +555,9 @@ def build_objects(argv=None):
     wallet = jm.Wallet(wallet_file, max_mix_depth=mmd)
 
     wallet.sync_wallet()
+
+    log.debug('balancd by mixdepth: {bbm}',
+              bbm=wallet.get_balance_by_mixdepth())
 
     log.debug('starting tumbler')
     Tumbler(block_instance, wallet, tx_list, options)

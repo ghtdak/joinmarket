@@ -49,7 +49,7 @@ class SendPayment(jm.Taker):
     def create_tx(self):
         log.debug('sendpayment: create_tx called')
         crow = self.db.execute('SELECT COUNT(DISTINCT counterparty) FROM '
-                                     'orderbook;').fetchone()
+                               'orderbook;').fetchone()
         # log.debug('counterparty counting: {}'.format(crow))
         counterparty_count = crow['COUNT(DISTINCT counterparty)']
         counterparty_count -= len(self.ignored_makers)
@@ -89,7 +89,7 @@ class SendPayment(jm.Taker):
             total_amount = self.amount + total_cj_fee + self.txfee
             log.info('total amount spent = ' + str(total_amount))
             utxos = self.wallet.select_utxos(self.mixdepth,
-                                                   total_amount)
+                                             total_amount)
             cjamount = self.amount
             change_addr = self.wallet.get_change_addr(self.mixdepth)
 

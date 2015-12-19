@@ -2,22 +2,21 @@
 from __future__ import absolute_import, print_function
 
 import base64
-import json
 import random
 import sqlite3
 import sys
 from decimal import InvalidOperation, Decimal
 from math import exp
 
-from twisted.logger import Logger
 from twisted.internet import defer, reactor
+from twisted.logger import Logger
 
 import bitcoin as btc
 from joinmarket.abstracts import CoinJoinerPeer, TransactionWatcher
+from joinmarket.blockchaininterface import bc_interface
 from joinmarket.configure import get_p2pk_vbyte, maker_timeout_sec
 from joinmarket.enc_wrapper import init_keypair, as_init_encryption, init_pubkey
 from joinmarket.support import calc_cj_fee
-from joinmarket.blockchaininterface import bc_interface
 
 log = Logger()
 
@@ -70,6 +69,7 @@ class CoinJoinTX(TransactionWatcher):
         self.all_responded = False
         self.watchdog = CoinJoinTX.Watchdog(self)
         self.watchdog.start()
+        self.utxo_tx = None
 
         # state variables
         self.txid = None
@@ -285,6 +285,7 @@ class CoinJoinTX(TransactionWatcher):
                 ins['script'] = ''
 
         # self.taker.finishcallback(self)
+        bc_interface.add_tx_notify(self)
         self.d_phase1.callback(self)
 
     def coinjoin_address(self):
@@ -586,7 +587,8 @@ class Taker(OrderbookWatch):
         chosen_orders = [o[:2] for o in chosen_orders]
         return dict(chosen_orders), total_cj_fee
 
-    def rand_weighted_choice(self, n, p_arr):
+    @staticmethod
+    def rand_weighted_choice(n, p_arr):
         """
         Choose a value in 0..n-1
         with the choice weighted by the probabilities
@@ -642,14 +644,14 @@ class Taker(OrderbookWatch):
 
     def pick_order(self, orders, n, feekey):
         i = -1
-        log.info("Considered orders:")
+        self.log.info("Considered orders:")
         for o in orders:
             i += 1
-            log.info("    %2d. %20s, CJ fee: %6d, tx fee: %6d" %
+            self.log.info("    %2d. %20s, CJ fee: %6d, tx fee: %6d" %
                      (i, o[0], o[2], o[3]))
         pickedOrderIndex = -1
         if i == 0:
-            log.info("Only one possible pick, picking it.")
+            self.log.info("Only one possible pick, picking it.")
             return orders[0]
         while pickedOrderIndex == -1:
             try:
@@ -729,6 +731,9 @@ class Taker(OrderbookWatch):
         # sort from smallest to biggest cj fee
         available_orders = sorted(available_orders, key=feekey)
         chosen_orders = []
+
+        # todo: static analysis bug
+        cj_amount = 0
         while len(chosen_orders) < n:
             if len(available_orders) < n - len(chosen_orders):
                 self.log.debug('ERROR not enough liquidity in the orderbook')
@@ -737,8 +742,6 @@ class Taker(OrderbookWatch):
             for i in range(n - len(chosen_orders)):
                 chosen_order = self.chooseOrdersFunc(
                         available_orders, n, feekey)
-                self.log.debug(
-                        'chosen = {chosen}', chosen=json.dumps(chosen_order))
                 # remove all orders from that same counterparty
                 available_orders = [o for o in available_orders
                                     if o[0]['counterparty'] !=
@@ -753,6 +756,7 @@ class Taker(OrderbookWatch):
                     chosen_orders.remove(c)
             for n, c in enumerate(chosen_orders):
                 self.log.debug('chosen: {n}, {chosen}', n=n, chosen=c)
+
         result = dict([(o[0]['counterparty'], o[0]['oid'])
                        for o in chosen_orders])
         self.log.debug('cj amount = {cj_amount}', cj_amount=cj_amount)

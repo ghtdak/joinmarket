@@ -3,12 +3,12 @@ from __future__ import absolute_import, print_function
 import base64
 import httplib
 import json
-import traceback
 from collections import defaultdict, deque
 
 import treq
 from twisted.internet import defer, reactor
 from twisted.logger import Logger
+
 """
 Copyright (C) 2013,2015 by Daniel Kraft <d@domob.eu>
 Copyright (C) 2014 by phelix / blockchained.com
@@ -31,7 +31,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
-
 
 log = Logger()
 
@@ -72,7 +71,7 @@ class JsonRpc(object):
                         'Content-Type': 'application/json',
                         'Accept': 'application/json'}
         self.headers['Authorization'] = 'Basic {}'.format(base64.b64encode(
-            self.authstr))
+                self.authstr))
         self.url = 'http://{}:{}'.format(host, port)
         self.queryId = 1
         self.asyncQ = deque()
@@ -89,6 +88,7 @@ class JsonRpc(object):
             reactor.doIteration(.001)
 
         ret_whatevername = []
+
         def callMe(response):
             if response:
                 ret_whatevername.append(response)
@@ -129,7 +129,7 @@ class JsonRpc(object):
             if response.status == 401:
                 conn.close()
                 raise JsonRpcConnectionError(
-                    "authentication for JSON-RPC failed")
+                        "authentication for JSON-RPC failed")
 
             # All of the codes below are 'fine' from a JSON-RPC point of view.
             if response.status not in [200, 404, 500]:
@@ -145,12 +145,12 @@ class JsonRpc(object):
             raise exc
         except Exception as exc:
             raise JsonRpcConnectionError(
-                "JSON-RPC connection failed. Err: {}".format(exc))
+                    "JSON-RPC connection failed. Err: {}".format(exc))
 
     @defer.inlineCallbacks
     def post_defer(self, obj):
         self.asyncCount += 1
-        js = {'jm_error':'inialize'}
+        js = {'jm_error': 'inialize'}
         content = None
         try:
             body = json.dumps(obj)
@@ -160,7 +160,7 @@ class JsonRpc(object):
 
             if response.code not in [200, 404, 500]:
                 log.error('Unknown error in JsonRpc - post-defer: {}'.format(
-                    response.code))
+                        response.code))
 
             # todo: for debugging.  Can be done with a single call
             content = yield response.content()
@@ -168,9 +168,9 @@ class JsonRpc(object):
         except:
             log.debug('conversion exception', content=content)
             print('conversion exception: ', content)
-            js = {'jm_error':'exception',
+            js = {'jm_error': 'exception',
                   'jm_content': content,
-                  'error':'error'}
+                  'error': 'error'}
         else:
             # log.debug('json conversion success: {}'.format(js))
             if js['id'] != obj['id']:
@@ -183,24 +183,25 @@ class JsonRpc(object):
             self.asyncCount -= 1
             defer.returnValue(js)
 
-
     def call(self, method, params, immediate=False):
 
         # todo: call stack monitoring
-        tb_stack_dd[tuple(traceback.extract_stack())] += 1
+        # tb_stack_dd[tuple(traceback.extract_stack())] += 1
 
         currentId = self.queryId
         self.queryId += 1
 
         request = {"method": method, "params": params, "id": currentId}
 
-        if reactor.running and immediate:
-            return self.queuePost(request)
+        # if reactor.running and immediate:
+        #     return self.queuePost(request)
+        #
+        # if reactor.running:
+        #     response = self.treq_queryHTTP(request)
+        # else:
+        #     response = self.queryHTTP(request)
 
-        if reactor.running:
-            response = self.treq_queryHTTP(request)
-        else:
-            response = self.queryHTTP(request)
+        response = self.queryHTTP(request)
 
         if response["id"] != currentId:
             print('jsonrpc: {}'.format(response))
@@ -213,7 +214,6 @@ class JsonRpc(object):
             raise JsonRpcError(response["error"])
 
         return response["result"]
-
 
     def intercept(self, response, calld):
         if len(self.asyncQ) > 0:

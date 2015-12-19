@@ -22,6 +22,7 @@ def main(wallet, tumbler):
         import traceback
         log.debug(traceback.format_exc())
 
+
 def run():
 
     d = build_objects()

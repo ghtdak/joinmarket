@@ -9,117 +9,97 @@ from twisted.logger import Logger
 
 import bitcoin as btc
 from joinmarket.abstracts import TransactionWatcher
-from joinmarket.txirc import BlockInstance
+from joinmarket.blockchaininterface import bc_interface
 from joinmarket.configure import DUST_THRESHOLD, get_p2pk_vbyte
 from joinmarket.enc_wrapper import init_keypair, as_init_encryption, init_pubkey
-from joinmarket.support import calc_cj_fee, debug_dump_object, \
-    system_shutdown
+from joinmarket.support import calc_cj_fee, debug_dump_object
 from joinmarket.taker import CoinJoinerPeer
+from joinmarket.txirc import BlockInstance
 from joinmarket.wallet import Wallet
-from joinmarket.blockchaininterface import bc_interface
 
 
 class CoinJoinOrder(TransactionWatcher):
 
-    def __init__(self, maker, oid, amount, taker_pk):
+    # todo: way too much stuff going on in init
+    def __init__(self, maker, nick, oid, amount, taker_pk):
         super(CoinJoinOrder, self).__init__(maker)
-
-        self.maker = maker
+        ns = self.__module__ + '@' + nick
+        self.log = Logger(namespace=ns)
         self.txd = None
         self.i_utxo_pubkey = None
 
+        self.maker = maker
         self.block_instance = maker.block_instance
         self.oid = oid
         self.cj_amount = amount
+        self.real_cjfee = None
 
-        self.ordertype = None
-        self.txfee = None
-        self.cjfee = None
+        if self.cj_amount <= DUST_THRESHOLD:
+            self.maker.msgchan.send_error(nick, 'amount below dust threshold')
 
-        self.taker_pk = None
-        self.kp = None
-        self.crypto_box = None
+        # the btc pubkey of the utxo that the taker plans to use as input
+        self.taker_pk = taker_pk
 
-    def initialize(self):
-        try:
-            """
-            separated from __init__
-            :return:
-            """
+        # create DH keypair on the fly for this Order object
+        self.kp = init_keypair()
 
-            # create DH keypair on the fly for this Order object
-            self.kp = init_keypair()
+        # the encryption channel crypto box for this Order object
+        self.crypto_box = as_init_encryption(self.kp, init_pubkey(taker_pk))
 
-            # the encryption channel crypto box for this Order object
-            self.crypto_box = as_init_encryption(
-                    self.kp, init_pubkey(self.taker_pk))
+        order_s = [o for o in maker.orderlist if o['oid'] == oid]
+        if len(order_s) == 0:
+            self.maker.msgchan.send_error(nick, 'oid not found')
 
-            if self.cj_amount <= DUST_THRESHOLD:
-                self.maker.msgchan.send_error(
-                        self.maker.nickname, 'amount below dust threshold')
+        order = order_s[0]
+        if amount < order['minsize'] or amount > order['maxsize']:
+            self.maker.msgchan.send_error(nick, 'amount out of range')
 
-            order_s = [o for o in self.maker.orderlist if o['oid'] == self.oid]
+        self.ordertype = order['ordertype']
+        self.txfee = order['txfee']
+        self.cjfee = order['cjfee']
+        self.log.debug('new cjorder nick={nick} oid={oid} amount={amount}',
+                       nick=nick, oid=oid, amount=amount)
 
-            if len(order_s) == 0:
-                self.maker.msgchan.send_error(self.maker.nickname,
-                                              'oid not found')
+        self.utxos, self.cj_addr, self.change_addr = maker.oid_to_order(
+            self, oid, amount)
+        self.maker.wallet.update_cache_index()
+        if not self.utxos:
+            self.maker.msgchan.send_error(
+                nick, 'unable to fill order constrained by dust avoidance')
 
-            order = order_s[0]
-            if (self.cj_amount < order['minsize'] or
-                        self.cj_amount > order['maxsize']):
-                self.maker.msgchan.send_error(self.maker.nickname,
-                                              'amount out of range')
-
-            self.ordertype = order['ordertype']
-            self.txfee = order['txfee']
-            self.cjfee = order['cjfee']
-            self.log.debug('new cjorder nick={nick} oid={odi} amount={amount}',
-                           nick=self.maker.nickname, oid=self.oid,
-                           amount=self.cj_amount)
-
-            self.utxos, self.cj_addr, self.change_addr = self.maker.oid_to_order(
-                    self, self.oid, self.cj_amount)
-            self.maker.wallet.update_cache_index()
-            if not self.utxos:
-                self.maker.msgchan.send_error(
-                        self.maker.nickname,
-                        'unable to fill order constrained by dust avoidance')
-
-            # TODO make up orders offers in a way that this error cant appear
-            #  check nothing has messed up with the wallet code, remove this
-            # code after a while
-            # log.debug('maker utxos = ' + pprint.pformat(self.utxos))
-            utxo_list = self.utxos.keys()
-            utxo_data = bc_interface.query_utxo_set(
-                utxo_list)
-            if None in utxo_data:
-                log.error('using spent utxo')
-                pprint.pprint(utxo_data)
-                raise Exception('spent utxo')
-                # system_shutdown('wrongly using an already spent utxo. '
-                #                 'utxo_data = '.format(pprint.pformat(utxo_data)))
+        # TODO make up orders offers in a way that this error cant appear
+        #  check nothing has messed up with the wallet code, remove this
+        # code after a while
+        # log.debug('maker utxos = ' + pprint.pformat(self.utxos))
+        utxo_list = self.utxos.keys()
+        utxo_data = bc_interface.query_utxo_set(
+            utxo_list)
+        if None in utxo_data:
+            self.log.error('using spent utxo')
+            pprint.pprint(utxo_data)
+            raise Exception('spent utxo')
+            # system_shutdown('wrongly using an already spent utxo. '
+            #                 'utxo_data = '.format(pprint.pformat(utxo_data)))
+            # sys.exit(0)
+        for utxo, data in zip(utxo_list, utxo_data):
+            if self.utxos[utxo]['value'] != data['value']:
+                # fmt = 'wrongly labeled utxo, expected value: {} got {}'.format
+                # system_shutdown(fmt(self.utxos[utxo]['value'], data['value']))
                 # sys.exit(0)
-            for utxo, data in zip(utxo_list, utxo_data):
-                if self.utxos[utxo]['value'] != data['value']:
-                    # fmt = 'wrongly labeled utxo, expected value: {} got {}'.format
-                    # system_shutdown(fmt(self.utxos[utxo]['value'], data['value']))
-                    # sys.exit(0)
 
-                    log.error('utxo label - expected: {value} got: {got}',
-                              value=self.utxos[utxo]['value'], got=data['value'])
+                self.log.error('utxo label - expected: {value} got: {got}',
+                               value=self.utxos[utxo]['value'],
+                               got=data['value'])
 
-                    raise Exception('utxo label badness')
+                raise Exception('utxo label badness')
 
-                    # always a new address even if the order ends up never being
-                    # furfilled, you dont want someone pretending to fill all your
-                    # orders to find out which addresses you use
-            self.maker.msgchan.send_pubkey(self.maker.nickname, self.kp.hex_pk())
-        except:
-            self.log.failure('CoinJoinOrder fails initialization')
-            raise
+                # always a new address even if the order ends up never being
+                # furfilled, you dont want someone pretending to fill all your
+                # orders to find out which addresses you use
+        self.maker.msgchan.send_pubkey(nick, self.kp.hex_pk())
 
     def __getattr__(self, name):
-        # todo: legacy - rename .msgchan
+        # legacy support
         if name == 'msgchan':
             return self.block_instance.irc_market
         else:
@@ -288,10 +268,10 @@ class Maker(CoinJoinerPeer):
             self.log.debug('had a partially filled order but starting over now')
 
         try:
-            cjo = CoinJoinOrder(self, oid, amount, taker_pubkey)
-            cjo.initialize()
+            cjo = CoinJoinOrder(self, nick, oid, amount, taker_pubkey)
+            # cjo.initialize()
         except:
-            log.failure('creating CoinJoinOrder')
+            self.log.failure('creating CoinJoinOrder')
         else:
             self.active_orders[nick] = cjo
 

@@ -16,7 +16,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-# list of words from http://en.wiktionary.org/wiki/Wiktionary:Frequency_lists/Contemporary_poetry
+# list of words from http://en.wiktionary.org/wiki/Wiktionary:Frequency_lists
+# /Contemporary_poetry
 
 words = [
     "like", "just", "love", "know", "never", "want", "time", "out", "there",

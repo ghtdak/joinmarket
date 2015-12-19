@@ -23,9 +23,6 @@ log.debug('Twisted Logging Starts in txirc')
 
 
 class txIRC_Client(irc.IRCClient, object):
-
-    log = Logger()
-
     # lineRate is a class variable in the superclass used to limit
     # messages / second.  heartbeat is what you'd think
     lineRate = 1
@@ -38,6 +35,9 @@ class txIRC_Client(irc.IRCClient, object):
         self.hostname = hostname
 
         self.block_instance.set_tx_irc_client(self)
+
+        ns = self.__module__ + '@' + self.nickname
+        self.log = Logger(namespace=ns)
 
         # todo: build pong timeout watchdot
         # self.heartbeattimeout = 30
@@ -56,13 +56,12 @@ class txIRC_Client(irc.IRCClient, object):
         # log.debug('_reallySendLine: {}...'.format(line[:40]))
         return irc.IRCClient._reallySendLine(self, line)
 
-
     def lineReceived(self, line):
-        #std_log.debug('lineReceived', line)
+        # std_log.debug('lineReceived', line)
         return irc.IRCClient.lineReceived(self, line)
 
     def rawDataReceived(self, data):
-        #std_log.debug('rawDataReceived', data)
+        # std_log.debug('rawDataReceived', data)
         return irc.IRCClient.rawDataReceived(self, data)
 
     def dccSend(self, user, _file):
@@ -87,8 +86,8 @@ class txIRC_Client(irc.IRCClient, object):
         reactor.callLater(0.0, self.irc_market.joined, channel)
 
     def privmsg(self, userIn, channel, msg):
-        self.log.debug('privmsg: {userIn} {channel} {msg}...',
-                  userIn=userIn, channel=channel, msg=msg[:80])
+        self.log.debug('<-privmsg: {userIn} {channel} {msg}...',
+                       userIn=userIn, channel=channel, msg=msg[:80])
 
         reactor.callLater(0.0, self.irc_market.handle_privmsg,
                           userIn, channel, msg)
@@ -107,7 +106,7 @@ class txIRC_Client(irc.IRCClient, object):
 
     def action(self, user, channel, msg):
         self.log.debug('action: {user}, {channel}, {msg}',
-                  user=user, channel=channel, msg=msg)
+                       user=user, channel=channel, msg=msg)
 
     def alterCollidedNick(self, nickname):
         """
@@ -118,20 +117,22 @@ class txIRC_Client(irc.IRCClient, object):
         return nickname + '^'
 
     def modeChanged(self, user, channel, _set, modes, args):
-        self.log.debug('modeChanged: {user}, {channel}, {_set}, {modes}, {args}',
-                  user=user, channel=channel, _set=_set, modes=modes,
-                  args=args)
+        self.log.debug(
+            'modeChanged: {user}, {channel}, {_set}, {modes}, {args}',
+            user=user, channel=channel, _set=_set, modes=modes,
+            args=args)
 
     def pong(self, user, secs):
         self.log.debug('pong: {:d}'.format(secs))
 
     def userJoined(self, user, channel):
-        self.log.debug('user joined: {user}, {channel}', user=user, channel=channel)
+        self.log.debug('user joined: {user}, {channel}', user=user,
+                       channel=channel)
         reactor.callLater(0.0, self.irc_market.userJoined, user, channel)
 
     def userKicked(self, kickee, channel, kicker, message):
         self.log.debug('kicked: {} {} by {} {}'.format(kickee, channel, kicker,
-                                                  message))
+                                                       message))
 
     def userLeft(self, user, channel):
         self.log.debug('left: {} {}'.format(user, channel))
@@ -159,7 +160,7 @@ class txIRC_Client(irc.IRCClient, object):
 
     def myInfo(self, servername, version, umodes, cmodes):
         self.log.debug('myInfo: {} {} {} {}'.format(servername, version, umodes,
-                                               cmodes))
+                                                    cmodes))
 
     def luserChannels(self, channels):
         self.log.debug('luserChannels: {}'.format(channels))
@@ -190,7 +191,7 @@ class CJPeerError(StandardError):
 def random_nick(nick_len=9):
     vowels = "aeiou"
     consonants = ''.join([chr(
-        c) for c in range(
+            c) for c in range(
             ord('a'), ord('z') + 1) if vowels.find(chr(c)) == -1])
     assert nick_len % 2 == 1
     N = (nick_len - 1) / 2
@@ -220,6 +221,7 @@ def get_irc_text(line):
 
 def get_irc_nick(source):
     return source[0:source.find('!')]
+
 
 # -------------------------------------------------------------
 #    IRC_Market
@@ -275,7 +277,6 @@ class CommSuper(object):
 
 
 class IRC_Market(CommSuper):
-
     log = Logger()
 
     def __init__(self,
@@ -291,6 +292,8 @@ class IRC_Market(CommSuper):
         if password and len(password) == 0:
             password = None
         self.given_password = password
+        ns = self.__module__ + '@' + self.block_instance.nickname
+        self.log = Logger(namespace=ns)
 
         # todo: things like errno need to be documented
         self.errno = 0
@@ -343,7 +346,8 @@ class IRC_Market(CommSuper):
         # self.block_instance.tcp_connector.disconnect()
 
     def send(self, send_to, msg):
-        self.log.debug('send: {send_to} {msg}...', send_to=send_to, msg=msg[:80])
+        self.log.debug('send-> {send_to} {msg}...', send_to=send_to,
+                       msg=msg[:80])
         omsg = 'PRIVMSG %s :' % (send_to,) + msg
         self.block_instance.tx_irc_client.sendLine(omsg.encode('ascii'))
 
@@ -486,15 +490,16 @@ class IRC_Market(CommSuper):
         self.send(self.channel, message)
 
     def __privmsg(self, nick, cmd, message):
-        self.log.debug('>>privmsg {nick}, {cmd}, {msg}...',
-                  nick=nick, cmd=cmd, msg=message[:80])
+        # self.log.debug('>>privmsg {nick}, {cmd}, {msg}...',
+        #           nick=nick, cmd=cmd, msg=message[:80])
         # should we encrypt?
         box, encrypt = self.__get_encryption_box(cmd, nick)
         # encrypt before chunking
         if encrypt:
             if not box:
-                self.log.debug('error, dont have encryption box object for {nick}, '
-                          'dropping message', nick=nick)
+                self.log.debug(
+                    'error, dont have encryption box object for {nick}, '
+                    'dropping message', nick=nick)
                 return
             message = encrypt_encode(message, box)
 
@@ -523,11 +528,14 @@ class IRC_Market(CommSuper):
                 maxsize = _chunks[3]
                 txfee = _chunks[4]
                 cjfee = _chunks[5]
-                self.log.debug('check_for_orders->on_order_seen',
-                          counterparty=counterparty, oid=oid,
-                          ordertype=ordertype,
-                          minsize=minsize, maxsize=maxsize,
-                          txfee=txfee, cjfee=cjfee)
+                self.log.debug(
+                        '->on_order_seen, counterparty={counterparty}, '
+                        'order type={ordertype}, '
+                        'minsize={minsize}, txfee={txfee}, cjfee={cjfee}',
+                        counterparty=counterparty, oid=oid,
+                        ordertype=ordertype,
+                        minsize=minsize, maxsize=maxsize,
+                        txfee=txfee, cjfee=cjfee)
                 self.cjp.on_order_seen(
                         counterparty, oid, ordertype, minsize, maxsize,
                         txfee, cjfee)
@@ -575,6 +583,7 @@ class IRC_Market(CommSuper):
                         taker_pk = _chunks[3]
                     except (ValueError, IndexError) as e:
                         self.send_error(nick, str(e))
+                    # todo: oid , amount, taker_pk referenced before assignment
                     self.cjp.on_order_fill(
                             nick, oid, amount, taker_pk)
                 elif _chunks[0] == 'auth':
@@ -583,6 +592,7 @@ class IRC_Market(CommSuper):
                         btc_sig = _chunks[2]
                     except (ValueError, IndexError) as e:
                         self.send_error(nick, str(e))
+                    # todo: i_utxo_pubkey, btc_sig referenced before assignment
                     self.cjp.on_seen_auth(nick, i_utxo_pubkey, btc_sig)
                 elif _chunks[0] == 'tx':
                     b64tx = _chunks[1]
@@ -602,7 +612,7 @@ class IRC_Market(CommSuper):
                 # TODO proper error handling
                 self.log.debug('cj peer error TODO handle')
 
-            # continue ^
+                # continue ^
 
     def __on_pubmsg(self, nick, message):
         if message[0] != COMMAND_PREFIX:
@@ -657,13 +667,14 @@ class IRC_Market(CommSuper):
                     cmd_string = message[1:].split(' ')[0]
                     if (cmd_string not in
                                 plaintext_commands + encrypted_commands):
-                        self.log.debug('cmd not in cmd_list', cmd_string=cmd_string)
+                        self.log.debug('cmd not in cmd_list',
+                                       cmd_string=cmd_string)
                         return
                     self.built_privmsg[nick] = [cmd_string, message[:-2]]
                 else:
                     self.built_privmsg[nick][1] += message[:-2]
                 box, encrypt = self.__get_encryption_box(
-                    self.built_privmsg[nick][0], nick)
+                        self.built_privmsg[nick][0], nick)
 
                 # todo: change format, use regex etc
                 if message[-1] == ';':
@@ -672,7 +683,8 @@ class IRC_Market(CommSuper):
                     self.waiting[nick] = False
                     if encrypt:
                         if not box:
-                            self.log.debug('no encryption box, dropping', nick=nick)
+                            self.log.debug('no encryption box, dropping',
+                                           nick=nick)
                             return
                         # need to decrypt everything after the command string
                         to_decrypt = ''.join(
@@ -700,13 +712,14 @@ class IRC_Market(CommSuper):
                 self.__on_pubmsg(nick, message)
             else:
                 self.log.debug('what is this?: {sent_from}, {sent_to}, {msg}',
-                          sent_from=sent_from, sent_to=sent_to,
-                          msg=message[:80])
+                               sent_from=sent_from, sent_to=sent_to,
+                               msg=message[:80])
         except JsonRpcError:
             self.log.failure('general I guess')
         except:
             self.log.failure('severe')
             self.shutdown()
+
 
 # -----------------------------------------------------
 # Twisted Infrastructure
@@ -714,7 +727,6 @@ class IRC_Market(CommSuper):
 
 
 class LogBotFactory(protocol.ClientFactory):
-
     def __init__(self, channel, the_cred):
         self.channel = channel
         self.the_cred = the_cred
@@ -738,7 +750,6 @@ ght_cred = {'nickname': 'anutxhg', 'password': '', 'hostname': 'localhost'}
 
 
 def tor_cyber():
-
     factory = LogBotFactory('#joinmarket-pit', ght_cred)
 
     ctx = ClientContextFactory()
@@ -752,7 +763,6 @@ def tor_cyber():
 
 
 def ssl_cyber():
-
     factory = LogBotFactory('#joinmarket-pit', ght_cred)
 
     ctx = ClientContextFactory()
@@ -762,21 +772,18 @@ def ssl_cyber():
 
 
 def home_nosec():
-
     factory = LogBotFactory('#anarchy', ght_cred)
 
     return reactor.connectTCP('192.168.1.200', 6667, factory)
 
 
 def localhost_nosec():
-
     factory = LogBotFactory('#anarchy', ght_cred)
 
     return reactor.connectTCP('localhost', 6667, factory)
 
 
 class BlockInstance(object):
-
     # todo: we need to do the instance collection thing
     instances = []
 
@@ -816,7 +823,6 @@ class BlockInstance(object):
         # socks5_host = config.get("MESSAGING", "socks5_host")
         # socks5_port = int(config.get("MESSAGING", "socks5_port"))
 
-
     def build_irc(self):
         if self.tx_irc_client:
             raise Exception('irc already built')
@@ -838,5 +844,6 @@ class BlockInstance(object):
                     serverport[0], serverport[1], factory)
         except:
             log.failure('build_irc')
+
 
 __all__ = ('random_nick', 'BlockInstance')

@@ -1,6 +1,7 @@
 #! /usr/bin/env python
 from __future__ import absolute_import, print_function
 
+import sys
 from twisted.internet import reactor
 from twisted.logger import Logger
 
@@ -9,16 +10,29 @@ from joinmarket.tumbler import build_objects as build_tumbler
 log = Logger()
 log.debug('wtf')
 
-def main():
 
-    argv = ['tumbler.py', '-N', '2', '0', '-a', '0', '-M', '5', '-w', '3', '-l', '0.2', '-s', '100000000', '4a1ea14', 'muvUXwYByQhMizhFRncLpuwyW4NpLYzPZq']
+def buildTumbler():
+    tumblr_argv = ['tumbler.py', '-N', '2', '0', '-a', '0', '-M', '5',
+                   '-w', '3', '-l', '0.2', '-s', '100000000', '59bf49a',
+                   'mhyGR4qBKDWoCdFZuzoSyVeCrphtPXtbgD']
 
-    log.debug('launching tumblrr: {}'.format(str(argv)))
-
-    block_inst = build_tumbler(argv)
-    block_inst.build_irc()
-    log.debug('done building')
+    log.debug('launchTumbler: {argv}', argv=tumblr_argv)
+    return build_tumbler(tumblr_argv)
 
 
-reactor.callWhenRunning(main)
-reactor.run()
+def main(tumbler):
+    try:
+        log.debug('reactor running')
+        tumbler.build_irc()
+    except:
+        log.failure('badness')
+
+
+def run():
+    tumbler = buildTumbler()
+    reactor.callWhenRunning(main, tumbler)
+    reactor.run()
+
+
+if __name__ == '__main__':
+    sys.exit(run())

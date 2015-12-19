@@ -12,23 +12,20 @@ from twisted.logger import Logger
 from joinmarket.yield_generator_basic import build_objects as build_yld
 from joinmarket.tumbler import build_objects as build_tumbler
 
-log = Logger()
-log.debug('wtf')
-
 import bitcoin as btc
 import joinmarket as jm
+
+log = Logger()
+log.debug('wtf')
 
 
 def buildWallets(argv=None):
     if argv is None:
         argv = sys.argv
 
-
     def printTumblr(args):
         for a in args:
             print(str(a))
-
-
         # start a tumbler
         amt = int(1e8)  # in satoshis
 
@@ -38,9 +35,9 @@ def buildWallets(argv=None):
         # default mixdepth source is zero, so will take coins from m 0.
         # see tumbler.py --h for details
 
-        av = ['tumbler.py', '-N', '2', '0', '-a', '0', '-M', '5', '-w',
-                '3', '-l', '0.2', '-s', str(amt), str(wallets[6]['seed']),
-                dest_address]
+        av = ['tumbler.py', '-N', '2', '0', '-a', '0', '-M', '5', '-w', '3',
+              '-l', '0.2', '-s', str(amt),
+              str(wallets[6]['seed']), dest_address]
 
         print(str(av))
 
@@ -78,7 +75,7 @@ def buildWallets(argv=None):
     printTumblr(argvv)
 
 
-def launchYields():
+def buildYields():
     yield_argv = [['btc_generator_basic.py', '79d18ce'],
                   ['btc_generator_basic.py', '41d158b'],
                   ['btc_generator_basic.py', 'c5417cf'],
@@ -86,30 +83,37 @@ def launchYields():
                   ['btc_generator_basic.py', '732ad8c'],
                   ['btc_generator_basic.py', '8bf5fcd']]
 
+    ylds = []
     for argv in yield_argv:
         log.debug('launchYield: {argv}', argv=argv)
-        build_yld(argv).build_irc()
+        ylds.append(build_yld(argv))
+
+    return ylds
 
 
-def launchTumbler():
+def buildTumbler():
     tumblr_argv = ['tumbler.py', '-N', '2', '0', '-a', '0', '-M', '5',
                    '-w', '3', '-l', '0.2', '-s', '100000000', '59bf49a',
                    'mhyGR4qBKDWoCdFZuzoSyVeCrphtPXtbgD']
 
     log.debug('launchTumbler: {argv}', argv=tumblr_argv)
-    build_tumbler(tumblr_argv).build_irc()
+    return [build_tumbler(tumblr_argv)]
 
 
-def main():
+def launch(insts):
     try:
-        # build_and_run()
-        launchYields()
-        reactor.callLater(10, launchTumbler)
+        for y in insts:
+            log.debug('launching for nick: {nick}', nick=y.nickname)
+            y.build_irc()
     except:
-        log.failure('badness')
+        log.failure('launch failed')
+
 
 def run():
-    reactor.callWhenRunning(main)
+    ylds = buildYields()
+    tumblers = buildTumbler()
+    reactor.callWhenRunning(launch, ylds)
+    reactor.callLater(30, launch, tumblers)
     reactor.run()
 
 

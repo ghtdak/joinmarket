@@ -5,7 +5,6 @@ import json
 import random
 import re
 import time
-import traceback
 import urllib
 from decimal import Decimal
 
@@ -28,7 +27,7 @@ from joinmarket.abstracts import BlockchainInterface
 from joinmarket.jsonrpc import JsonRpcConnectionError, JsonRpc
 from joinmarket.support import chunks, system_shutdown
 from joinmarket.configure import config, get_p2pk_vbyte, get_network
-from joinmarket.wallet import BitcoinCoreWallet
+
 
 log = Logger()
 
@@ -66,14 +65,6 @@ class CliJsonRpc(object):
             return res.strip()
 
 
-def is_index_ahead_of_cache(wallet, mix_depth, forchange):
-    if mix_depth >= len(wallet.index_cache):
-        return True
-    return wallet.index[mix_depth][forchange] >= wallet.index_cache[mix_depth][
-        forchange]
-
-
-
 class BlockrInterface(BlockchainInterface):
     BLOCKR_MAX_ADDR_REQ_COUNT = 20
 
@@ -84,87 +75,6 @@ class BlockrInterface(BlockchainInterface):
         self.network = 'testnet' if testnet else 'btc'
         self.blockr_domain = 'tbtc' if testnet else 'btc'
         self.last_sync_unspent = 0
-
-    def sync_addresses(self, wallet):
-        log.debug('downloading wallet history')
-        # sets Wallet internal indexes to be at the next unused address
-        for mix_depth in range(wallet.max_mix_depth):
-            for forchange in [0, 1]:
-                unused_addr_count = 0
-                last_used_addr = ''
-                while (unused_addr_count < wallet.gaplimit or
-                       not is_index_ahead_of_cache(wallet, mix_depth,
-                                                   forchange)):
-                    addrs = [wallet.get_new_addr(mix_depth, forchange)
-                             for _ in range(self.BLOCKR_MAX_ADDR_REQ_COUNT)]
-
-                    # TODO send a pull request to pybitcointools
-                    # because this surely should be possible with a function from it
-                    blockr_url = 'https://' + self.blockr_domain
-                    blockr_url += '.blockr.io/api/v1/address/txs/'
-
-                    # print 'downloading, lastusedaddr = ' + last_used_addr +
-                    #  ' unusedaddrcount= ' + str(unused_addr_count)
-
-                    res = btc.make_request(blockr_url + ','.join(addrs))
-                    data = json.loads(res)['data']
-                    for dat in data:
-                        if dat['nb_txs'] != 0:
-                            last_used_addr = dat['address']
-                            unused_addr_count = 0
-                        else:
-                            unused_addr_count += 1
-                if last_used_addr == '':
-                    wallet.index[mix_depth][forchange] = 0
-                else:
-                    wallet.index[mix_depth][forchange] = wallet.addr_cache[
-                        last_used_addr][
-                            2] + 1
-
-    def sync_unspent(self, wallet):
-        # finds utxos in the wallet
-        st = time.time()
-        # dont refresh unspent dict more often than 10 minutes
-        rate_limit_time = 10 * 60
-        if st - self.last_sync_unspent < rate_limit_time:
-            log.debug(
-                'blockr sync_unspent() happened too recently (%dsec), skipping'
-                % (st - self.last_sync_unspent))
-            return
-        wallet.unspent = {}
-
-        addrs = wallet.addr_cache.keys()
-        if len(addrs) == 0:
-            log.debug('no tx used')
-            return
-        i = 0
-        while i < len(addrs):
-            inc = min(len(addrs) - i, self.BLOCKR_MAX_ADDR_REQ_COUNT)
-            req = addrs[i:i + inc]
-            i += inc
-
-            # TODO send a pull request to pybitcointools
-            # unspent() doesnt tell you which address, you get a bunch of utxos
-            # but dont know which privkey to sign with
-
-            blockr_url = 'https://' + self.blockr_domain + \
-                         '.blockr.io/api/v1/address/unspent/'
-            res = btc.make_request(blockr_url + ','.join(req))
-            data = json.loads(res)['data']
-            if 'unspent' in data:
-                data = [data]
-            for dat in data:
-                for u in dat['unspent']:
-                    wallet.unspent[u['tx'] + ':' + str(u['n'])] = {
-                        'address': dat['address'],
-                        'value': int(u['amount'].replace('.', ''))
-                    }
-        for u in wallet.spent_utxos:
-            wallet.unspent.pop(u, None)
-
-        self.last_sync_unspent = time.time()
-        log.debug('blockr sync_unspent took ' + str((self.last_sync_unspent - st
-                                                    )) + 'sec')
 
     def add_tx_notify(self, trw):
         unconfirm_timeout = 10 * 60  # seconds
@@ -381,7 +291,8 @@ class JmZmq(object):
         except:
             log.failure('ZMQ failure')
 
-    def hexHashRaw(self, raw):
+    @staticmethod
+    def hexHashRaw(raw):
         # raw transaction (as provided by Zmq) to binhash
         return binascii.hexlify(
                 hashlib.sha256(
@@ -424,7 +335,8 @@ class MultiCast(DatagramProtocol):
     def datagramReceived(self, datagram, address):
         self.process(datagram)
 
-    def process(self, path):
+    @staticmethod
+    def process(path):
         log.debug(path)
         pages = ('/walletnotify?', '/alertnotify?')
 
@@ -513,10 +425,6 @@ class BitcoinCoreInterface(BlockchainInterface):
             self.zmq_server = JmZmq(endpoint)
         if 'notify_port' in config.options('BLOCKCHAIN'):
             self.start_http_server()
-
-    @staticmethod
-    def get_wallet_name(wallet):
-        return 'joinmarket-wallet-' + btc.dbl_sha256(wallet.keys[0][0])[:6]
 
     def rpc(self, method, args, immediate=False):
         """

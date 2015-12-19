@@ -91,13 +91,13 @@ class YieldGenerator(jm.Maker):
         change_value = my_total_in - amount - cjorder.txfee + real_cjfee
         if change_value <= jm.DUST_THRESHOLD:
             self.log.debug(('change value={} below dust threshold, '
-                       'finding new utxos'), change_value=change_value)
+                            'finding new utxos'), change_value=change_value)
             try:
                 utxos = self.wallet.select_utxos(
                     mixdepth, amount + self.block_instance.DUST_THRESHOLD)
             except Exception:
                 self.log.debug('dont have the required UTXOs to make a '
-                          'output above the dust threshold, quitting')
+                               'output above the dust threshold, quitting')
                 return None, None, None
 
         return utxos, cj_addr, change_addr
@@ -177,6 +177,9 @@ def build_objects(argv=None):
     wallet = jm.Wallet(seed, max_mix_depth=mix_levels)
 
     wallet.sync_wallet()
+
+    bbm = wallet.get_balance_by_mixdepth()
+    print('balance by mixdepth', bbm)
 
     log.debug('starting yield generator')
 

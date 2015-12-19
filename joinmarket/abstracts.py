@@ -12,6 +12,7 @@ from .configure import config
 
 log = Logger()
 
+
 class TransactionWatcher(object):
 
     def __init__(self, cjpeer):
@@ -85,7 +86,8 @@ class AbstractWallet(object):
     def __init__(self):
         self.max_mix_depth = 0
         self._nickname = 'unk'
-        self.log = Logger(self.nickname)
+        ns = self.__module__ + '@' + self._nickname
+        self.log = Logger(ns)
         self.utxo_selector = btc.select  # default fallback: upstream
         try:
             if config.get("POLICY", "merge_algorithm") == "gradual":
@@ -183,7 +185,7 @@ class CoinJoinerPeer(object):
         if name == 'msgchan':
             return self.block_instance.irc_market
         if name[:3] == 'on_':
-            log.debug('{} event not implemented'.format(name))
+            # log.debug('{} event not implemented'.format(name))
             return self.do_nothing
         else:
             raise AttributeError

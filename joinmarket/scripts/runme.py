@@ -38,12 +38,12 @@ respecting the JoinMarket protocol for its version.
 
 
 def main():
-    #create 2 new random wallets.
-    #put 10 coins into the first receive address
-    #to allow that bot to start.
-    wallets = make_wallets(2,
-        wallet_structures=[[1, 0, 0, 0, 0],
-                           [1, 0, 0, 0, 0]], mean_amt=10)
+    # create 2 new random wallets.
+    # put 10 coins into the first receive address
+    # to allow that bot to start.
+    wallets = make_wallets(
+            2, wallet_structures=[[1, 0, 0, 0, 0], [1, 0, 0, 0, 0]],
+            mean_amt=10)
 
     n = m = 2
     # for yield generator with wallet1
@@ -52,8 +52,8 @@ def main():
 
     btc_inst.build_irc()  # right away
 
-    #run a single sendpayment call with wallet2
-    amt = n * 100000000  #in satoshis
+    # run a single sendpayment call with wallet2
+    amt = n * 100000000  # in satoshis
     dest_address = btc.privkey_to_address(os.urandom(32),
                                           jm.get_p2pk_vbyte())
 
