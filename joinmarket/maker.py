@@ -21,59 +21,60 @@ from joinmarket.wallet import Wallet
 class CoinJoinOrder(TransactionWatcher):
 
     # todo: way too much stuff going on in init
-    def __init__(self, maker, nick, oid, amount, taker_pk):
+    def __init__(self, maker, nick, oid, cj_amount, taker_pk):
         super(CoinJoinOrder, self).__init__(maker)
+
         ns = self.__module__ + '@' + nick
         self.log = Logger(namespace=ns)
-        self.txd = None
-        self.i_utxo_pubkey = None
 
         self.maker = maker
-        self.block_instance = maker.block_instance
+        self.nick = nick
         self.oid = oid
-        self.cj_amount = amount
-        self.real_cjfee = None
-
-        if self.cj_amount <= DUST_THRESHOLD:
-            self.maker.msgchan.send_error(nick, 'amount below dust threshold')
+        self.cj_amount = cj_amount
 
         # the btc pubkey of the utxo that the taker plans to use as input
         self.taker_pk = taker_pk
+
+        self.ordertype = None
+        self.txfee = None
+        self.cjfee = None
+
+        # todo: get rid of self.block_instance
+        self.block_instance = maker.block_instance
+
+        self.txd = None
+        self.i_utxo_pubkey = None
+
+        self.real_cjfee = None
+
+        self.kp = None
+
+        self.utxos, self.cj_addr, self.change_addr = None, None, None
+
+    def initOrder(self, order):
+        self.ordertype = order['ordertype']
+        self.txfee = order['txfee']
+        self.cjfee = order['cjfee']
+
+    def initialize(self, utxos, cj_addr, change_address):
+        self.utxos = utxos
+        self.cj_addr = cj_addr
+        self.change_addr = change_address
+
 
         # create DH keypair on the fly for this Order object
         self.kp = init_keypair()
 
         # the encryption channel crypto box for this Order object
-        self.crypto_box = as_init_encryption(self.kp, init_pubkey(taker_pk))
-
-        order_s = [o for o in maker.orderlist if o['oid'] == oid]
-        if len(order_s) == 0:
-            self.maker.msgchan.send_error(nick, 'oid not found')
-
-        order = order_s[0]
-        if amount < order['minsize'] or amount > order['maxsize']:
-            self.maker.msgchan.send_error(nick, 'amount out of range')
-
-        self.ordertype = order['ordertype']
-        self.txfee = order['txfee']
-        self.cjfee = order['cjfee']
-        self.log.debug('new cjorder nick={nick} oid={oid} amount={amount}',
-                       nick=nick, oid=oid, amount=amount)
-
-        self.utxos, self.cj_addr, self.change_addr = maker.oid_to_order(
-            self, oid, amount)
-        self.maker.wallet.update_cache_index()
-        if not self.utxos:
-            self.maker.msgchan.send_error(
-                nick, 'unable to fill order constrained by dust avoidance')
+        self.crypto_box = as_init_encryption(
+                self.kp, init_pubkey(self.taker_pk))
 
         # TODO make up orders offers in a way that this error cant appear
         #  check nothing has messed up with the wallet code, remove this
         # code after a while
         # log.debug('maker utxos = ' + pprint.pformat(self.utxos))
         utxo_list = self.utxos.keys()
-        utxo_data = bc_interface.query_utxo_set(
-            utxo_list)
+        utxo_data = bc_interface.query_utxo_set(utxo_list)
         if None in utxo_data:
             self.log.error('using spent utxo')
             pprint.pprint(utxo_data)
@@ -96,7 +97,7 @@ class CoinJoinOrder(TransactionWatcher):
                 # always a new address even if the order ends up never being
                 # furfilled, you dont want someone pretending to fill all your
                 # orders to find out which addresses you use
-        self.maker.msgchan.send_pubkey(nick, self.kp.hex_pk())
+        self.maker.msgchan.send_pubkey(self.nick, self.kp.hex_pk())
 
     def __getattr__(self, name):
         # legacy support
@@ -260,20 +261,65 @@ class Maker(CoinJoinerPeer):
     def on_orderbook_requested(self, nick):
         self.msgchan.announce_orders(self.orderlist, nick)
 
-    def on_order_fill(self, nick, oid, amount, taker_pubkey):
+    def on_order_fill(self, nick, oid, cj_amount, taker_pubkey):
         self.log.debug('on_order_fill: {nick}, {oid}, {amount}', nick=nick,
-                       oid=oid, amount=amount)
+                       oid=oid, amount=cj_amount)
         if nick in self.active_orders and self.active_orders[nick] is not None:
             self.active_orders[nick] = None
             self.log.debug('had a partially filled order but starting over now')
 
         try:
-            cjo = CoinJoinOrder(self, nick, oid, amount, taker_pubkey)
-            # cjo.initialize()
+            # the following code was taken from inside the constructor
+            # of CoinJoinOrder
+
+            # todo: raise exception??
+            if cj_amount <= DUST_THRESHOLD:
+                self.msgchan.send_error(nick, 'amount below dust threshold')
+                self.log.error('amount={cj_amount} below dust threshold',
+                               cj_amount=cj_amount)
+
+            # todo: spaghetti hunt marker.  unwind code from CoinJoinOrder
+            # phase 1 - construct the object
+            cjo = CoinJoinOrder(self, nick, oid, cj_amount, taker_pubkey)
+
+            # todo: raise exception?
+            order_s = [o for o in self.orderlist if o['oid'] == oid]
+            if len(order_s) == 0:
+                self.msgchan.send_error(self.nick, 'oid not found')
+                self.log.error('oid not found: {oid}', oid=oid)
+
+            # todo: raise exception?
+            order = order_s[0]
+            if not (order['minsize'] < cj_amount < order['maxsize']):
+                self.msgchan.send_error(nick, 'amount out of range')
+                self.log.error('{low} < {cj_amount} < {high}',
+                               low=order['minsize'], cj_amount=cj_amount,
+                               high=order['maxsize'])
+
+            # phase 2 - add order
+            cjo.initOrder(order)
+
+            # beginning of phase 3 - get utxos et
+            utxos, cj_addr, change_addr = self.oid_to_order(
+                    cjo, oid, cj_amount)
+
+            # todo: are we still going ahead with the order?
+            if not utxos:
+                errmsg = 'unable to fill order constrained by dust avoidance'
+                self.msgchan.send_error(nick, errmsg)
+                log.error(errmsg)
+
+            # todo: moved.  is this right?
+            self.wallet.update_cache_index()
+
+            # end of phase 3 - exceptions can be thrown
+            cjo.initialize(utxos, cj_addr, change_addr)
         except:
             self.log.failure('creating CoinJoinOrder')
         else:
             self.active_orders[nick] = cjo
+            self.log.debug('new cjorder nick={nick} oid={oid} amount={amt}',
+                           nick=nick, oid=oid, amt=cj_amount)
 
     def on_seen_auth(self, nick, pubkey, sig):
         self.log.debug('on_seen_auth')

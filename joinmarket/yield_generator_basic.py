@@ -68,6 +68,7 @@ class YieldGenerator(jm.Maker):
                  'cjfee': cjfee}
         return [order]
 
+    # todo: spaghetti hunt marker.  info for constructing CoinJoinOrder
     def oid_to_order(self, cjorder, oid, amount):
         mix_balance = self.wallet.get_balance_by_mixdepth()
         max_mix = max(mix_balance, key=mix_balance.get)

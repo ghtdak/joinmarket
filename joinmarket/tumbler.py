@@ -234,8 +234,6 @@ class Tumbler(jm.Taker):
                 utxos = self.wallet.select_utxos(
                         tx['srcmixdepth'], total_amount)
 
-            self.log.debug('nickname problem: {nick}',
-                           nick=self.block_instance.nickname)
             cjtx = jm.CoinJoinTX(self, cj_amount, orders, utxos, destaddr,
                           change_addr, self.options.txfee)
 

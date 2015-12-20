@@ -91,7 +91,6 @@ class BlockrInterface(BlockchainInterface):
         @defer.inlineCallbacks
         def AsyncWebSucker():
             blockr_domain = self.blockr_domain
-            daemon = True
             tx_output_set = set([(sv['script'], sv['value']) for sv in trw.txd[
                 'outs']])
             output_addresses = [

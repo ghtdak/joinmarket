@@ -42,7 +42,7 @@ class Wallet(AbstractWallet):
         self.gaplimit = gaplimit
         self.keys = None
         self.index = None
-        self.doInit(seedarg, extend_mixdepth, max_mix_depth, gaplimit)
+        self.doInit(seedarg, extend_mixdepth, max_mix_depth)
 
     def doInit(self, seedarg, extend_mixdepth, max_mix_depth):
         # key is address, value is (mixdepth, forchange, index) if mixdepth =
