@@ -2,6 +2,7 @@ from __future__ import absolute_import, print_function
 
 import json
 import os
+import pprint
 from decimal import Decimal
 from getpass import getpass
 
@@ -83,9 +84,9 @@ class Wallet(AbstractWallet):
             else:
                 raise IOError('wallet file not found')
         self.path = path
-        fd = open(path, 'r')
-        walletfile = fd.read()
-        fd.close()
+        with open(path, 'r') as fd:
+            walletfile = fd.read()
+
         walletdata = json.loads(walletfile)
         if walletdata['network'] != get_network():
             system_shutdown('wallet network(%s) does not match '
@@ -136,9 +137,9 @@ class Wallet(AbstractWallet):
             return
         if not os.path.isfile(self.path):
             return
-        fd = open(self.path, 'r')
-        walletfile = fd.read()
-        fd.close()
+        with open(self.path, 'r') as fd:
+            walletfile = fd.read()
+
         walletdata = json.loads(walletfile)
         walletdata['index_cache'] = self.index
         walletfile = json.dumps(walletdata)
@@ -185,16 +186,19 @@ class Wallet(AbstractWallet):
         else:
             return self.imported_privkeys[ac[0]][ac[2]]
 
-    def remove_old_utxos(self, tx):
+    def remove_old_utxos(self, txd):
+
         removed_utxos = {}
-        for ins in tx['ins']:
+        for ins in txd['ins']:
             utxo = ins['outpoint']['hash'] + ':' + str(ins['outpoint']['index'])
             if utxo not in self.unspent:
                 continue
             removed_utxos[utxo] = self.unspent[utxo]
             del self.unspent[utxo]
-        # log.debug('removed utxos, wallet now is \n{}'.format(
-        #     self.get_utxos_by_mixdepth()))
+
+        self.log.debug('removed utxos, wallet:')
+        # print(pprint.pformat(self.get_utxos_by_mixdepth()))
+
         self.spent_utxos += removed_utxos.keys()
         return removed_utxos
 
@@ -208,8 +212,10 @@ class Wallet(AbstractWallet):
             utxo = txid + ':' + str(index)
             added_utxos[utxo] = addrdict
             self.unspent[utxo] = addrdict
-        # log.debug('added utxos, wallet now is \n{}'.format(
-        #     self.get_utxos_by_mixdepth()))
+        log.debug('added utxos, wallet:')
+
+        # print(pprint.pformat((self.get_utxos_by_mixdepth()))
+
         return added_utxos
 
     def get_utxos_by_mixdepth(self):

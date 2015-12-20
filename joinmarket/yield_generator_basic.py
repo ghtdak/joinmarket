@@ -68,7 +68,6 @@ class YieldGenerator(jm.Maker):
                  'cjfee': cjfee}
         return [order]
 
-    # todo: spaghetti hunt marker.  info for constructing CoinJoinOrder
     def oid_to_order(self, cjorder, oid, amount):
         mix_balance = self.wallet.get_balance_by_mixdepth()
         max_mix = max(mix_balance, key=mix_balance.get)
@@ -103,7 +102,6 @@ class YieldGenerator(jm.Maker):
 
         return utxos, cj_addr, change_addr
 
-    # todo: spaghetti hunt marker.  gets called by on_tx_confirmed?
     # also note that no superclass methods called
     def on_tx_unconfirmed(self, cjorder, txid, removed_utxos):
         self.tx_unconfirm_timestamp[cjorder.cj_addr] = int(time.time())
@@ -120,7 +118,6 @@ class YieldGenerator(jm.Maker):
         # announce new order, replacing the old order
         return [], [neworders[0]]
 
-    # todo: spaghetti hunt marker.  superclass callbacks missing
     def on_tx_confirmed(self, cjorder, confirmations, txid):
         # super(YieldGenerator, self).on_tx_confirmed(
         #         cjorder, confirmations, txid)

@@ -313,7 +313,7 @@ class JmZmq(object):
 
             txd = btc.json_changebase(btc.deserialize(msg),
                                 lambda x: btc.safe_hexlify(x))
-            # pprint.pprint(txd)
+            # print(pprint.pformat(txd))
             process_raw_tx(txd, txhash_hex)
 
 
@@ -372,16 +372,16 @@ def process_raw_tx(txd, txid):
         assert txdata is not None
         trw = bc_interface.txnotify_fun[tx_output_set]
         if txdata['confirmations'] == 0:
+            trw.log.debug('use receiver log: before unconfirmfun: {txid}',
+                          txid=txid)
             trw.unconfirmfun(txd, txid)
-            # TODO pass the total transfered amount value here somehow
-            # wallet_name = self.get_wallet_name()
-            # amount =
-            # bitcoin-cli move wallet_name "" amount
-            log.debug('unconfirmtx: {}'.format(txid))
+            trw.log.debug('use reeiver log: after unconfirmfun')
         else:
+            trw.log.debug('use receiver log: before confirmfun: {txid}',
+                          txid=txid)
             trw.send_confirm(txd, txid, txdata['confirmations'])
+            trw.log.debug('use receiver log: after confirmfun and CoNfIrMeDd')
             del bc_interface.txnotify_fun[tx_output_set]
-            log.debug('CoNfIrMeDd: {}'.format(txid))
 
 
 # noinspection PyMissingConstructor
@@ -489,7 +489,7 @@ class BitcoinCoreInterface(BlockchainInterface):
                 break
 
     def add_tx_notify(self, trw):
-        log.debug('add_tx_notify')
+        trw.log.debug('inside add_tx_notify')
         if not self.http_server:
             self.start_http_server()
 

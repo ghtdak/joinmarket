@@ -48,7 +48,7 @@ class TransactionWatcher(object):
         self.d_confirm.callback((txd, txid, txdata))
 
     def unconfirmfun(self, txd, txid):
-        pass
+        self.log.error('UNIMPLEMENTED ERROR - not gonna rais it tho')
 
 
 class BlockchainInterface(object):

@@ -41,22 +41,24 @@ class SendPayment(jm.Taker):
         self.daemon = True
         self.ignored_makers = []
 
-    # -------------------------------------------------------------------
-    # takerSibling section - was a separate object in a previous life
-    # includes callbacks
-    # -------------------------------------------------------------------
+    def on_welcome(self):
+        log.debug('on_welcome')
+        super(SendPayment, self).on_welcome()
+        # todo: self.waittime seemed too short. ???
+        # reactor.callLater(self.waittime, self.create_tx)
+        reactor.callLater(self.waittime, self.create_tx)
 
     def create_tx(self):
         log.debug('sendpayment: create_tx called')
         crow = self.db.execute('SELECT COUNT(DISTINCT counterparty) FROM '
                                'orderbook;').fetchone()
-        # log.debug('counterparty counting: {}'.format(crow))
+
         counterparty_count = crow['COUNT(DISTINCT counterparty)']
         counterparty_count -= len(self.ignored_makers)
         if counterparty_count < self.makercount:
             log.info('{:d} of {:d} not enough counterparties to fill order, '
                      'ending'.format(counterparty_count, self.makercount))
-            # self.msgchan.shutdown(0)
+            # todo: this is shutdown unless reschedule
             return
 
         change_addr = None
@@ -93,18 +95,12 @@ class SendPayment(jm.Taker):
             cjamount = self.amount
             change_addr = self.wallet.get_change_addr(self.mixdepth)
 
-        # self.start_cj(self.wallet, cjamount, orders, utxos,
-        #                     self.destaddr, change_addr, self.txfee,
-        #                     self.finishcallback, choose_orders_recover)
-        # instead, do...
-
         # todo: this could be broken
         jm.CoinJoinTX(self, cjamount, orders, utxos, self.destaddr,
                       change_addr, self.txfee)
 
+
     def finishcallback(self, coinjointx):
-        # log.debug('sendpayment->finishcallback: {}...'.format(
-        #         str(coinjointx)[:20]))
         if coinjointx.all_responded:
             coinjointx.self_sign_and_push()
             log.debug('created fully signed tx, ending')
@@ -115,9 +111,22 @@ class SendPayment(jm.Taker):
             self.ignored_makers))
         reactor.callLater(2.0, self.create_tx)
 
-    # todo: spaghetti hunt marker
+    def choose_orders_recover(self, cj_amount, makercount, nonrespondants=None,
+                              active_nicks=None):
+        """
+        another way of not using function pointers.
+        :param cj_amount:
+        :param makercount:
+        :param nonrespondants:
+        :param active_nicks:
+        :return:
+        """
+
+        return self.sendpayment_choose_orders(
+                cj_amount, makercount, nonrespondants, active_nicks)
+
     def sendpayment_choose_orders(self, cj_amount, makercount,
-                                  nonrespondants=None, active_nicks=None):
+                              nonrespondants=None, active_nicks=None):
 
         if nonrespondants is None:
             nonrespondants = []
@@ -131,9 +140,6 @@ class SendPayment(jm.Taker):
 
         if not orders:
             return None, 0
-
-        # log.info('chosen orders to fill {} totalcjfee={}'.format(orders,
-        #                                                          total_cj_fee))
 
         if not self.answeryes:
             if len(self.ignored_makers) > 0:
@@ -152,20 +158,6 @@ class SendPayment(jm.Taker):
                 return None, -1
 
         return orders, total_cj_fee
-
-    # todo: spaghetti hunt marker
-    choose_orders_recover = sendpayment_choose_orders
-
-    # --------------------------------------------------------
-    # taker stuff
-    # --------------------------------------------------------
-
-    def on_welcome(self):
-        log.debug('on_welcome')
-        super(SendPayment, self).on_welcome()
-        # todo: self.waittime seemed too short. ???
-        # reactor.callLater(self.waittime, self.create_tx)
-        reactor.callLater(self.waittime, self.create_tx)
 
 
 def build_objects(argv=None):
@@ -275,7 +267,6 @@ def build_objects(argv=None):
                         options.makercount, options.txfee, options.waittime,
                         options.mixdepth, options.answeryes)
 
-    # todo: spaghetti hunt marker
     if options.pickorders and amount != 0:  # cant use for sweeping
         taker.chooseOrdersFunc = taker.pick_order
     elif options.choosecheapest:

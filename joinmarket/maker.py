@@ -12,7 +12,7 @@ from joinmarket.abstracts import TransactionWatcher
 from joinmarket.blockchaininterface import bc_interface
 from joinmarket.configure import DUST_THRESHOLD, get_p2pk_vbyte
 from joinmarket.enc_wrapper import init_keypair, as_init_encryption, init_pubkey
-from joinmarket.support import calc_cj_fee, debug_dump_object
+from joinmarket.support import calc_cj_fee, debug_dump_object, system_shutdown
 from joinmarket.taker import CoinJoinerPeer
 from joinmarket.txirc import BlockInstance
 from joinmarket.wallet import Wallet
@@ -61,7 +61,6 @@ class CoinJoinOrder(TransactionWatcher):
         self.cj_addr = cj_addr
         self.change_addr = change_address
 
-
         # create DH keypair on the fly for this Order object
         self.kp = init_keypair()
 
@@ -77,11 +76,9 @@ class CoinJoinOrder(TransactionWatcher):
         utxo_data = bc_interface.query_utxo_set(utxo_list)
         if None in utxo_data:
             self.log.error('using spent utxo')
-            pprint.pprint(utxo_data)
+
             raise Exception('spent utxo')
-            # system_shutdown('wrongly using an already spent utxo. '
-            #                 'utxo_data = '.format(pprint.pformat(utxo_data)))
-            # sys.exit(0)
+
         for utxo, data in zip(utxo_list, utxo_data):
             if self.utxos[utxo]['value'] != data['value']:
                 # fmt = 'wrongly labeled utxo, expected value: {} got {}'.format
@@ -158,14 +155,13 @@ class CoinJoinOrder(TransactionWatcher):
         self.maker.active_orders[nick] = None
 
     def unconfirmfun(self, txd, txid):
-        self.log.debug('unconfirmfun: {txid}', txid=txid)
 
-        # todo: spaghetti hunt marker
         removed_utxos = self.maker.wallet.remove_old_utxos(self.txd)
 
-        # log.debug('saw tx on network,
-        # removed_utxos=\n{}'.format(pprint.pformat(
-        #     removed_utxos)))
+        self.log.debug('unconfirmfun: {txid}', txid=txid)
+        self.log.debug('removed_utxos')
+        # print(pprint.pformat(removed_utxos))
+
         to_cancel, to_announce = self.maker.on_tx_unconfirmed(
                 self, txid, removed_utxos)
         self.maker.modify_orders(to_cancel, to_announce)
@@ -179,7 +175,6 @@ class CoinJoinOrder(TransactionWatcher):
         self.log.debug('confirmed: {txid}, earned:{earned}',
                        txid=txid, earned=self.real_cjfee - self.txfee)
 
-        # todo: spaghetti hunt marker
         to_cancel, to_announce = self.maker.on_tx_confirmed(
                 self, confirmations, txid)
         self.maker.modify_orders(to_cancel, to_announce)
@@ -278,7 +273,6 @@ class Maker(CoinJoinerPeer):
                 self.log.error('amount={cj_amount} below dust threshold',
                                cj_amount=cj_amount)
 
-            # todo: spaghetti hunt marker.  unwind code from CoinJoinOrder
             # phase 1 - construct the object
             cjo = CoinJoinOrder(self, nick, oid, cj_amount, taker_pubkey)
 

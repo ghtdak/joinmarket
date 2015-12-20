@@ -2,6 +2,7 @@
 from __future__ import absolute_import, print_function
 
 import base64
+import pprint
 import random
 import sqlite3
 import sys
@@ -142,8 +143,7 @@ class CoinJoinTX(TransactionWatcher):
         bci = bc_interface
         utxo_data = bci.query_utxo_set(self.utxos[nick])
         if None in utxo_data:
-            # self.log.debug(('ERROR outputs unconfirmed or already spent. '
-            #            'utxo_data={}').format(pprint.pformat(utxo_data)))
+            self.log.debug('ERROR outputs unconfirmed or already spent. ')
             # when internal reviewing of makers is created, add it here to
             # immediately quit
             return
@@ -211,7 +211,6 @@ class CoinJoinTX(TransactionWatcher):
         random.shuffle(self.utxo_tx)
         random.shuffle(self.outputs)
         tx = btc.mktx(self.utxo_tx, self.outputs)
-        # self.log.debug('obtained tx\n' + pprint.pformat(btc.deserialize(tx)))
         self.msgchan.send_tx(self.active_orders.keys(), tx)
 
         self.txd = btc.deserialize(tx)
@@ -243,8 +242,7 @@ class CoinJoinTX(TransactionWatcher):
                 continue
             utxo[ctr] = [index, utxo_for_checking]
             ctr += 1
-        utxo_data = bc_interface.query_utxo_set([x[
-            1] for x in utxo.values()])
+        utxo_data = bc_interface.query_utxo_set([x[1] for x in utxo.values()])
 
         # insert signatures
         for i, u in utxo.iteritems():
@@ -325,46 +323,15 @@ class CoinJoinTX(TransactionWatcher):
         self.self_sign()
         self.push(self.txd)
 
+    def unconfirmfun(self, txd, txid):
+        self.log.debug('unconfirmfun and I don\'t care')
+
     def watchdog_timeout(self):
         self.log.debug('nonresponding makers: {nonrespondents}',
                        nonrespondents=self.nonrespondants)
 
-        # if there is no choose_orders_recover then end and call finishcallback
-        # so the caller can handle it in their own way, notable for sweeping
-        # where simply replacing the makers wont work
-        # todo: this should be handled by subclassing.  The default
-
         # was finishcallback
         self.d_phase1.callback(self)
-
-        # if self.latest_tx is None:
-        #     # nonresponding to !fill, recover by finding another maker
-        #     self.log.debug('nonresponse to !fill')
-        #
-        #     for nr in self.nonrespondants:
-        #         del self.active_orders[nr]
-        #
-        #     def from_choose((new_orders, new_makers_fee)):
-        #         for nick, order in new_orders.iteritems():
-        #             self.active_orders[nick] = order
-        #
-        #         self.nonrespondants = list(new_orders.keys())
-        #
-        #         self.msgchan.fill_orders(new_orders, self.cj_amount,
-        #                                  self.kp.hex_pk())
-        #
-        #     defer.maybeDeferred(
-        #             self.taker.choose_orders_recover,
-        #             self.cj_amount, len(self.nonrespondants),
-        #             self.nonrespondants,
-        #             self.active_orders.keys()).addCallback(from_choose)
-        #
-        # else:
-        #     self.log.debug('nonresponse to !sig')
-        #     # nonresponding to !sig, have to restart tx from the beginning
-        #     self.taker.finishcallback(self)
-        #     # finishcallback will check if self.all_responded is True and
-        #     # will know it came from here
 
     class Watchdog(object):
 
@@ -473,7 +440,6 @@ class Taker(OrderbookWatch):
         self.sibling = None
         # part of the great function rewriting
 
-        # todo: spaghetti hunt marker.  Is this right?
         self._chooseOrdersFunc = self.cheapest_order_choose
 
     @property
@@ -492,17 +458,7 @@ class Taker(OrderbookWatch):
     def choose_orders_recover(
             self, cj_amount, makercount, nonrespondants=None,
             active_nicks=None):
-        pass
-
-    def finishcallback(self, coinjointx):
-        pass
-
-    def does_recover(self):
-        """
-        not enitirely sure.  the coinjointx code has an option...
-        :return:
-        """
-        return True
+        raise NotImplementedError()
 
     # ----------------------------------------
 
@@ -562,17 +518,17 @@ class Taker(OrderbookWatch):
         cjfee this is done in advance of the order selection algo, so applies to
         all of them. however, if orders are picked manually, allow duplicates.
         """
-        # todo: spaghetti hunt marker
         if self.chooseOrdersFunc != self.pick_order:
             orders = sorted(
                 dict((v[0], v) for v in sorted(
                         orders, key=feekey, reverse=True)).values(), key=feekey)
         else:
-            orders = sorted(orders,
-                            key=feekey)  # sort from smallest to biggest cj fee
+            # sort from smallest to biggest cj fee
+            orders = sorted(orders, key=feekey)
 
-        self.log.debug(
-                'considered orders = \n' + '\n'.join([str(o) for o in orders]))
+        for n, o in enumerate(orders):
+            self.log.debug('candidate orders[{n}]: {o}', n=n, o=o)
+
         total_cj_fee = 0
         chosen_orders = []
         for i in range(n):
@@ -581,9 +537,9 @@ class Taker(OrderbookWatch):
             orders = [o for o in orders if o[0] != chosen_order[0]]
             chosen_orders.append(chosen_order)
             total_cj_fee += chosen_order[2]
-        self.log.debug(
-                'chosen orders = \n' + '\n'.join(
-                        [str(o) for o in chosen_orders]))
+
+        for n, o in enumerate(chosen_orders):
+            self.log.debug('selected orders[{n}]: {o}', n=n, o=o)
         chosen_orders = [o[:2] for o in chosen_orders]
         return dict(chosen_orders), total_cj_fee
 
@@ -704,8 +660,9 @@ class Taker(OrderbookWatch):
             cjamount = int(cjamount.quantize(Decimal(1)))
             return cjamount, int(sumabsfee + sumrelfee * cjamount)
 
-        self.log.debug('choosing sweep orders for total_input_value = ' + str(
-            total_input_value))
+        self.log.debug('choosing sweep orders for total_input_value = {tiv}',
+                       tiv=total_input_value)
+
         sqlorders = db.execute('SELECT * FROM orderbook WHERE minsize <= ?;',
                                (total_input_value,)).fetchall()
         orderkeys = ['counterparty', 'oid', 'ordertype', 'minsize', 'maxsize',

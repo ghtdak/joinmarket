@@ -45,7 +45,6 @@ class CreateUnsignedTx(jm.Taker):
 
         utxos = self.taker.utxo_data
         change_addr = None
-        # todo: spaghetti hunt marker
         if self.taker.cjamount == 0:
             total_value = sum([va['value'] for va in utxos.values()])
             orders, cjamount = self.choose_sweep_orders(
@@ -143,7 +142,6 @@ class CreateUnsignedTx(jm.Taker):
                 return None, -1
         return orders, total_cj_fee
 
-    # todo: spaghetti hunt marker
     choose_orders_recover = sendpayment_choose_orders
 
     def on_welcome(self):
@@ -276,7 +274,6 @@ def build_objects(argv=None):
     taker = CreateUnsignedTx(block_instance, wallet, auth_utxo, cjamount,
                              destaddr, changeaddr, utxo_data, options)
 
-    # todo: spaghetti hunt marker
     if options.pickorders and cjamount != 0:  # cant use for sweeping
         taker.chooseOrdersFunc = taker.pick_order
     elif options.choosecheapest:

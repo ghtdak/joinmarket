@@ -99,44 +99,14 @@ class Tumbler(jm.Taker):
         self.log.debug('that was %d tx out of %d' %
                        (self.current_tx + 1, len(self.tx_list)))
 
+
+    # todo: both of these should go
     def confirm_callback(self, txd, txid, confirmations):
         self.log.error('confirm_callback shouldn\'t be called')
-        # self.log.debug('confirm_callback',txd=txd, txid=txid)
-        # if self.confirmDefer:
-        #     self.confirmDefer.callback((txd, txid, confirmations))
-        #     self.confirmDefer = None
 
-    #     self.wallet.add_new_utxos(txd, txid)
-        # previous twiddling of the conditional lock...
-
-    # todo: a kludge for now until we understand how to re-architect
-    # finish etc
     def finishcallback(self, coinjointx):
         log.error('finishcallback no call')
-        # we have our own version of double spend
-        # d = coinjointx.cb_deferred
-        # coinjointx.cb_deferred = None
-        # if d:
-        #     d.callback(coinjointx)
 
-    #     if coinjointx.all_responded:
-    #         jm.bc_interface.add_tx_notify(
-    #                 coinjointx.latest_tx,
-    #                 self.unconfirm_callback,
-    #                 self.confirm_callback,
-    #                 coinjointx.my_cj_addr)
-    #
-    #         self.wallet.remove_old_utxos(coinjointx.latest_tx)
-    #         coinjointx.self_sign_and_push()
-    #     else:
-    #         self.ignored_makers += coinjointx.nonrespondants
-    #         self.log.debug('recreating the tx, ignored_makers=' + str(
-    #             self.ignored_makers))
-    #         self.create_tx()
-
-    # because it has sleep, we do the deferred thing
-    # todo: this polling is unnecessary.  Register for callback
-    # 'in the right place'
 
     @defer.inlineCallbacks
     def tumbler_choose_orders(self, cj_amount, makercount,
@@ -150,7 +120,6 @@ class Tumbler(jm.Taker):
         orders, total_cj_fee = None, None
         while True:
 
-            # todo: spaghetti hunt marker
             self.chooseOrdersFunc = self.weighted_order_choose
             orders, total_cj_fee = self.choose_orders(
                 self.db, cj_amount, makercount,
@@ -178,7 +147,6 @@ class Tumbler(jm.Taker):
 
         defer.returnValue((orders, total_cj_fee))
 
-    # todo: spaghetti hunt marker
     choose_orders_recover = tumbler_choose_orders
 
     @defer.inlineCallbacks
@@ -240,7 +208,8 @@ class Tumbler(jm.Taker):
             coinjointx = yield cjtx.phase1()
 
             if coinjointx.all_responded:
-                jm.bc_interface.add_tx_notify(coinjointx)
+                # todo: moved inside CJTX...
+                # jm.bc_interface.add_tx_notify(coinjointx)
 
                 self.wallet.remove_old_utxos(coinjointx.txd)
                 coinjointx.self_sign_and_push()
@@ -511,7 +480,6 @@ def build_objects(argv=None):
     for srcmixdepth, txlist in tx_dict.iteritems():
         dbg_tx_list.append({'srcmixdepth': srcmixdepth, 'tx': txlist})
     log.debug('tumbler transaction list', tx_dict=tx_dict)
-    # pprint(dbg_tx_list)
 
     total_wait = sum([tx['wait'] for tx in tx_list])
     print('creates ' + str(len(tx_list)) + ' transactions in total')
