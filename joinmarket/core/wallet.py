@@ -10,24 +10,20 @@ import time
 from twisted.logger import Logger
 
 import bitcoin as btc
-from joinmarket.abstracts import AbstractWallet
-from joinmarket.blockchaininterface import BitcoinCoreInterface, bc_interface
-from joinmarket.configure import get_network, get_p2pk_vbyte
-from joinmarket.jsonrpc import JsonRpcError
-from joinmarket.slowaes import decryptData
-from joinmarket.support import system_shutdown
+from .abstracts import AbstractWallet
+from .blockchaininterface import BitcoinCoreInterface, bc_interface
+from .configure import get_network, get_p2pk_vbyte
+from .jsonrpc import JsonRpcError
+from .slowaes import decryptData
+from .support import system_shutdown
 
 log = Logger()
 
 
 class Wallet(AbstractWallet):
 
-    def __init__(self,
-                 seedarg,
-                 max_mix_depth=2,
-                 gaplimit=6,
-                 extend_mixdepth=False,
-                 storepassword=False):
+    def __init__(self, seedarg, max_mix_depth=2, gaplimit=6,
+                 extend_mixdepth=False, storepassword=False):
         super(Wallet, self).__init__()
         self.max_mix_depth = max_mix_depth
         self.storepassword = storepassword
@@ -46,8 +42,10 @@ class Wallet(AbstractWallet):
         self.doInit(seedarg, extend_mixdepth, max_mix_depth)
 
     def doInit(self, seedarg, extend_mixdepth, max_mix_depth):
-        # key is address, value is (mixdepth, forchange, index) if mixdepth =
-        #  -1 it's an imported key and index refers to imported_privkeys
+        """
+        key is address, value is (mixdepth, forchange, index) if mixdepth =
+        -1 it's an imported key and index refers to imported_privkeys
+        """
         self.seed = self.read_wallet_file_data(seedarg)
         if extend_mixdepth and len(self.index_cache) > max_mix_depth:
             self.max_mix_depth = len(self.index_cache)
@@ -257,7 +255,6 @@ class Wallet(AbstractWallet):
 
 
     def sync_addresses(self):
-
         self.log.debug('requesting wallet history')
         wallet_name = self.get_wallet_name()
         addr_req_count = 20

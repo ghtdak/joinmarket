@@ -7,7 +7,7 @@ from optparse import OptionParser
 from twisted.internet import defer, reactor
 from twisted.logger import Logger
 
-import joinmarket as jm
+import joinmarket.core as jm
 
 log = Logger()
 

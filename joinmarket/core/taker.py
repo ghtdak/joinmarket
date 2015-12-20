@@ -13,11 +13,11 @@ from twisted.internet import defer, reactor
 from twisted.logger import Logger
 
 import bitcoin as btc
-from joinmarket.abstracts import CoinJoinerPeer, TransactionWatcher
-from joinmarket.blockchaininterface import bc_interface
-from joinmarket.configure import get_p2pk_vbyte, maker_timeout_sec
-from joinmarket.enc_wrapper import init_keypair, as_init_encryption, init_pubkey
-from joinmarket.support import calc_cj_fee
+from .abstracts import CoinJoinerPeer, TransactionWatcher
+from .blockchaininterface import bc_interface
+from .configure import get_p2pk_vbyte, maker_timeout_sec
+from .enc_wrapper import init_keypair, as_init_encryption, init_pubkey
+from .support import calc_cj_fee
 
 log = Logger()
 

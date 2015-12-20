@@ -8,14 +8,13 @@ from twisted.internet import defer, reactor
 from twisted.logger import Logger
 
 import bitcoin as btc
-from joinmarket.abstracts import TransactionWatcher
-from joinmarket.blockchaininterface import bc_interface
-from joinmarket.configure import DUST_THRESHOLD, get_p2pk_vbyte
-from joinmarket.enc_wrapper import init_keypair, as_init_encryption, init_pubkey
-from joinmarket.support import calc_cj_fee, debug_dump_object, system_shutdown
-from joinmarket.taker import CoinJoinerPeer
-from joinmarket.txirc import BlockInstance
-from joinmarket.wallet import Wallet
+from .abstracts import TransactionWatcher, CoinJoinerPeer
+from .blockchaininterface import bc_interface
+from .configure import DUST_THRESHOLD, get_p2pk_vbyte
+from .enc_wrapper import init_keypair, as_init_encryption, init_pubkey
+from .support import calc_cj_fee, debug_dump_object, system_shutdown
+from .txirc import BlockInstance
+from .wallet import Wallet
 
 
 class CoinJoinOrder(TransactionWatcher):

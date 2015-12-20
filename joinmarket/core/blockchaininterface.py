@@ -22,11 +22,11 @@ import treq
 from txzmq import ZmqEndpoint, ZmqFactory, ZmqSubConnection
 
 import bitcoin as btc
-from joinmarket.abstracts import BlockchainInterface
+from .abstracts import BlockchainInterface
 
-from joinmarket.jsonrpc import JsonRpcConnectionError, JsonRpc
-from joinmarket.support import chunks, system_shutdown
-from joinmarket.configure import config, get_p2pk_vbyte, get_network
+from .jsonrpc import JsonRpcConnectionError, JsonRpc
+from .support import chunks, system_shutdown
+from .configure import config, get_p2pk_vbyte, get_network
 
 
 log = Logger()
@@ -442,8 +442,8 @@ class BitcoinCoreInterface(BlockchainInterface):
         return res
 
     def add_watchonly_addresses(self, addr_list, wallet_name):
-        log.debug('importing ' + str(len(addr_list)) +
-                  ' addresses into account ' + wallet_name)
+        log.debug('importing {numaddr} addresses into account {acct}',
+                  numaddr=len(addr_list), acct=wallet_name)
         for addr in addr_list:
             self.rpc('importaddress',
                      [addr, wallet_name, False],

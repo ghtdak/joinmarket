@@ -7,7 +7,7 @@ from twisted.logger import Logger
 from configparser import NoSectionError
 
 import bitcoin as btc
-from joinmarket.support import select_gradual, select_greedy, select_greediest
+from .support import select_gradual, select_greedy, select_greediest
 from .configure import config
 
 log = Logger()

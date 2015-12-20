@@ -13,10 +13,10 @@ from twisted.words.protocols import irc
 from txsocksx.client import SOCKS5ClientEndpoint
 from txsocksx.tls import TLSWrapClientEndpoint
 
-from joinmarket.configure import get_config_irc_channel
-from joinmarket.enc_wrapper import encrypt_encode, decode_decrypt
-from joinmarket.jsonrpc import JsonRpcError
-from joinmarket.support import chunks
+from .configure import get_config_irc_channel
+from .enc_wrapper import encrypt_encode, decode_decrypt
+from .jsonrpc import JsonRpcError
+from .support import chunks
 
 log = Logger()
 log.debug('Twisted Logging Starts in txirc')
@@ -40,7 +40,6 @@ class txIRC_Client(irc.IRCClient, object):
         self.log = Logger(namespace=ns)
 
         # todo: build pong timeout watchdot
-        # self.heartbeattimeout = 30
 
     def __getattr__(self, name):
         if name == 'irc_market':

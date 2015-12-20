@@ -7,7 +7,7 @@ import time
 
 from twisted.logger import Logger
 
-import joinmarket as jm
+import joinmarket.core as jm
 
 # from joinmarket.jsonrpc import tb_stack_set
 
