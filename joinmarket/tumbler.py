@@ -94,7 +94,6 @@ class Tumbler(jm.Taker):
         self.balance_by_mixdepth = {}
         self.current_tx = None
 
-
     @defer.inlineCallbacks
     def tumbler_choose_orders(self, cj_amount, makercount,
                               nonrespondants=None, active_nicks=None):
@@ -124,7 +123,7 @@ class Tumbler(jm.Taker):
                 continue
             if orders is None:
                 self.log.debug('waiting for liquidity',
-                          delay=self.options.liquiditywait)
+                               delay=self.options.liquiditywait)
 
                 yield jm.sleepGenerator(self.options.liquiditywait)
                 continue
@@ -154,7 +153,7 @@ class Tumbler(jm.Taker):
                         tx['makercount'], self.ignored_makers)
                     if orders is None:
                         self.log.debug('waiting for liquidity ',
-                                  delay=self.options.liquiditywait)
+                                       delay=self.options.liquiditywait)
                         yield jm.sleepGenerator(self.options.liquiditywait)
                         continue
                     abs_cj_fee = 1.0 * (
@@ -165,7 +164,7 @@ class Tumbler(jm.Taker):
                     if rel_cj_fee > self.options.maxcjfee[
                             0] and abs_cj_fee > self.options.maxcjfee[1]:
                         self.log.debug('cj fee higher than maxcjfee, waiting ',
-                                  delay=self.options.liquiditywait)
+                                       delay=self.options.liquiditywait)
                         jm.sleepGenerator(self.options.liquiditywait)
                         continue
                     break
@@ -201,7 +200,7 @@ class Tumbler(jm.Taker):
                     raise
 
             cjtx = jm.CoinJoinTX(self, cj_amount, orders, utxos, destaddr,
-                          change_addr, self.options.txfee)
+                                 change_addr, self.options.txfee)
 
             coinjointx = yield cjtx.phase1()
 

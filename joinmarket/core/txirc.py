@@ -25,8 +25,10 @@ log.debug('Twisted Logging Starts in txirc')
 
 
 class txIRC_Client(irc.IRCClient, object):
-    # lineRate is a class variable in the superclass used to limit
-    # messages / second.  heartbeat is what you'd think
+    """
+    lineRate is a class variable in the superclass used to limit
+    messages / second.  heartbeat is what you'd think
+    """
     lineRate = 1
     heartbeatinterval = 60
 
@@ -53,10 +55,6 @@ class txIRC_Client(irc.IRCClient, object):
             raise AttributeError
 
 
-    # def lineReceived(self, line):
-    #     # std_log.debug('lineReceived', line)
-    #     return irc.IRCClient.lineReceived(self, line)
-
     # --------------------------------------------------
     # stochastic line delay simulation
     # --------------------------------------------------
@@ -71,6 +69,9 @@ class txIRC_Client(irc.IRCClient, object):
 
     def dccSend(self, user, _file):
         return irc.IRCClient.dccSend(self, user, _file)
+
+    def rawDataReceived(self, data):
+        log.error('rawDataReceived shouldn\'t be called')
 
     def connectionMade(self):
         self.log.debug('connectionMade: ')

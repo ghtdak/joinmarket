@@ -8,7 +8,7 @@ from twisted.logger import Logger
 
 from twisted.internet import reactor
 
-import joinmarket as jm
+import joinmarket.core as jm
 
 log = Logger()
 
@@ -99,7 +99,6 @@ class SendPayment(jm.Taker):
         jm.CoinJoinTX(self, cjamount, orders, utxos, self.destaddr,
                       change_addr, self.txfee)
 
-
     def finishcallback(self, coinjointx):
         if coinjointx.all_responded:
             coinjointx.self_sign_and_push()
@@ -126,7 +125,7 @@ class SendPayment(jm.Taker):
                 cj_amount, makercount, nonrespondants, active_nicks)
 
     def sendpayment_choose_orders(self, cj_amount, makercount,
-                              nonrespondants=None, active_nicks=None):
+                                  nonrespondants=None, active_nicks=None):
 
         if nonrespondants is None:
             nonrespondants = []

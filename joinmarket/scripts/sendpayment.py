@@ -3,7 +3,7 @@ from __future__ import absolute_import, print_function
 from twisted.logger import Logger
 from twisted.internet import reactor
 
-import joinmarket as jm
+import joinmarket.core as jm
 from joinmarket.sendpayment import build_objects
 
 log = Logger()

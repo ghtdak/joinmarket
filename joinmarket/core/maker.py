@@ -44,6 +44,7 @@ class CoinJoinOrder(TransactionWatcher):
         self.real_cjfee = None
 
         self.kp = None
+        self.crypto_box = None
 
         self.utxos, self.cj_addr, self.change_addr = None, None, None
 
@@ -109,7 +110,7 @@ class CoinJoinOrder(TransactionWatcher):
         btc_pub = btc.privtopub(btc_key)
         btc_sig = btc.ecdsa_sign(self.kp.hex_pk(), btc_key)
         self.msgchan.send_ioauth(nick, self.utxos.keys(), btc_pub,
-                                       self.change_addr, btc_sig)
+                                 self.change_addr, btc_sig)
         return True
 
     def recv_tx(self, nick, txhex):
@@ -194,8 +195,10 @@ class CoinJoinOrder(TransactionWatcher):
                                       self.cj_amount)
         expected_change_value = (
             my_total_in - self.cj_amount - self.txfee + self.real_cjfee)
-        self.log.debug('potentially earned = {}'.format(self.real_cjfee -
-                                                   self.txfee))
+
+        self.log.debug('potentially earned = {}'.format(
+                self.real_cjfee - self.txfee))
+
         self.log.debug('exchange info', cj_addr=self.cj_addr,
                   change_addr=self.change_addr)
 

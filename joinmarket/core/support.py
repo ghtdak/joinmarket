@@ -208,7 +208,6 @@ def calc_cj_fee(ordertype, cjfee, cj_amount):
     return real_cjfee
 
 
-
 def debug_dump_object(obj, skip_fields=None):
     if skip_fields is None:
         skip_fields = []

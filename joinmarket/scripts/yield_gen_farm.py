@@ -13,7 +13,7 @@ from joinmarket.yield_generator_basic import build_objects as build_yld
 from joinmarket.tumbler import build_objects as build_tumbler
 
 import bitcoin as btc
-import joinmarket as jm
+import joinmarket.core as jm
 
 log = Logger()
 log.debug('wtf')

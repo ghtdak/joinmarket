@@ -14,7 +14,7 @@ from twisted.internet import reactor
 from twisted.logger import Logger
 from twisted.web import server, resource
 
-import joinmarket as jm
+import joinmarket.core as jm
 
 matplotlib.use('Agg')
 # noinspection PyPep8
@@ -168,17 +168,19 @@ def create_orderbook_table(db, btc_unit, rel_unit):
 
 
 def create_table_heading(btc_unit, rel_unit):
-    col = '  <th>{1}</th>\n'  # .format(field,label)
-    tableheading = '<table class="tftable sortable" border="1">\n <tr>' + ''.join(
-        [
-            col.format('ordertype', 'Type'), col.format(
-                'counterparty', 'Counterparty'), col.format('oid', 'Order ID'),
-            col.format('cjfee', 'Fee'), col.format(
-                'txfee', 'Miner Fee Contribution / ' + btc_unit), col.format(
-                    'minsize', 'Minimum Size / ' + btc_unit), col.format(
-                        'maxsize', 'Maximum Size / ' + btc_unit)
-        ]) + ' </tr>'
-    return tableheading
+
+    # .format(field,label)
+    pre = '<table class="tftable sortable" border="1">\n <tr>'
+    col = '  <th>{1}</th>\n'
+    tableheading = ''.join(
+            [col.format('ordertype', 'Type'),
+             col.format('counterparty', 'Counterparty'),
+             col.format('oid', 'Order ID'),
+             col.format('cjfee', 'Fee'),
+             col.format('txfee', 'Miner Fee Contribution / ' + btc_unit),
+             col.format('minsize', 'Minimum Size / ' + btc_unit),
+             col.format('maxsize', 'Maximum Size / ' + btc_unit)])
+    return pre + tableheading + ' </tr>'
 
 
 def create_choose_units_form(selected_btc, selected_rel):
@@ -292,7 +294,7 @@ class OrderbookPageRequestHeader(resource.Resource):
             }
         elif path.startswith('/depth'):
             # if path[6] == '?':
-            #	quantity =
+            # quantity =
             cj_amounts = [10**cja for cja in range(4, 12, 1)]
             mainbody = [create_depth_chart(self.taker.db, cja, args) \
                         for cja in cj_amounts] + \

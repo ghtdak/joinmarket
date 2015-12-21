@@ -191,7 +191,7 @@ class CoinJoinTX(TransactionWatcher):
         self.log.debug(
                 totalin=my_total_in, my_txfee=my_txfee,
                 makers_txfee=self.maker_txfee_contributions,
-                      cjfee_total=self.cjfee_total,
+                cjfee_total=self.cjfee_total,
                 changevalue=my_change_value)
 
         if self.my_change_addr is None:
@@ -701,7 +701,7 @@ class Taker(OrderbookWatch):
                 # remove all orders from that same counterparty
                 available_orders = [o for o in available_orders
                                     if o[0]['counterparty'] !=
-                                    chosen_order[0][ 'counterparty']]
+                                    chosen_order[0]['counterparty']]
                 chosen_orders.append(chosen_order)
             # calc cj_amount and check its in range
             cj_amount, total_fee = calc_zero_change_cj_amount(chosen_orders)
@@ -717,7 +717,6 @@ class Taker(OrderbookWatch):
                        for o in chosen_orders])
         self.log.debug('cj amount = {cj_amount}', cj_amount=cj_amount)
         return result, cj_amount
-
 
 
 def sign_donation_tx(tx, i, priv):

@@ -9,7 +9,7 @@ from optparse import OptionParser
 
 import bitcoin as btc
 
-import joinmarket as jm
+import joinmarket.core as jm
 
 # structure for cj market wallet
 # m/0/ root key

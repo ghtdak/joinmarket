@@ -123,11 +123,6 @@ class BlockrInterface(BlockchainInterface):
                 # seriously weird bug with blockr.io
                 random.shuffle(output_addresses)
 
-                # it started out looking like this
-                # data = json.loads(
-                #         btc.make_request(blockr_url + ','.join(
-                #                 self.output_addresses) + '?unconfirmed=1'))['data']
-
                 # >>> A non-blocking call (Black Magic)
                 res = yield treq.get('{}?unconfirmed=1'.format(
                     blockr_url + ','.join(output_addresses)))

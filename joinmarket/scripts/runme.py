@@ -10,14 +10,14 @@ import os
 
 # from .commontest import make_wallets
 
-from joinmarket.test.commontest import make_wallets
+from joinmarket.core.test.commontest import make_wallets
 
 from joinmarket.yield_generator_basic import build_objects as btc_gen_build
 from joinmarket.sendpayment import build_objects as sendpay_build
 
 import bitcoin as btc
 
-import joinmarket as jm
+import joinmarket.core as jm
 
 log = Logger()
 """

@@ -9,7 +9,7 @@ from twisted.logger import Logger
 from twisted.internet import reactor
 
 import bitcoin as btc
-import joinmarket as jm
+import joinmarket.core as jm
 from joinmarket.sendpayment import check_high_fee
 
 
