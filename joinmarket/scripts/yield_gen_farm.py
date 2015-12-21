@@ -102,18 +102,35 @@ def buildTumbler():
 
 def launch(insts):
     try:
-        for y in insts:
+        for n, y in enumerate(insts):
             log.debug('launching for nick: {nick}', nick=y.nickname)
-            y.build_irc()
+
+            # stagger startup by a second
+            reactor.callLater(n, y.build_irc)
     except:
         log.failure('launch failed')
 
 
 def run():
-    ylds = buildYields()
-    tumblers = buildTumbler()
-    reactor.callWhenRunning(launch, ylds)
-    reactor.callLater(30, launch, tumblers)
+    w = 'tumbler'
+    if len(sys.argv) > 1:
+        w = sys.argv[1]
+    log.debug('choice: {w}', w=w)
+    if w == 'both':
+        log.debug('running both')
+        ylds = buildYields()
+        tumblers = buildTumbler()
+        reactor.callWhenRunning(launch, ylds)
+        reactor.callLater(30, launch, tumblers)
+    elif w == 'yields':
+        log.debug('running yields')
+        ylds = buildYields()
+        reactor.callWhenRunning(launch, ylds)
+    else:
+        log.debug('running tumbler')
+        tumblers = buildTumbler()
+        reactor.callWhenRunning(launch, tumblers)
+
     reactor.run()
 
 

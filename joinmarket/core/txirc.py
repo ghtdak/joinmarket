@@ -5,6 +5,8 @@ import base64
 import random
 import traceback
 
+import collections
+
 from twisted.internet import reactor, protocol
 from twisted.internet.endpoints import TCP4ClientEndpoint
 from twisted.internet.ssl import ClientContextFactory
@@ -39,6 +41,9 @@ class txIRC_Client(irc.IRCClient, object):
         ns = self.__module__ + '@' + self.nickname
         self.log = Logger(namespace=ns)
 
+        # stochastic network delay support
+        self._receiveQ = []
+
         # todo: build pong timeout watchdot
 
     def __getattr__(self, name):
@@ -47,27 +52,29 @@ class txIRC_Client(irc.IRCClient, object):
         else:
             raise AttributeError
 
-    # ---------------------------------------------
-    # callbacks from superclass
-    # ---------------------------------------------
 
-    def _reallySendLine(self, line):
-        # log.debug('_reallySendLine: {}...'.format(line[:40]))
-        return irc.IRCClient._reallySendLine(self, line)
+    # def lineReceived(self, line):
+    #     # std_log.debug('lineReceived', line)
+    #     return irc.IRCClient.lineReceived(self, line)
+
+    # --------------------------------------------------
+    # stochastic line delay simulation
+    # --------------------------------------------------
 
     def lineReceived(self, line):
-        # std_log.debug('lineReceived', line)
-        return irc.IRCClient.lineReceived(self, line)
+        self._receiveQ.append(line)
+        delay = 0.05 + 0.2 * random.random()
+        reactor.callLater(delay, self._jm_reallyReceive)
 
-    def rawDataReceived(self, data):
-        # std_log.debug('rawDataReceived', data)
-        return irc.IRCClient.rawDataReceived(self, data)
+    def _jm_reallyReceive(self):
+        return irc.IRCClient.lineReceived(self, self._receiveQ.popleft())
 
     def dccSend(self, user, _file):
         return irc.IRCClient.dccSend(self, user, _file)
 
     def connectionMade(self):
         self.log.debug('connectionMade: ')
+        self._receiveQ = collections.deque()
         reactor.callLater(0.0, self.irc_market.connectionMade)
         return irc.IRCClient.connectionMade(self)
 
@@ -75,6 +82,10 @@ class txIRC_Client(irc.IRCClient, object):
         self.log.debug('connectionLost: {}'.format(reason))
         reactor.callLater(0.0, self.irc_market.connectionLost, reason)
         return irc.IRCClient.connectionLost(self, reason)
+
+    # ---------------------------------------------
+    # callbacks from superclass
+    # ---------------------------------------------
 
     def signedOn(self):
         self.log.debug('signedOn:')
@@ -90,18 +101,6 @@ class txIRC_Client(irc.IRCClient, object):
 
         reactor.callLater(0.0, self.irc_market.handle_privmsg,
                           userIn, channel, msg)
-
-        # user = userIn.split('!', 1)[0]
-        #
-        # if channel == self.nickname:
-        #     msg = "tradingBot -- testing"
-        #     self.msg(user, msg)
-        #     return
-        #
-        # if msg.startswith(self.nickname + ":"):
-        #     msg = '{}: tradingBot -- testing'.format(user)
-        #     self.msg(channel, msg)
-        #     std_log.debug('- sent: {} {}'.format((self.nickname, msg)))
 
     def action(self, user, channel, msg):
         self.log.debug('action: {user}, {channel}, {msg}',

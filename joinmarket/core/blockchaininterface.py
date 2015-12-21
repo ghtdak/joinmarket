@@ -490,8 +490,6 @@ class BitcoinCoreInterface(BlockchainInterface):
 
     def add_tx_notify(self, trw):
         trw.log.debug('inside add_tx_notify')
-        if not self.http_server:
-            self.start_http_server()
 
         one_addr_imported = False
         for outs in trw.txd['outs']:

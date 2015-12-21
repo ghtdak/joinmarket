@@ -1,6 +1,7 @@
 from __future__ import absolute_import, print_function
 
 import abc
+import pprint
 
 from twisted.internet import defer
 from twisted.logger import Logger
@@ -17,6 +18,9 @@ class TransactionWatcher(object):
 
     def __init__(self, cjpeer):
         self.cjpeer = cjpeer
+        self.block_instance = self.cjpeer.block_instance
+        self.msgchan = self.block_instance.irc_market
+
         ns = self.__module__ + '@' + cjpeer.nickname
         self.log = Logger(namespace=ns)
 
@@ -145,21 +149,28 @@ class AbstractWallet(object):
     def add_new_utxos(self, tx, txid):
         return
 
-    # todo: looks like way too much code for an abstract interface
     def select_utxos(self, mixdepth, amount):
         utxo_list = self.get_utxos_by_mixdepth()[mixdepth]
         unspent = [{'utxo': utxo,
                     'value': addrval['value']}
                    for utxo, addrval in utxo_list.iteritems()]
-        inputs = self.utxo_selector(unspent, amount)
+
+        self.log.debug('select_utxos unspent')
+        print(pprint.pformat(unspent))
+        try:
+            inputs = self.utxo_selector(unspent, amount)
+        except:
+            self.log.debug('insufficient funds')
+            raise
+
         log.debug('for mixdepth={} amount={} selected:'.format(
                 mixdepth, amount))
-        # log.debug('select_utxos: {}'.format(inputs))
-        return dict([(i['utxo'], {'value': i['value'],
-                                  'address': utxo_list[i['utxo']]['address']})
+
+        return dict([(i['utxo'],
+                      {'value': i['value'],
+                       'address': utxo_list[i['utxo']]['address']})
                      for i in inputs])
 
-    # todo: looks like way too much code for an abstract interface
     def get_balance_by_mixdepth(self):
         mix_balance = {}
         for m in range(self.max_mix_depth):
@@ -176,14 +187,19 @@ class CoinJoinerPeer(object):
         ns = self.__module__ + '@' + block_instance.nickname
         self.log = Logger(namespace=ns)
         self.block_instance = block_instance
-        self.nickname = block_instance.nickname  # convenience - unsafe?
+        self.msgchan = self.block_instance.irc_market
+        self.nickname = self.block_instance.nickname  # convenience - unsafe?
 
         # not the cleanest but it automates what would be an extra step
         self.block_instance.set_coinjoinerpeer(self)
 
     def __getattr__(self, name):
-        if name == 'msgchan':
-            return self.block_instance.irc_market
+        """
+        This is probably a little risky.  If an on_<whatever> gets called
+        on an object which doesn't have it, do nothing -
+        :param name:
+        :return:
+        """
         if name[:3] == 'on_':
             # log.debug('{} event not implemented'.format(name))
             return self.do_nothing

@@ -23,9 +23,6 @@ class CoinJoinOrder(TransactionWatcher):
     def __init__(self, maker, nick, oid, cj_amount, taker_pk):
         super(CoinJoinOrder, self).__init__(maker)
 
-        ns = self.__module__ + '@' + nick
-        self.log = Logger(namespace=ns)
-
         self.maker = maker
         self.nick = nick
         self.oid = oid
@@ -72,6 +69,8 @@ class CoinJoinOrder(TransactionWatcher):
         # code after a while
         # log.debug('maker utxos = ' + pprint.pformat(self.utxos))
         utxo_list = self.utxos.keys()
+        self.log.debug('utxo_list')
+        print(pprint.pformat(utxo_list))
         utxo_data = bc_interface.query_utxo_set(utxo_list)
         if None in utxo_data:
             self.log.error('using spent utxo')
@@ -93,14 +92,7 @@ class CoinJoinOrder(TransactionWatcher):
                 # always a new address even if the order ends up never being
                 # furfilled, you dont want someone pretending to fill all your
                 # orders to find out which addresses you use
-        self.maker.msgchan.send_pubkey(self.nick, self.kp.hex_pk())
-
-    def __getattr__(self, name):
-        # legacy support
-        if name == 'msgchan':
-            return self.block_instance.irc_market
-        else:
-            raise AttributeError
+        self.msgchan.send_pubkey(self.nick, self.kp.hex_pk())
 
     def auth_counterparty(self, nick, i_utxo_pubkey, btc_sig):
         self.i_utxo_pubkey = i_utxo_pubkey
@@ -116,7 +108,7 @@ class CoinJoinOrder(TransactionWatcher):
         btc_key = self.maker.wallet.get_key_from_addr(self.cj_addr)
         btc_pub = btc.privtopub(btc_key)
         btc_sig = btc.ecdsa_sign(self.kp.hex_pk(), btc_key)
-        self.maker.msgchan.send_ioauth(nick, self.utxos.keys(), btc_pub,
+        self.msgchan.send_ioauth(nick, self.utxos.keys(), btc_pub,
                                        self.change_addr, btc_sig)
         return True
 
@@ -124,12 +116,12 @@ class CoinJoinOrder(TransactionWatcher):
         try:
             self.txd = btc.deserialize(txhex)
         except IndexError as e:
-            self.maker.msgchan.send_error(nick, 'malformed txhex. ' + repr(e))
+            self.msgchan.send_error(nick, 'malformed txhex. ' + repr(e))
         # log.debug('obtained tx\n' + pprint.pformat(self.tx))
         goodtx, errmsg = self.verify_unsigned_tx(self.txd)
         if not goodtx:
             self.log.debug('not a good tx, reason=' + errmsg)
-            self.maker.msgchan.send_error(nick, errmsg)
+            self.msgchan.send_error(nick, errmsg)
         # TODO: the above 3 errors should be encrypted, but it's a bit messy.
         self.log.debug('goodtx')
         sigs = []
@@ -149,8 +141,8 @@ class CoinJoinOrder(TransactionWatcher):
         self.d_confirm = defer.Deferred()
         self.d_confirm.addCallback(self.confirmfun)
 
-        self.log.debug('sending sigs{sigs}...', sigs=sigs[:80])
-        self.maker.msgchan.send_sigs(nick, sigs)
+        self.log.debug('sending sigs{sigs}...', sigs=str(sigs)[:80])
+        self.msgchan.send_sigs(nick, sigs)
         self.maker.active_orders[nick] = None
 
     def unconfirmfun(self, txd, txid):
@@ -307,8 +299,8 @@ class Maker(CoinJoinerPeer):
 
             # end of phase 3 - exceptions can be thrown
             cjo.initialize(utxos, cj_addr, change_addr)
-        except:
-            self.log.failure('creating CoinJoinOrder')
+        except Exception as e:
+            self.log.error('creating CoinJoinOrder: except={e}', e=e)
         else:
             self.active_orders[nick] = cjo
             self.log.debug('new cjorder nick={nick} oid={oid} amount={amt}',

@@ -282,7 +282,6 @@ class CoinJoinTX(TransactionWatcher):
             if ins['script'] == 'deadbeef':
                 ins['script'] = ''
 
-        # self.taker.finishcallback(self)
         bc_interface.add_tx_notify(self)
         self.d_phase1.callback(self)
 
@@ -674,8 +673,8 @@ class Taker(OrderbookWatch):
         # uncomment this and comment previous two lines for faster runtime but
         # less readable output
         # orderlist = sqlorders
-        for n, order in enumerate(orderlist):
-            self.log.debug('orderlist: {n}, {order}', n=n, order=order)
+
+        print(pprint.pformat(orderlist))
 
         # choose N amount of orders
         available_orders = [(o, calc_cj_fee(o['ordertype'], o['cjfee'],
@@ -711,8 +710,8 @@ class Taker(OrderbookWatch):
                 maxsize = c[0]['maxsize']
                 if cj_amount > maxsize or cj_amount < minsize:
                     chosen_orders.remove(c)
-            for n, c in enumerate(chosen_orders):
-                self.log.debug('chosen: {n}, {chosen}', n=n, chosen=c)
+
+            print(pprint.pformat(chosen_order))
 
         result = dict([(o[0]['counterparty'], o[0]['oid'])
                        for o in chosen_orders])

@@ -94,19 +94,6 @@ class Tumbler(jm.Taker):
         self.balance_by_mixdepth = {}
         self.current_tx = None
 
-    def unconfirm_callback(self, txd, txid):
-        self.log.debug('unconfirm_callback', txd=txd, txid=txid)
-        self.log.debug('that was %d tx out of %d' %
-                       (self.current_tx + 1, len(self.tx_list)))
-
-
-    # todo: both of these should go
-    def confirm_callback(self, txd, txid, confirmations):
-        self.log.error('confirm_callback shouldn\'t be called')
-
-    def finishcallback(self, coinjointx):
-        log.error('finishcallback no call')
-
 
     @defer.inlineCallbacks
     def tumbler_choose_orders(self, cj_amount, makercount,
@@ -189,18 +176,29 @@ class Tumbler(jm.Taker):
                     destaddr = None
                 else:
                     cj_amount = int(tx['amount_fraction'] * balance)
+
                 if cj_amount < self.options.mincjamount:
                     self.log.debug('cj amount too low, bringing up')
                     cj_amount = self.options.mincjamount
+
                 change_addr = self.wallet.get_change_addr(tx[
                     'srcmixdepth'])
+
                 self.log.debug('coinjoining ', cj_amount=cj_amount)
+
                 orders, total_cj_fee = yield self.tumbler_choose_orders(
                         cj_amount, tx['makercount'])
+
                 total_amount = cj_amount + total_cj_fee + self.options.txfee
+
                 self.log.debug('total amount spent', total_amount=total_amount)
-                utxos = self.wallet.select_utxos(
-                        tx['srcmixdepth'], total_amount)
+
+                try:
+                    utxos = self.wallet.select_utxos(
+                            tx['srcmixdepth'], total_amount)
+                except:
+                    self.log.debug('insuffient funds')
+                    raise
 
             cjtx = jm.CoinJoinTX(self, cj_amount, orders, utxos, destaddr,
                           change_addr, self.options.txfee)
@@ -243,7 +241,11 @@ class Tumbler(jm.Taker):
                       ' try again')
         else:
             destaddr = tx['destination']
-        yield self.create_tx(tx, sweep, balance, destaddr)
+        try:
+            yield self.create_tx(tx, sweep, balance, destaddr)
+        except:
+            self.log.debug('insufficient funds, stopping')
+            raise
         waitTime = tx['wait'] * 60
         self.log.debug('sleeping for {waitTime}', waitTime=waitTime)
         yield jm.sleepGenerator(waitTime)
@@ -263,7 +265,9 @@ class Tumbler(jm.Taker):
         maker_count = sum([tx['makercount'] for tx in self.tx_list])
 
         # todo: this needs cleanup
-        self.log.debug('status', maker_count=maker_count, relorder_fee=relorder_fee)
+        self.log.debug('status', maker_count=maker_count,
+                       relorder_fee=relorder_fee)
+
         self.log.debug('uses ' + str(maker_count) + ' makers, at ' + str(
                 relorder_fee * 100) + '% per maker, estimated total cost ' + str(
                 round((1 - (1 - relorder_fee)**maker_count) * 100, 3)) + '%')
@@ -281,12 +285,16 @@ class Tumbler(jm.Taker):
                 if later_tx['srcmixdepth'] == tx['srcmixdepth']:
                     sweep = False
             self.current_tx = i
-            yield self.init_tx(
-                    tx, self.balance_by_mixdepth[tx['srcmixdepth']], sweep)
+            try:
+                yield self.init_tx(
+                        tx, self.balance_by_mixdepth[tx['srcmixdepth']], sweep)
+            except:
+                log.debug('exception, probably insufficient funds')
+                break
 
         self.log.debug('total finished')
-        # todo: turn those machines back on!!!
-        # self.msgchan.shutdown()
+        jm.system_shutdown(0)
+
 
     def on_welcome(self):
         super(Tumbler, self).on_welcome()
@@ -521,6 +529,7 @@ def build_objects(argv=None):
     wallet = jm.Wallet(wallet_file, max_mix_depth=mmd)
 
     wallet.sync_wallet()
+    wallet.nickname = nickname  # logging support
 
     log.debug('balancd by mixdepth: {bbm}',
               bbm=wallet.get_balance_by_mixdepth())
