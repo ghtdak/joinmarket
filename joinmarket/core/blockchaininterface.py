@@ -11,6 +11,7 @@ from decimal import Decimal
 # This can be removed once CliJsonRpc is gone.
 import subprocess
 
+import collections
 import binascii
 from twisted.web import server as twisted_server
 from twisted.web import resource as twisted_resource
@@ -356,6 +357,8 @@ def process_raw_tx(txd, txid):
     tx_output_set = frozenset([(sv['script'], sv['value'])
                                for sv in txd['outs']])
 
+    hashout = hash(tx_output_set)
+
     if tx_output_set in bc_interface.txnotify_fun:
         # on rare occasions people spend their output without waiting
         #  for a confirm
@@ -365,17 +368,18 @@ def process_raw_tx(txd, txid):
             if txdata is not None:
                 break
         assert txdata is not None
-        trw = bc_interface.txnotify_fun[tx_output_set]
+
+        # todo: the one shared object
+        trw_set = bc_interface.txnotify_fun[tx_output_set]
         if txdata['confirmations'] == 0:
-            trw.log.debug('use receiver log: before unconfirmfun: {txid}',
-                          txid=txid)
-            trw.unconfirmfun(txd, txid)
-            trw.log.debug('use reeiver log: after unconfirmfun')
+            log.debug('unconfirmfun: {txid}, {hash}', txid=txid, hash=hashout)
+            for trw in trw_set:
+                trw.unconfirmfun(txd, txid)
         else:
-            trw.log.debug('use receiver log: before confirmfun: {txid}',
-                          txid=txid)
-            trw.send_confirm(txd, txid, txdata['confirmations'])
-            trw.log.debug('use receiver log: after confirmfun and CoNfIrMeDd')
+            log.debug('CoNfIrMeDd: {txid}, {hash}', txid=txid, hash=hashout)
+            for trw in trw_set:
+                trw.send_confirm(txd, txid, txdata['confirmations'])
+
             del bc_interface.txnotify_fun[tx_output_set]
 
 
@@ -412,8 +416,9 @@ class BitcoinCoreInterface(BlockchainInterface):
             raise Exception('wrong network configured')
 
         self.http_server = None
-        self.txnotify_fun = {}
-        self.wallet_synced = False
+        self.zmq_server = None
+
+        self.txnotify_fun = collections.defaultdict(set)
         if 'zmq_endpoint' in config.options('BLOCKCHAIN'):
             endpoint = config.get('BLOCKCHAIN', 'zmq_endpoint')
             self.zmq_server = JmZmq(endpoint)
@@ -484,7 +489,6 @@ class BitcoinCoreInterface(BlockchainInterface):
                 break
 
     def add_tx_notify(self, trw):
-        trw.log.debug('inside add_tx_notify')
 
         one_addr_imported = False
         for outs in trw.txd['outs']:
@@ -492,13 +496,20 @@ class BitcoinCoreInterface(BlockchainInterface):
             if self.rpc('getaccount', [addr]) != '':
                 one_addr_imported = True
                 break
+
         if not one_addr_imported:
             self.rpc('importaddress',
                      [trw.cj_addr, 'joinmarket-notify', False],
                      immediate=True)
+
         tx_output_set = frozenset([(sv['script'], sv['value'])
                                    for sv in trw.txd['outs']])
-        self.txnotify_fun[tx_output_set] = trw
+
+        trw.log.debug('inside add_tx_notify hash: {hash}',
+                  hash=hash(tx_output_set))
+
+        # todo: the one shared object... dangerous and beautiful
+        self.txnotify_fun[tx_output_set].add(trw)
 
     def pushtx(self, txhex):
         try:

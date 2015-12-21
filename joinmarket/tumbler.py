@@ -93,6 +93,18 @@ class Tumbler(jm.Taker):
         self.sweeping = False
         self.balance_by_mixdepth = {}
         self.current_tx = None
+        self.started = False
+
+    def on_welcome(self):
+        """
+        When reconnect is enabled, this could be a problem
+        :return:
+        """
+        if not self.started:
+            self.started = True
+            super(Tumbler, self).on_welcome()
+            self.log.debug('waiting for all orders to  arrive')
+            reactor.callLater(self.options.waittime, self.start)
 
     @defer.inlineCallbacks
     def tumbler_choose_orders(self, cj_amount, makercount,
@@ -289,16 +301,12 @@ class Tumbler(jm.Taker):
                         tx, self.balance_by_mixdepth[tx['srcmixdepth']], sweep)
             except:
                 log.debug('exception, probably insufficient funds')
+                print('-+' * 40)
                 break
 
         self.log.debug('total finished')
-        jm.system_shutdown(0)
-
-
-    def on_welcome(self):
-        super(Tumbler, self).on_welcome()
-        self.log.debug('waiting for all orders to  arrive')
-        reactor.callLater(self.options.waittime, self.start)
+        # todo: shutdown policy needed
+        # jm.system_shutdown(0)
 
 
 def build_objects(argv=None):

@@ -3,15 +3,17 @@ from __future__ import absolute_import, print_function
 import json
 import os
 import pprint
+import time
 from decimal import Decimal
 from getpass import getpass
 
-import time
+from configparser import NoSectionError
 from twisted.logger import Logger
 
 import bitcoin as btc
 from .abstracts import AbstractWallet
 from .blockchaininterface import BitcoinCoreInterface, bc_interface
+from .configure import config
 from .configure import get_network, get_p2pk_vbyte
 from .jsonrpc import JsonRpcError
 from .slowaes import decryptData
@@ -19,14 +21,66 @@ from .support import system_shutdown
 
 log = Logger()
 
+class LessAbstractWallet(AbstractWallet):
+    """
+    Abstract Wallet wasn't sufficiently abstract
+    """
 
-class Wallet(AbstractWallet):
+    def __init__(self):
+        super(LessAbstractWallet, self).__init__()
+        self.utxo_selector = btc.select  # default fallback: upstream
+        try:
+            if config.get("POLICY", "merge_algorithm") == "gradual":
+                self.utxo_selector = select_gradual
+            elif config.get("POLICY", "merge_algorithm") == "greedy":
+                self.utxo_selector = select_greedy
+            elif config.get("POLICY", "merge_algorithm") == "greediest":
+                self.utxo_selector = select_greediest
+            elif config.get("POLICY", "merge_algorithm") != "default":
+                raise Exception("Unknown merge algorithm")
+        except NoSectionError:
+            pass
+
+    def select_utxos(self, mixdepth, amount):
+        utxo_list = self.get_utxos_by_mixdepth()[mixdepth]
+        unspent = [{'utxo': utxo,
+                    'value': addrval['value']}
+                   for utxo, addrval in utxo_list.iteritems()]
+
+        self.log.debug('select_utxos unspent')
+        # print(pprint.pformat(unspent))
+        try:
+            inputs = self.utxo_selector(unspent, amount)
+        except:
+            self.log.debug('insufficient funds')
+            raise
+
+        log.debug('for mixdepth={} amount={} selected:'.format(
+                mixdepth, amount))
+
+        return dict([(i['utxo'],
+                      {'value': i['value'],
+                       'address': utxo_list[i['utxo']]['address']})
+                     for i in inputs])
+
+    def get_balance_by_mixdepth(self):
+        mix_balance = {}
+        for m in range(self.max_mix_depth):
+            mix_balance[m] = 0
+        for mixdepth, utxos in self.get_utxos_by_mixdepth().iteritems():
+            mix_balance[mixdepth] = sum([addrval['value']
+                                         for addrval in utxos.values()])
+        return mix_balance
+
+
+class Wallet(LessAbstractWallet):
 
     def __init__(self, seedarg, max_mix_depth=2, gaplimit=6,
                  extend_mixdepth=False, storepassword=False):
         super(Wallet, self).__init__()
         self.max_mix_depth = max_mix_depth
         self.storepassword = storepassword
+        self.wallet_synced = False
         self.addr_cache = {}
         self.unspent = {}
         self.spent_utxos = []
@@ -161,7 +215,7 @@ class Wallet(AbstractWallet):
         # self.update_cache_index()
         if isinstance(bc_interface, BitcoinCoreInterface):
             # do not import in the middle of sync_wallet()
-            if bc_interface.wallet_synced:
+            if self.wallet_synced:
                 if bc_interface.rpc('getaccount', [addr]) == '':
                     log.debug('importing {addr}', addr=addr)
                     bc_interface.rpc(
@@ -188,14 +242,16 @@ class Wallet(AbstractWallet):
 
         removed_utxos = {}
         for ins in txd['ins']:
-            utxo = ins['outpoint']['hash'] + ':' + str(ins['outpoint']['index'])
+            utxo = ins['outpoint']['hash'] + ':'
+            utxo += str(ins['outpoint']['index'])
             if utxo not in self.unspent:
                 continue
+
             removed_utxos[utxo] = self.unspent[utxo]
             del self.unspent[utxo]
 
-        self.log.debug('removed utxos, wallet:')
-        # print(pprint.pformat(self.get_utxos_by_mixdepth()))
+        self.log.debug('removed utxo')
+        # print(pprint.pformat(removed_utxos))
 
         self.spent_utxos += removed_utxos.keys()
         return removed_utxos
@@ -343,14 +399,14 @@ class Wallet(AbstractWallet):
             bc_interface.add_watchonly_addresses(wallet_addr_list, wallet_name)
             return
 
-        bc_interface.wallet_synced = True
+        self.wallet_synced = True
 
 
 # --------------------------------------------------
 # BitcoinCoreWallet
 # --------------------------------------------------
 
-class BitcoinCoreWallet(AbstractWallet):
+class BitcoinCoreWallet(LessAbstractWallet):
 
     def __init__(self, fromaccount):
         super(BitcoinCoreWallet, self).__init__()
@@ -399,6 +455,83 @@ class BitcoinCoreWallet(AbstractWallet):
                     if exc.code != -14:
                         raise exc
                         # Wrong passphrase, try again.
+
+def select_gradual(unspent, value):
+    """
+    UTXO selection algorithm for gradual dust reduction
+    If possible, combines outputs, picking as few as possible of the largest
+    utxos less than the target value; if the target value is larger than the
+    sum of all smaller utxos, uses the smallest utxo larger than the value.
+    """
+    value, key = int(value), lambda u: u["value"]
+    high = sorted([u for u in unspent if key(u) >= value], key=key)
+    low = sorted([u for u in unspent if key(u) < value], key=key)
+    lowsum = reduce(lambda x, y: x + y, map(key, low), 0)
+    if value > lowsum:
+        if len(high) == 0:
+            raise Exception('Not enough funds')
+        else:
+            return [high[0]]
+    else:
+        start, end, total = 0, 0, 0
+        while total < value:
+            total += low[end]['value']
+            end += 1
+        while total >= value + low[start]['value']:
+            total -= low[start]['value']
+            start += 1
+        return low[start:end]
+
+
+def select_greedy(unspent, value):
+    """
+    UTXO selection algorithm for greedy dust reduction, but leaves out
+    extraneous utxos, preferring to keep multiple small ones.
+    """
+    value, key, cursor = int(value), lambda u: u['value'], 0
+    utxos, picked = sorted(unspent, key=key), []
+    for utxo in utxos:  # find the smallest consecutive sum >= value
+        value -= key(utxo)
+        if value == 0:  # perfect match! (skip dilution stage)
+            return utxos[0:cursor + 1]  # end is non-inclusive
+        elif value < 0:  # overshot
+            picked += [utxo]  # definitely need this utxo
+            break  # proceed to dilution
+        cursor += 1
+    for utxo in utxos[cursor - 1::-1]:  # dilution loop
+        value += key(utxo)  # see if we can skip this one
+        if value > 0:  # no, that drops us below the target
+            picked += [utxo]  # so we need this one too
+            value -= key(utxo)  # 'backtrack' the counter
+    if len(picked) > 0:
+        return picked
+    raise Exception('Not enough funds')  # if all else fails, we do too
+
+
+def select_greediest(unspent, value):
+    """
+    UTXO selection algorithm for speediest dust reduction
+    Combines the shortest run of utxos (sorted by size, from smallest) which
+    exceeds the target value; if the target value is larger than the sum of
+    all smaller utxos, uses the smallest utxo larger than the target value.
+    """
+    value, key = int(value), lambda u: u["value"]
+    high = sorted([u for u in unspent if key(u) >= value], key=key)
+    low = sorted([u for u in unspent if key(u) < value], key=key)
+    lowsum = reduce(lambda x, y: x + y, map(key, low), 0)
+    if value > lowsum:
+        if len(high) == 0:
+            raise Exception('Not enough funds')
+        else:
+            return [high[0]]
+    else:
+        end, total = 0, 0
+        while total < value:
+            total += low[end]['value']
+            end += 1
+        return low[0:end]
+
+
 
 
 __all__ = ('Wallet', 'BitcoinCoreWallet')

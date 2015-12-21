@@ -44,7 +44,7 @@ class txIRC_Client(irc.IRCClient, object):
         self.log = Logger(namespace=ns)
 
         # stochastic network delay support
-        self._receiveQ = []
+        self._receiveQ = collections.deque()
 
         # todo: build pong timeout watchdot
 
@@ -386,9 +386,8 @@ class IRC_Market(CommSuper):
     def connectionLost(self, reason):
         try:
             self.log.debug('IRC connection lost: {}'.format(reason))
-            self.cjp.on_disconnect(reason)
-            # todo: I'm making policy to shut down
-            # system_shutdown(self.errno, reason)
+            # todo: need policy.  Back on reconnect
+            # self.cjp.on_disconnect(reason)
         except:
             self.log.failure('connectionLost')
             self.shutdown()
@@ -736,10 +735,10 @@ class LogBotFactory(protocol.ClientFactory):
         return p
 
     # todo: connection info in IRC_Market.  Need reconnect policy
-    # def clientConnectionLost(self, connector, reason):
-    #     log.info('IRC connection lost: {}'.format(reason))
-    #     connector.connect()
-    #
+    def clientConnectionLost(self, connector, reason):
+        log.info('IRC connection lost: {}'.format(reason))
+        # connector.connect()
+
 
     def clientConnectionFailed(self, connector, reason):
         log.info("IRC connection failed: {}".format(reason))

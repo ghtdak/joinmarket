@@ -71,10 +71,11 @@ class CoinJoinOrder(TransactionWatcher):
         # log.debug('maker utxos = ' + pprint.pformat(self.utxos))
         utxo_list = self.utxos.keys()
         self.log.debug('utxo_list')
-        print(pprint.pformat(utxo_list))
+        # print(pprint.pformat(utxo_list))
         utxo_data = bc_interface.query_utxo_set(utxo_list)
         if None in utxo_data:
             self.log.error('using spent utxo')
+            print('-+' * 40)
 
             raise Exception('spent utxo')
 
@@ -117,8 +118,10 @@ class CoinJoinOrder(TransactionWatcher):
         try:
             self.txd = btc.deserialize(txhex)
         except IndexError as e:
+            self.log.error('recv_t malformed txhex')
+            # todo: not sure sending errors across the wire is useful
             self.msgchan.send_error(nick, 'malformed txhex. ' + repr(e))
-        # log.debug('obtained tx\n' + pprint.pformat(self.tx))
+
         goodtx, errmsg = self.verify_unsigned_tx(self.txd)
         if not goodtx:
             self.log.debug('not a good tx, reason=' + errmsg)
@@ -127,14 +130,18 @@ class CoinJoinOrder(TransactionWatcher):
         self.log.debug('goodtx')
         sigs = []
         for index, ins in enumerate(self.txd['ins']):
-            utxo = ins['outpoint']['hash'] + ':' + str(ins['outpoint']['index'])
+            utxo = ins['outpoint']['hash'] + ':'
+            utxo += str(ins['outpoint']['index'])
             if utxo not in self.utxos:
                 continue
+
             addr = self.utxos[utxo]['address']
             txs = btc.sign(txhex, index,
                            self.maker.wallet.get_key_from_addr(addr))
-            sigs.append(base64.b64encode(btc.deserialize(txs)['ins'][index][
-                'script'].decode('hex')))
+
+            btcds = btc.deserialize(txs)['ins'][index]['script'].decode('hex')
+            sigs.append(base64.b64encode(btcds))
+
         # len(sigs) > 0 guarenteed since i did verify_unsigned_tx()
 
         bc_interface.add_tx_notify(self)

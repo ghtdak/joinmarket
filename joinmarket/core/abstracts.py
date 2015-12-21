@@ -5,11 +5,6 @@ import pprint
 
 from twisted.internet import defer
 from twisted.logger import Logger
-from configparser import NoSectionError
-
-import bitcoin as btc
-from .support import select_gradual, select_greedy, select_greediest
-from .configure import config
 
 log = Logger()
 
@@ -92,18 +87,6 @@ class AbstractWallet(object):
         self._nickname = 'unk'
         ns = self.__module__ + '@' + self._nickname
         self.log = Logger(ns)
-        self.utxo_selector = btc.select  # default fallback: upstream
-        try:
-            if config.get("POLICY", "merge_algorithm") == "gradual":
-                self.utxo_selector = select_gradual
-            elif config.get("POLICY", "merge_algorithm") == "greedy":
-                self.utxo_selector = select_greedy
-            elif config.get("POLICY", "merge_algorithm") == "greediest":
-                self.utxo_selector = select_greediest
-            elif config.get("POLICY", "merge_algorithm") != "default":
-                raise Exception("Unknown merge algorithm")
-        except NoSectionError:
-            pass
 
     # moved from blockchaininterface
     def sync_wallet(self):
@@ -141,44 +124,19 @@ class AbstractWallet(object):
         raise NotImplementedError
 
     def update_cache_index(self):
-        return
+        raise NotImplementedError
 
     def remove_old_utxos(self, tx):
-        return
+        raise NotImplementedError
 
     def add_new_utxos(self, tx, txid):
-        return
+        raise NotImplementedError
 
     def select_utxos(self, mixdepth, amount):
-        utxo_list = self.get_utxos_by_mixdepth()[mixdepth]
-        unspent = [{'utxo': utxo,
-                    'value': addrval['value']}
-                   for utxo, addrval in utxo_list.iteritems()]
-
-        self.log.debug('select_utxos unspent')
-        print(pprint.pformat(unspent))
-        try:
-            inputs = self.utxo_selector(unspent, amount)
-        except:
-            self.log.debug('insufficient funds')
-            raise
-
-        log.debug('for mixdepth={} amount={} selected:'.format(
-                mixdepth, amount))
-
-        return dict([(i['utxo'],
-                      {'value': i['value'],
-                       'address': utxo_list[i['utxo']]['address']})
-                     for i in inputs])
+        raise NotImplementedError()
 
     def get_balance_by_mixdepth(self):
-        mix_balance = {}
-        for m in range(self.max_mix_depth):
-            mix_balance[m] = 0
-        for mixdepth, utxos in self.get_utxos_by_mixdepth().iteritems():
-            mix_balance[mixdepth] = sum([addrval['value']
-                                         for addrval in utxos.values()])
-        return mix_balance
+        raise NotImplementedError()
 
 
 class CoinJoinerPeer(object):
