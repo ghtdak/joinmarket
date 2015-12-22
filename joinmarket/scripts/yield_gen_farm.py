@@ -124,9 +124,9 @@ def buildYields():
 
 
 def buildTumbler():
-    tumblr_argv = ['tumbler.py', '-N', '2', '0', '-a', '0', '-M', '5',
+    tumblr_argv = [['tumbler.py', '-N', '2', '0', '-a', '0', '-M', '5',
                     '-w', '3', '-l', '0.2', '-s', '100000000', '59bf49a',
-                    'mhyGR4qBKDWoCdFZuzoSyVeCrphtPXtbgD']
+                    'mhyGR4qBKDWoCdFZuzoSyVeCrphtPXtbgD']]
 
     _tumblr_argv = [['tumbler.py', '-N', '2', '0', '-a', '0', '-M', '5', '-w',
                     '3', '-l', '0.2', '-s', '100000000', 'cf',

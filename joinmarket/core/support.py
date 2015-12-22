@@ -151,6 +151,32 @@ def debug_dump_object(obj, skip_fields=None):
         else:
             log.debug(str(v))
 
+def random_nick(nick_len=9):
+    vowels = "aeiou"
+    consonants = ''.join([chr(
+            c) for c in range(
+            ord('a'), ord('z') + 1) if vowels.find(chr(c)) == -1])
+    assert nick_len % 2 == 1
+    N = (nick_len - 1) / 2
+    rnd_consonants = [consonants[random.randrange(len(consonants))]
+                      for _ in range(N + 1)]
+    rnd_vowels = [vowels[random.randrange(len(vowels))]
+                  for _ in range(N)] + ['']
+    ircnick = ''.join([i for sl in zip(rnd_consonants, rnd_vowels) for i in sl])
+    ircnick = ircnick.capitalize()
+    # not using debug because it might not know the logfile name at this point
+    print('Generated random nickname: ' + ircnick)
+    return ircnick
+    # Other ideas for random nickname generation:
+    # - weight randomness by frequency of letter appearance
+    # - u always follows q
+    # - generate different length nicks
+    # - append two or more of these words together
+    # - randomly combine phonetic sounds instead consonants,
+    #     which may be two consecutive consonants
+    #  - e.g. th, dj, g, p, gr, ch, sh, kr,
+    # - neutral network that generates nicks
+
 __all__ = ('calc_cj_fee', 'debug_dump_object', 'chunks', 'sleepGenerator',
            'rand_norm_array', 'rand_pow_array', 'rand_exp_array',
-           'system_shutdown')
+           'system_shutdown', 'random_nick')

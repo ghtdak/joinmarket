@@ -1,11 +1,9 @@
-# Copyright (c) Twisted Matrix Laboratories.
-# See LICENSE for details.
+from __future__ import print_function, absolute_import
 
 import base64
+import collections
 import random
 import traceback
-
-import collections
 
 from twisted.internet import reactor, protocol
 from twisted.internet.endpoints import TCP4ClientEndpoint
@@ -33,6 +31,7 @@ class txIRC_Client(irc.IRCClient, object):
     heartbeatinterval = 60
 
     def __init__(self, block_instance, nickname, password, hostname):
+        # todo: everything should be connected to block_instance
         self.block_instance = block_instance
         self.nickname = nickname
         self.password = password
@@ -54,9 +53,9 @@ class txIRC_Client(irc.IRCClient, object):
         else:
             raise AttributeError
 
-
     # --------------------------------------------------
-    # stochastic line delay simulation
+    # stochastic line delay simulation and
+    # some superclass overrides
     # --------------------------------------------------
 
     def lineReceived(self, line):
@@ -85,7 +84,7 @@ class txIRC_Client(irc.IRCClient, object):
         return irc.IRCClient.connectionLost(self, reason)
 
     # ---------------------------------------------
-    # callbacks from superclass
+    # general callbacks from superclass
     # ---------------------------------------------
 
     def signedOn(self):
@@ -104,7 +103,7 @@ class txIRC_Client(irc.IRCClient, object):
                           userIn, channel, msg)
 
     def action(self, user, channel, msg):
-        self.log.debug('action: {user}, {channel}, {msg}',
+        self.log.debug('unhandled action: {user}, {channel}, {msg}',
                        user=user, channel=channel, msg=msg)
 
     def alterCollidedNick(self, nickname):
@@ -113,16 +112,19 @@ class txIRC_Client(irc.IRCClient, object):
         effort to create an unused related name for subsequent registration.
         :param nickname:
         """
-        return nickname + '^'
+        newnick = nickname + '^'
+        log.error('nickname collision, changed to {newnick}',
+                  newnick=newnick)
+        return newnick
 
     def modeChanged(self, user, channel, _set, modes, args):
         self.log.debug(
-            'modeChanged: {user}, {channel}, {_set}, {modes}, {args}',
-            user=user, channel=channel, _set=_set, modes=modes,
-            args=args)
+                '(unhandled) modeChanged: {user}, {channel}, {_set}, {modes}, '
+                '{args}', user=user, channel=channel, _set=_set, modes=modes,
+                args=args)
 
     def pong(self, user, secs):
-        self.log.debug('pong: {:d}'.format(secs))
+        self.log.debug('pong: {user}, {secs}', user=user, secs=secs)
 
     def userJoined(self, user, channel):
         self.log.debug('user joined: {user}, {channel}', user=user,
@@ -130,48 +132,56 @@ class txIRC_Client(irc.IRCClient, object):
         reactor.callLater(0.0, self.irc_market.userJoined, user, channel)
 
     def userKicked(self, kickee, channel, kicker, message):
-        self.log.debug('kicked: {} {} by {} {}'.format(kickee, channel, kicker,
-                                                       message))
+        # todo: need policy on kicked
+        self.log.error(
+                'kicked: {kickee} {channel} by {kicker} {message}',
+                kickee=kickee, channel=channel, kicker=kicker, message=message)
 
     def userLeft(self, user, channel):
-        self.log.debug('left: {} {}'.format(user, channel))
+        self.log.debug('left: {user} {channel}', user=user, channel=channel)
         reactor.callLater(0.0, self.irc_market.userLeft, user, channel)
 
     def userRenamed(self, oldname, newname):
-        self.log.debug('rename: {} {}'.format(oldname, newname))
+        self.log.debug('rename: {oldname} {newname}',
+                       oldname=oldname, newname=newname)
         reactor.callLater(0.0, self.irc_market.userRenamed, oldname, newname)
 
     def userQuit(self, user, quitMessage):
-        self.log.debug(('quit: {} {}'.format(user, quitMessage)))
+        self.log.debug('(unhandled) userQuit: {user} {quitMessage}',
+                       user=user, quitMessage=quitMessage)
 
     def topicUpdated(self, user, channel, newTopic):
-        self.log.debug('topic: {}, {}, {}'.format(user, channel, newTopic))
+        self.log.debug('topicUpdated: {user}, {channel}, {newTopic}',
+                       user=user, channel=channel, newTopic=newTopic)
         reactor.callLater(0.0, self.irc_market.topicUpdated, channel, newTopic)
 
     def receivedMOTD(self, motd):
-        self.log.debug('motd: {}'.format(motd))
+        self.log.debug('(unhandled) motd: {motd}', motd=motd)
 
     def created(self, when):
-        self.log.debug('created: {}'.format(when))
+        self.log.debug('(unhandled) created: {when}', when=when)
 
     def yourHost(self, info):
-        self.log.debug('yourhost: {}'.format(info))
+        self.log.debug('(unhandled) yourhost: {info}', info=info)
 
     def myInfo(self, servername, version, umodes, cmodes):
-        self.log.debug('myInfo: {} {} {} {}'.format(servername, version, umodes,
-                                                    cmodes))
+        self.log.debug('(unhandled) myInfo: {servername} {version} {umodes} '
+                       '{cmodes}', servername=servername, version=version,
+                       umodes=umodes, cmodes=cmodes)
 
     def luserChannels(self, channels):
-        self.log.debug('luserChannels: {}'.format(channels))
+        self.log.debug('(unhandled) luserChannels: {channels}',
+                       channels=channels)
 
     def bounce(self, info):
-        self.log.debug('bounce: {}'.format(info))
+        self.log.debug('(unhandled) bounce: {info}', info=info)
 
     def left(self, channel):
-        self.log.debug('left: {}'.format(channel))
+        self.log.debug('(unhandled) left: {channel}', channel=channel)
 
     def noticed(self, user, channel, message):
-        self.log.debug('notice: {} {} {}'.format(user, channel, message))
+        self.log.debug('(unhandled) noticed: {user} {channel} {message}',
+                       user=user, channel=channel, message=message)
 
 
 MAX_PRIVMSG_LEN = 400
@@ -186,40 +196,6 @@ plaintext_commands = ["fill", "error", "pubkey", "orderbook", "relorder",
 class CJPeerError(StandardError):
     pass
 
-
-def random_nick(nick_len=9):
-    vowels = "aeiou"
-    consonants = ''.join([chr(
-            c) for c in range(
-            ord('a'), ord('z') + 1) if vowels.find(chr(c)) == -1])
-    assert nick_len % 2 == 1
-    N = (nick_len - 1) / 2
-    rnd_consonants = [consonants[random.randrange(len(consonants))]
-                      for _ in range(N + 1)]
-    rnd_vowels = [vowels[random.randrange(len(vowels))]
-                  for _ in range(N)] + ['']
-    ircnick = ''.join([i for sl in zip(rnd_consonants, rnd_vowels) for i in sl])
-    ircnick = ircnick.capitalize()
-    # not using debug because it might not know the logfile name at this point
-    print('Generated random nickname: ' + ircnick)
-    return ircnick
-    # Other ideas for random nickname generation:
-    # - weight randomness by frequency of letter appearance
-    # - u always follows q
-    # - generate different length nicks
-    # - append two or more of these words together
-    # - randomly combine phonetic sounds instead consonants,
-    #     which may be two consecutive consonants
-    #  - e.g. th, dj, g, p, gr, ch, sh, kr,
-    # - neutral network that generates nicks
-
-
-def get_irc_text(line):
-    return line[line[1:].find(':') + 2:]
-
-
-def get_irc_nick(source):
-    return source[0:source.find('!')]
 
 
 # -------------------------------------------------------------
@@ -275,24 +251,23 @@ class CommSuper(object):
         pass
 
 
-class IRC_Market(CommSuper):
-    log = Logger()
+def get_irc_nick(source):
+    return source[0:source.find('!')]
 
-    def __init__(self,
-                 channel,
-                 block_instance,
-                 username='username',
-                 realname='realname',
-                 password=None):
+
+class IRC_Market(CommSuper):
+
+    def __init__(self, channel, block_instance, username='username',
+                 realname='realname', password=None):
         super(IRC_Market, self).__init__(block_instance)
 
-        self.nickname = block_instance.nickname
+        ns = self.__module__ + '@' + self.block_instance.nickname
+        self.log = Logger(namespace=ns)
+
         self.userrealname = (username, realname)
         if password and len(password) == 0:
             password = None
         self.given_password = password
-        ns = self.__module__ + '@' + self.block_instance.nickname
-        self.log = Logger(namespace=ns)
 
         # todo: things like errno need to be documented
         self.errno = 0
@@ -301,16 +276,7 @@ class IRC_Market(CommSuper):
 
         # todo: rename this.  too confusing
         self.from_to = None
-        self.built_privmsg = []
-        self.waiting = []
-        # todo: from irc.py
-        self.waiting = {}
         self.built_privmsg = {}
-        self.give_up = False
-        self.ping_reply = True
-
-        # todo: outta here!!!
-        self.give_up = True
 
         # todo: how to end??? kicked?  timeout? etc...
 
@@ -319,19 +285,6 @@ class IRC_Market(CommSuper):
             return self.block_instance.coinjoinerpeer
         else:
             raise AttributeError('name: {} doesn\'t exist'.format(name))
-
-    def run(self):
-        """
-        Run defined here for consistency
-        :return:
-        """
-        self.log.debug('Inside IRC_Market.run()')
-
-        def reactor_running():
-            self.log.debug('***** RUNNING!!!')
-
-        reactor.callWhenRunning(reactor_running)
-        reactor.run()
 
     def shutdown(self, errno=-1):
         self.errno = errno
@@ -655,7 +608,7 @@ class IRC_Market(CommSuper):
 
             self.from_to = (nick, sent_to)
 
-            if sent_to == self.nickname:
+            if sent_to == self.block_instance.nickname:
                 if nick not in self.built_privmsg:
                     if message[0] != COMMAND_PREFIX:
                         self.log.debug('bad command', msg=message[0])
@@ -674,11 +627,9 @@ class IRC_Market(CommSuper):
                 box, encrypt = self.__get_encryption_box(
                         self.built_privmsg[nick][0], nick)
 
-                # todo: change format, use regex etc
                 if message[-1] == ';':
-                    self.waiting[nick] = True
+                    pass
                 elif message[-1] == '~':
-                    self.waiting[nick] = False
                     if encrypt:
                         if not box:
                             self.log.debug('no encryption box, dropping',
@@ -844,4 +795,4 @@ class BlockInstance(object):
             log.failure('build_irc')
 
 
-__all__ = ('random_nick', 'BlockInstance')
+__all__ = ('BlockInstance',)

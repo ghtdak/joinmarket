@@ -374,11 +374,15 @@ def process_raw_tx(txd, txid):
         if txdata['confirmations'] == 0:
             log.debug('unconfirmfun: {txid}, {hash}', txid=txid, hash=hashout)
             for trw in trw_set:
-                trw.unconfirmfun(txd, txid)
+                # stochastic network effects
+                delay = 0.05 + 0.2 * random.random()
+                reactor.callLater(delay, trw.unconfirmfun, txd, txid)
         else:
             log.debug('CoNfIrMeDd: {txid}, {hash}', txid=txid, hash=hashout)
             for trw in trw_set:
-                trw.send_confirm(txd, txid, txdata['confirmations'])
+                delay = 0.05 + 0.2 * random.random()
+                reactor.callLater(delay, trw.send_confirm, txd, txid,
+                                  txdata['confirmations'])
 
             del bc_interface.txnotify_fun[tx_output_set]
 
