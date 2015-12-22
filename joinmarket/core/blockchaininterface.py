@@ -310,7 +310,7 @@ class JmZmq(object):
             txd = btc.json_changebase(btc.deserialize(msg),
                                 lambda x: btc.safe_hexlify(x))
             # print(pprint.pformat(txd))
-            process_raw_tx(txd, txhash_hex)
+            bc_interface.process_raw_tx(txd, txhash_hex)
 
 
 class MultiCast(DatagramProtocol):
@@ -345,46 +345,12 @@ class MultiCast(DatagramProtocol):
                 log.debug('not a txhex')
                 return
             txd = btc.deserialize(tx)
-            process_raw_tx(txd, txid)
+            bc_interface.process_raw_tx(txd, txid)
 
         elif path.startswith('/alertnotify?'):
             # todo: I got rid of the core_alert thing... rearchitect!!
             core_alert = urllib.unquote(path[len(pages[1]):])
             log.debug('Got an alert!\nMessage=' + core_alert)
-
-
-def process_raw_tx(txd, txid):
-    tx_output_set = frozenset([(sv['script'], sv['value'])
-                               for sv in txd['outs']])
-
-    hashout = hash(tx_output_set)
-
-    if tx_output_set in bc_interface.txnotify_fun:
-        # on rare occasions people spend their output without waiting
-        #  for a confirm
-        txdata = None
-        for n in range(len(txd['outs'])):
-            txdata = bc_interface.rpc('gettxout', [txid, n, True])
-            if txdata is not None:
-                break
-        assert txdata is not None
-
-        # todo: the one shared object
-        trw_set = bc_interface.txnotify_fun[tx_output_set]
-        if txdata['confirmations'] == 0:
-            log.debug('unconfirmfun: {txid}, {hash}', txid=txid, hash=hashout)
-            for trw in trw_set:
-                # stochastic network effects
-                delay = 0.05 + 0.2 * random.random()
-                reactor.callLater(delay, trw.unconfirmfun, txd, txid)
-        else:
-            log.debug('CoNfIrMeDd: {txid}, {hash}', txid=txid, hash=hashout)
-            for trw in trw_set:
-                delay = 0.05 + 0.2 * random.random()
-                reactor.callLater(delay, trw.send_confirm, txd, txid,
-                                  txdata['confirmations'])
-
-            del bc_interface.txnotify_fun[tx_output_set]
 
 
 # noinspection PyMissingConstructor
@@ -422,6 +388,7 @@ class BitcoinCoreInterface(BlockchainInterface):
         self.http_server = None
         self.zmq_server = None
 
+        self.stochQ = collections.deque()
         self.txnotify_fun = collections.defaultdict(set)
         if 'zmq_endpoint' in config.options('BLOCKCHAIN'):
             endpoint = config.get('BLOCKCHAIN', 'zmq_endpoint')
@@ -514,6 +481,49 @@ class BitcoinCoreInterface(BlockchainInterface):
 
         # todo: the one shared object... dangerous and beautiful
         self.txnotify_fun[tx_output_set].add(trw)
+
+    def process_raw_tx(self, txd, txid):
+        tx_output_set = frozenset([(sv['script'], sv['value'])
+                                   for sv in txd['outs']])
+
+        hashout = hash(tx_output_set)
+
+        if tx_output_set in self.txnotify_fun:
+            # on rare occasions people spend their output without waiting
+            #  for a confirm
+            txdata = None
+            for n in range(len(txd['outs'])):
+                txdata = bc_interface.rpc('gettxout', [txid, n, True])
+                if txdata is not None:
+                    break
+            assert txdata is not None
+
+            def doUnqFunc():
+                callee, argv = self.stochQ.popleft()
+                callee(*argv)
+
+            # todo: the one shared object
+            trw_list = list(self.txnotify_fun[tx_output_set])
+            random.shuffle(trw_list)
+            if txdata['confirmations'] == 0:
+                log.debug('unconfirmfun: {txid}, {hash}', txid=txid,
+                          hash=hashout)
+                for trw in trw_list:
+                    self.stochQ.append((trw.unconfirmfun, [txd, txid]))
+                    delay = 1.0 + 2.0 * random.random()
+                    reactor.callLater(delay, doUnqFunc)
+            else:
+                log.debug('CoNfIrMeDd: {txid}, {hash}', txid=txid,
+                          hash=hashout)
+                for trw in trw_list:
+                    self.stochQ.append(
+                            (trw.send_confirm,
+                             [txd, txid, txdata['confirmations']]))
+                    delay = 5.0 * random.random()
+                    reactor.callLater(delay, doUnqFunc)
+
+                del bc_interface.txnotify_fun[tx_output_set]
+
 
     def pushtx(self, txhex):
         try:
