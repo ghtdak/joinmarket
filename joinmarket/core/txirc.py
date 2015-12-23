@@ -13,13 +13,12 @@ from twisted.words.protocols import irc
 from txsocksx.client import SOCKS5ClientEndpoint
 from txsocksx.tls import TLSWrapClientEndpoint
 
-from .configure import get_config_irc_channel
+from .configure import get_config_irc_channel, config
 from .enc_wrapper import encrypt_encode, decode_decrypt
 from .jsonrpc import JsonRpcError
-from .support import chunks
+from .support import chunks, random_nick
 
 log = Logger()
-log.debug('Twisted Logging Starts in txirc')
 
 
 class txIRC_Client(irc.IRCClient, object):
@@ -30,14 +29,15 @@ class txIRC_Client(irc.IRCClient, object):
     lineRate = 1
     heartbeatinterval = 60
 
-    def __init__(self, block_instance, nickname, password, hostname):
+    def __init__(self, block_instance):
         # todo: everything should be connected to block_instance
         self.block_instance = block_instance
-        self.nickname = nickname
-        self.password = password
-        self.hostname = hostname
-
         self.block_instance.set_tx_irc_client(self)
+
+        # superclass static over-rides
+        self.nickname = self.block_instance.nickname
+        self.password = self.block_instance.password
+        self.hostname = self.block_instance.hostname
 
         ns = self.__module__ + '@' + self.nickname
         self.log = Logger(namespace=ns)
@@ -257,21 +257,23 @@ def get_irc_nick(source):
 
 class IRC_Market(CommSuper):
 
-    def __init__(self, channel, block_instance, username='username',
-                 realname='realname', password=None):
+    def __init__(self, block_instance):
         super(IRC_Market, self).__init__(block_instance)
 
         ns = self.__module__ + '@' + self.block_instance.nickname
         self.log = Logger(namespace=ns)
 
-        self.userrealname = (username, realname)
-        if password and len(password) == 0:
-            password = None
-        self.given_password = password
+        # todo: remove this
+        # self.userrealname = (username, realname)
+        # if password and len(password) == 0:
+        #     password = None
+        # self.given_password = password
 
         # todo: things like errno need to be documented
         self.errno = 0
-        self.channel = channel
+
+        # todo: channel should use block_instance
+        self.channel = self.block_instance.channel
         # self.channel = get_config_irc_channel()
 
         # todo: rename this.  too confusing
@@ -284,7 +286,7 @@ class IRC_Market(CommSuper):
         if name == 'cjp':
             return self.block_instance.coinjoinerpeer
         else:
-            raise AttributeError('name: {} doesn\'t exist'.format(name))
+            raise AttributeError('name: {name} doesn\'t exist', name=name)
 
     def shutdown(self, errno=-1):
         self.errno = errno
@@ -479,14 +481,14 @@ class IRC_Market(CommSuper):
                 maxsize = _chunks[3]
                 txfee = _chunks[4]
                 cjfee = _chunks[5]
-                self.log.debug(
-                        '->on_order_seen, counterparty={counterparty}, '
-                        'order type={ordertype}, '
-                        'minsize={minsize}, txfee={txfee}, cjfee={cjfee}',
-                        counterparty=counterparty, oid=oid,
-                        ordertype=ordertype,
-                        minsize=minsize, maxsize=maxsize,
-                        txfee=txfee, cjfee=cjfee)
+                # self.log.debug(
+                #         '->on_order_seen, counterparty={counterparty}, '
+                #         'order type={ordertype}, '
+                #         'minsize={minsize}, txfee={txfee}, cjfee={cjfee}',
+                #         counterparty=counterparty, oid=oid,
+                #         ordertype=ordertype,
+                #         minsize=minsize, maxsize=maxsize,
+                #         txfee=txfee, cjfee=cjfee)
                 self.cjp.on_order_seen(
                         counterparty, oid, ordertype, minsize, maxsize,
                         txfee, cjfee)
@@ -504,7 +506,6 @@ class IRC_Market(CommSuper):
         for command in message[1:].split(COMMAND_PREFIX):
             _chunks = command.split(" ")
 
-            # todo: getattr magic perhaps though doubtful
             try:
                 # orderbook watch commands
                 if self.check_for_orders(nick, _chunks):
@@ -592,7 +593,8 @@ class IRC_Market(CommSuper):
         If so, retrieve the appropriate crypto_box object
         and return. Sending/receiving flag enables us
         to check which command strings correspond to which
-        type of object (maker/taker)."""
+        type of object (maker/taker).
+        """
 
         # todo: comment says # old doc, dont trust
         if cmd in plaintext_commands:
@@ -676,23 +678,23 @@ class IRC_Market(CommSuper):
 
 
 class LogBotFactory(protocol.ClientFactory):
-    def __init__(self, channel, the_cred):
-        self.channel = channel
-        self.the_cred = the_cred
+    def __init__(self, block_instance):
+        self.block_instance = block_instance
+        self.channel = self.block_instance.channel
 
     def buildProtocol(self, addr):
-        p = txIRC_Client(**self.the_cred)
+        p = txIRC_Client(self.block_instance)
         p.factory = self
         return p
 
     # todo: connection info in IRC_Market.  Need reconnect policy
     def clientConnectionLost(self, connector, reason):
-        log.info('IRC connection lost: {}'.format(reason))
+        log.info('IRC connection lost: {reason}', reason=reason)
         # connector.connect()
 
 
     def clientConnectionFailed(self, connector, reason):
-        log.info("IRC connection failed: {}".format(reason))
+        log.info("IRC connection failed: {reason}", reason=reason)
 
 
 ght_cred = {'nickname': 'anutxhg', 'password': '', 'hostname': 'localhost'}
@@ -736,61 +738,66 @@ class BlockInstance(object):
     # todo: we need to do the instance collection thing
     instances = []
 
-    def __init__(self, nickname,
+    def __init__(self, nickname=None,
                  username='username',
                  realname='realname',
                  password=None):
 
         self.nickname = nickname
+        if self.nickname is None:
+            self.nickname = random_nick()
+
         self.username = username
         self.realname = realname
+
+        ns = self.__module__ + '@' + self.nickname
+        self.log = Logger(namespace=ns)
+
+        # todo: what does hostname mean?  is it == host?
+        self.hostname = 'nowhere.com'
+
+        self.host = config.get("MESSAGING", "host")
+        self.port = int(config.get("MESSAGING", "port"))
+        self.channel = get_config_irc_channel()
+
         self.password = password
+        if self.password is None and 'password' in config.options('MESSAGING'):
+            self.password = config.get('MESSAGING', 'password')
+
+        # self.serverport = ('192.168.1.200', 6667)
+        # todo: initialization for ssl / Tor
+        # socks5_host = config.get("MESSAGING", "socks5_host")
+        # socks5_port = int(config.get("MESSAGING", "socks5_port"))
 
         self.tcp_connector = None
         self.tx_irc_client = None
         self.coinjoinerpeer = None
 
-        self.channel = get_config_irc_channel()
-        self.irc_market = IRC_Market(self.channel, self,
-                                     username=self.username,
-                                     realname=self.realname,
-                                     password=self.password)
+        self.irc_market = IRC_Market(self)
 
-        BlockInstance.instances.append(self)  # list of everyone important
+        BlockInstance.instances.append(self)
 
     def set_coinjoinerpeer(self, cjp):
-        log.debug('set_coinjoinerpeer')
+        self.log.debug('set_coinjoinerpeer')
         self.coinjoinerpeer = cjp
 
     def set_tx_irc_client(self, txircclt):
-        log.debug('set_tx_irc_client')
+        self.log.debug('set_tx_irc_client')
         self.tx_irc_client = txircclt
-
-        # from IRC_blah constructor
-        # serverport = (config.get("MESSAGING", "host"),
-        #               int(config.get("MESSAGING", "port")))
-        # socks5_host = config.get("MESSAGING", "socks5_host")
-        # socks5_port = int(config.get("MESSAGING", "socks5_port"))
 
     def build_irc(self):
         if self.tx_irc_client:
             raise Exception('irc already built')
 
         try:
-            log.debug('build_irc')
-            # todo: hack password
-            cr = {'block_instance': self,
-                  'nickname': self.nickname,
-                  'password': 'nimDid[Quoc6',
-                  'hostname': 'nowhere.com'}
+            factory = LogBotFactory(self)
 
-            factory = LogBotFactory(self.channel, cr)
-
-            # todo: hack!!!
-            serverport = ('192.168.1.200', 6667)
+            self.log.debug('build_irc: {host}, {port}, {channel}',
+                           host=self.host, port=self.port,
+                           channel=self.channel)
 
             self.tcp_connector = reactor.connectTCP(
-                    serverport[0], serverport[1], factory)
+                    self.host, self.port, factory)
         except:
             log.failure('build_irc')
 

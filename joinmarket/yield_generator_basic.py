@@ -148,11 +148,8 @@ def build_objects(argv=None):
 
     realname = 'btcint=' + jm.config.get("BLOCKCHAIN", "blockchain_source")
     nickname = jm.random_nick()
-    password = 'nimDid[Quoc6'
 
-    block_instance = jm.BlockInstance(nickname,
-                                      realname=realname,
-                                      password=password)
+    block_instance = jm.BlockInstance(nickname, realname=realname)
 
     # todo: for testing... remove me!!
 
