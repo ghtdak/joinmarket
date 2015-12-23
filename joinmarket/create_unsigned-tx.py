@@ -4,9 +4,8 @@ from __future__ import absolute_import, print_function
 import sys
 from optparse import OptionParser
 
-from twisted.logger import Logger
-
 from twisted.internet import reactor
+from twisted.logger import Logger
 
 import bitcoin as btc
 import joinmarket.core as jm

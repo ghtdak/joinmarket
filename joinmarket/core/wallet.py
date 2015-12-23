@@ -2,7 +2,6 @@ from __future__ import absolute_import, print_function
 
 import json
 import os
-import pprint
 import time
 from decimal import Decimal
 from getpass import getpass

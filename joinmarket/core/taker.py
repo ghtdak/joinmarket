@@ -73,6 +73,7 @@ class CoinJoinTX(TransactionWatcher):
         self.utxo_tx = None
 
         # state variables
+        # todo: is self.txid used anywhere?
         self.txid = None
         self.cjfee_total = 0
         self.maker_txfee_contributions = 0
@@ -310,13 +311,15 @@ class CoinJoinTX(TransactionWatcher):
 
     def push(self, txd):
         tx = btc.serialize(txd)
-        self.log.debug('txid = ' + btc.txhash(tx))
+        new_txid=btc.txhash(tx)
+        self.log.debug('push txid: {txid}, {sz}',
+                       txid=new_txid, sz=len(tx))
         # TODO send to a random maker or push myself
         # TODO need to check whether the other party sent it
         # self.msgchan.push_tx(self.active_orders.keys()[0], txhex)
         self.txid = bc_interface.pushtx(tx)
         if self.txid is None:
-            self.log.debug('unable to pushtx')
+            self.log.warn('pushtx failed: {txid}', txid=new_txid)
 
     def self_sign_and_push(self):
         self.self_sign()

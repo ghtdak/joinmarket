@@ -6,6 +6,8 @@ import pprint
 from twisted.internet import defer
 from twisted.logger import Logger
 
+from joinmarket.core import system_shutdown
+
 log = Logger()
 
 
@@ -54,7 +56,7 @@ class BlockchainInterface(object):
     __metaclass__ = abc.ABCMeta
 
     def __init__(self):
-        pass
+        self.log = Logger(namespace=self.__module__)
 
     @abc.abstractmethod
     def add_tx_notify(self, transaction_watcher):
@@ -166,5 +168,9 @@ class CoinJoinerPeer(object):
 
     def do_nothing(self, *args, **kwargs):
         pass
+
+    def on_stalled(self):
+        self.log.debug('stalled, shutting down')
+        system_shutdown(-1, 'stalled')
 
 __all__ = ('AbstractWallet',)

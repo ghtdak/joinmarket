@@ -2,7 +2,6 @@
 from __future__ import absolute_import, print_function
 
 import base64
-import pprint
 
 from twisted.internet import defer, reactor
 from twisted.logger import Logger
@@ -12,7 +11,7 @@ from .abstracts import TransactionWatcher, CoinJoinerPeer
 from .blockchaininterface import bc_interface
 from .configure import DUST_THRESHOLD, get_p2pk_vbyte
 from .enc_wrapper import init_keypair, as_init_encryption, init_pubkey
-from .support import calc_cj_fee, debug_dump_object, system_shutdown
+from .support import calc_cj_fee, debug_dump_object
 from .txirc import BlockInstance
 from .wallet import Wallet
 

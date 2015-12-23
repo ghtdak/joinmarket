@@ -274,43 +274,38 @@ class BlockrInterface(BlockchainInterface):
 
 class JmZmq(object):
     def __init__(self, endpoint):
+        self.log = Logger(self.__module__)
         try:
             zf = ZmqFactory()
-            # todo: obviously,we need entries in the config
             e = ZmqEndpoint('connect', endpoint)
             s = ZmqSubConnection(zf, e)
-            # s.subscribe('hashblock')
-            # s.subscribe('hashtx')
             s.subscribe('rawtx')
             s.gotMessage = self.receive
         except:
-            log.failure('ZMQ failure')
+            self.log.failure('ZMQ failure')
 
     @staticmethod
     def hexHashRaw(raw):
         # raw transaction (as provided by Zmq) to binhash
         return binascii.hexlify(
                 hashlib.sha256(
-                        hashlib.sha256(raw).digest()
-                ).digest()[::-1])
+                        hashlib.sha256(raw).digest()).digest()[::-1])
 
     def receive(self, *args):
         msg, channel = args
 
-        # if channel == 'hashtx' or channel == 'hashblock':
-        #      log.debug('ZMQ: {:7} | {}'.format(channel,
-        #                                        binascii.hexlify(msg)))
+        if channel != 'rawtx':
+            return
 
-        if channel == 'rawtx':
-            txhash_hex = self.hexHashRaw(msg)
+        txhash_hex = self.hexHashRaw(msg)
 
-            # log.debug('ZMQ: {:7} | {}'.format(channel,
-            #                                   binascii.hexlify(txhash)))
+        txd = btc.json_changebase(btc.deserialize(msg),
+                                  lambda x: btc.safe_hexlify(x))
 
-            txd = btc.json_changebase(btc.deserialize(msg),
-                                lambda x: btc.safe_hexlify(x))
-            # print(pprint.pformat(txd))
-            bc_interface.process_raw_tx(txd, txhash_hex)
+        # self.log.debug('transaction: size={txlen}, {txhash_hex}',
+        #                txlen=len(msg), txhash_hex=txhash_hex)
+
+        bc_interface.process_raw_tx(txd, txhash_hex)
 
 
 class MultiCast(DatagramProtocol):
@@ -561,22 +556,12 @@ class RegtestBitcoinCoreInterface(BitcoinCoreInterface):
         super(RegtestBitcoinCoreInterface, self).__init__(jsonRpc, 'regtest')
 
     def pushtx(self, txhex):
+        self.log.debug('regtest pushtx: {ltx}', ltx=len(txhex))
         ret = super(RegtestBitcoinCoreInterface, self).pushtx(txhex)
-
-        # class TickChainThread(threading.Thread):
-        #     def __init__(self, bcinterface):
-        #         threading.Thread.__init__(self)
-        #         self.bcinterface = bcinterface
-        #
-        #     def run(self):
-        #         time.sleep(15)
-        #         self.bcinterface.tick_forward_chain(1)
-        # TickChainThread(self).start()
 
         # todo: there's no way to stop this without keeping a ref
 
-        l = task.LoopingCall(self.tick_forward_chain, 1)
-        l.start(15, now=False)
+        reactor.callLater(15, self.tick_forward_chain, 1)
 
         return ret
 
@@ -585,6 +570,7 @@ class RegtestBitcoinCoreInterface(BitcoinCoreInterface):
         Special method for regtest only;
         instruct to mine n blocks.
         """
+        self.log.debug('tick_forward_chain: n', n=n)
         self.rpc('generate', [n], immediate=True)
 
     def grab_coins(self, receiving_addr, amt=50):
@@ -614,15 +600,16 @@ class RegtestBitcoinCoreInterface(BitcoinCoreInterface):
         return txid
 
     def get_received_by_addr(self, addresses, query_params):
+        # todo: this is unused
         # NB This will NOT return coinbase coins (but wont matter in our use
         # case). allow importaddress to fail in case the address is already
         # in the wallet
         res = []
         for address in addresses:
             self.rpc('importaddress', [address, 'watchonly'], immediate=True)
+            r = self.rpc('getreceivedbyaddress', [address])
             res.append({'address': address,
-                        'balance': int(Decimal(1e8) * Decimal(self.rpc(
-                            'getreceivedbyaddress', [address])))})
+                        'balance': int(Decimal(1e8) * Decimal(r))})
         return {'data': res}
 
 def _get_blockchain_interface_instance():
@@ -654,14 +641,10 @@ def _get_blockchain_interface_instance():
         raise ValueError("Invalid blockchain source")
     return bc_interface
 
-bc_interface = _get_blockchain_interface_instance()
+# ----------------------------------------------
+# construct the one shared instance
+# ----------------------------------------------
 
-# Blockchain Instance - bci
-# short and sweet
-# def bci():
-#     global _global_bc_interface
-#     if not _global_bc_interface:
-#         _global_bc_interface = _get_blockchain_interface_instance()
-#     return _global_bc_interface
+bc_interface = _get_blockchain_interface_instance()
 
 __all__ = ('bc_interface', 'BlockrInterface')

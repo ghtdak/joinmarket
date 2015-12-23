@@ -9,11 +9,10 @@ import sys
 from twisted.internet import reactor
 from twisted.logger import Logger
 
-from joinmarket.yield_generator_basic import build_objects as build_yld
-from joinmarket.tumbler import build_objects as build_tumbler
-
 import bitcoin as btc
 import joinmarket.core as jm
+from joinmarket.tumbler import build_objects as build_tumbler
+from joinmarket.yield_generator_basic import build_objects as build_yld
 
 log = Logger()
 log.debug('wtf')
@@ -97,23 +96,23 @@ def generate_tumbler_wallets(num_tumbler):
 
 
 def buildYields():
-    yield_argv = [['btc_generator_basic.py', '79d18ce'],
+    _yield_argv = [['btc_generator_basic.py', '79d18ce'],
                    ['btc_generator_basic.py', '41d158b'],
                    ['btc_generator_basic.py', 'c5417cf'],
                    ['btc_generator_basic.py', '7ba4b63'],
                    ['btc_generator_basic.py', '732ad8c'],
                    ['btc_generator_basic.py', '8bf5fcd']]
 
-    _yield_argv = [['btc_generator_basic.py', 'd6fee66ca4'],
-                  ['btc_generator_basic.py', '16f84012af'],
-                  ['btc_generator_basic.py', '25aefce8b3'],
-                  ['btc_generator_basic.py', '9e099a5c73'],
-                  ['btc_generator_basic.py', 'c0dcc0be82'],
-                  ['btc_generator_basic.py', '52a5d129d6'],
-                  ['btc_generator_basic.py', 'fbadafd257'],
-                  ['btc_generator_basic.py', 'fc0846fd41'],
-                  ['btc_generator_basic.py', 'f814f17537'],
-                  ['btc_generator_basic.py', '91061a6135']]
+    yield_argv = [['btc_generator_basic.py', '0de582fb1b'],
+                  ['btc_generator_basic.py', 'be690fd5c7'],
+                  ['btc_generator_basic.py', '4c7736402b'],
+                  ['btc_generator_basic.py', '044d5279c9'],
+                  ['btc_generator_basic.py', '4c6d819823'],
+                  ['btc_generator_basic.py', '8889fa8950'],
+                  ['btc_generator_basic.py', 'eec5c2c951'],
+                  ['btc_generator_basic.py', '6f77ebec5c'],
+                  ['btc_generator_basic.py', '22f784a732'],
+                  ['btc_generator_basic.py', '160f60d2a4']]
 
     ylds = []
     for argv in yield_argv:
@@ -124,16 +123,18 @@ def buildYields():
 
 
 def buildTumbler():
-    tumblr_argv = [['tumbler.py', '-N', '2', '0', '-a', '0', '-M', '5',
+    _tumblr_argv = [['tumbler.py', '-N', '2', '0', '-a', '0', '-M', '5',
                     '-w', '3', '-l', '0.2', '-s', '100000000', '59bf49a',
                     'mhyGR4qBKDWoCdFZuzoSyVeCrphtPXtbgD']]
 
-    _tumblr_argv = [['tumbler.py', '-N', '2', '0', '-a', '0', '-M', '5', '-w',
-                    '3', '-l', '0.2', '-s', '100000000', 'cf',
-                    'mrGCJVbgkmv2TWBNYFjZjTqQYyNuY1REEP'],
+    tumblr_argv = [['tumbler.py', '-N', '2', '0', '-a', '0', '-M', '5', '-w',
+                    '3', '-l', '0.2', '-s', '100000000', '72',
+                    'mttJs8ghKdBum3umD5EP2k5acz3HNQjsey'],
                    ['tumbler.py', '-N', '2', '0', '-a', '0', '-M', '5', '-w',
-                    '3', '-l', '0.2', '-s', '100000000', '8a',
-                    'miVLMMtgNyzC9P8jBWvnRdJs5UrxHkihUn']]
+                    '3', '-l', '0.2', '-s', '100000000', '22',
+                    'mnmV8RHftcgXF1mkmrmLc9jv8RwLG1WWn3']]
+
+    tumblr_argv.pop()  # one for now
 
     tmblrs = []
     for argv in tumblr_argv:
@@ -163,8 +164,8 @@ def run():
         log.debug('running both')
         ylds = buildYields()
         tumblers = buildTumbler()
-        reactor.callWhenRunning(launch, ylds)
-        reactor.callLater(30, launch, tumblers)
+        # pre-initialized so just go ahead and launch (staggered)
+        reactor.callWhenRunning(launch, ylds + tumblers)
     elif w == 'yields':
         log.debug('running yields')
         ylds = buildYields()

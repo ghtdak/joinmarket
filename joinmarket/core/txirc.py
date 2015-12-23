@@ -16,7 +16,7 @@ from txsocksx.tls import TLSWrapClientEndpoint
 from .configure import get_config_irc_channel, config
 from .enc_wrapper import encrypt_encode, decode_decrypt
 from .jsonrpc import JsonRpcError
-from .support import chunks, random_nick
+from .support import chunks, random_nick, system_shutdown
 
 log = Logger()
 
@@ -28,6 +28,9 @@ class txIRC_Client(irc.IRCClient, object):
     """
     lineRate = 1
     heartbeatinterval = 60
+
+    # specific to txIRC_Client
+    jmStallDuration = 120
 
     def __init__(self, block_instance):
         # todo: everything should be connected to block_instance
@@ -45,13 +48,22 @@ class txIRC_Client(irc.IRCClient, object):
         # stochastic network delay support
         self._receiveQ = collections.deque()
 
+        self.jmStallWatchdog = reactor.callLater(self.jmStallDuration,
+                                                 self.jmStalled)
+
         # todo: build pong timeout watchdot
 
     def __getattr__(self, name):
         if name == 'irc_market':
             return self.block_instance.irc_market
         else:
+            log.error('__getattr__ - can\'t find: {name}', name=name)
             raise AttributeError
+
+    def irc_unknown(self, prefix, command, params):
+        # todo: this includes irc_PONG which we can use for health
+        self.log.debug('irc_unknown: {prefix}, {command}, {params}',
+                       prefix=prefix, command=command, params=params)
 
     # --------------------------------------------------
     # stochastic line delay simulation and
@@ -71,6 +83,10 @@ class txIRC_Client(irc.IRCClient, object):
 
     def rawDataReceived(self, data):
         log.error('rawDataReceived shouldn\'t be called')
+
+    def jmStalled(self):
+        self.log.debug('stalled')
+        self.block_instance.stalled()
 
     def connectionMade(self):
         self.log.debug('connectionMade: ')
@@ -101,6 +117,12 @@ class txIRC_Client(irc.IRCClient, object):
 
         reactor.callLater(0.0, self.irc_market.handle_privmsg,
                           userIn, channel, msg)
+
+        if self.jmStallWatchdog.active():
+            self.jmStallWatchdog.reset(self.jmStallDuration)
+        else:
+            self.jmStallWatchdog = reactor.callLater(self.jmStallDuration,
+                                                     self.jmStalled)
 
     def action(self, user, channel, msg):
         self.log.debug('unhandled action: {user}, {channel}, {msg}',
@@ -217,6 +239,9 @@ class CommSuper(object):
     def shutdown(self):
         pass
 
+    def stalled(self):
+        pass
+
     def send_error(self, nick, errormsg):
         pass
 
@@ -288,16 +313,20 @@ class IRC_Market(CommSuper):
         else:
             raise AttributeError('name: {name} doesn\'t exist', name=name)
 
+    def stalled(self):
+        self.log.warn('Stalled')
+        try:
+            self.log.warn('stalled')
+            self.cjp.on_stalled()
+        except:
+            self.log.failure('stalled')
+
     def shutdown(self, errno=-1):
         self.errno = errno
-        self.log.debug('SHUTDOWN Called (kidding): errno: {errno}',
+        self.log.debug('SHUTDOWN (kidding :-): errno: {errno}',
                        errno=errno)
-        traceback.print_stack()
 
         # todo: disconnection policy
-        # disconnect will cause connectionLost which stops the reactor
-
-        # self.block_instance.tcp_connector.disconnect()
 
     def send(self, send_to, msg):
         self.log.debug('send-> {send_to} {msg}...', send_to=send_to,
@@ -736,7 +765,7 @@ def localhost_nosec():
 
 class BlockInstance(object):
     # todo: we need to do the instance collection thing
-    instances = []
+    instances = set()
 
     def __init__(self, nickname=None,
                  username='username',
@@ -775,7 +804,7 @@ class BlockInstance(object):
 
         self.irc_market = IRC_Market(self)
 
-        BlockInstance.instances.append(self)
+        BlockInstance.instances.add(self)
 
     def set_coinjoinerpeer(self, cjp):
         self.log.debug('set_coinjoinerpeer')
@@ -784,6 +813,20 @@ class BlockInstance(object):
     def set_tx_irc_client(self, txircclt):
         self.log.debug('set_tx_irc_client')
         self.tx_irc_client = txircclt
+
+    def stalled(self):
+        """
+        a mechanism to shut down a test.  doesn't work for live as there
+        is likely going to be some activity even if our objects have all died.
+        :return:
+        """
+        # todo: in the real world this isn't a good policy
+        self.log.debug('stalled: quitting irc')
+        self.tx_irc_client.quit('I\'m melting...')
+        BlockInstance.instances.remove(self)
+        if len(BlockInstance.instances) == 0:
+            system_shutdown(-1, 'all stalled')
+
 
     def build_irc(self):
         if self.tx_irc_client:

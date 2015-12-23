@@ -8,7 +8,6 @@ import sys
 from optparse import OptionParser
 
 import bitcoin as btc
-
 import joinmarket.core as jm
 
 # structure for cj market wallet
