@@ -7,8 +7,8 @@ from optparse import OptionParser
 from twisted.internet import reactor
 from twisted.logger import Logger
 
-import bitcoin as btc
 import joinmarket.core as jm
+from joinmarket.core import jmbtc as btc
 from joinmarket.sendpayment import check_high_fee
 
 
@@ -251,8 +251,7 @@ def build_objects(argv=None):
         utxo_data[utxo] = {'address': data['address'], 'value': data['value']}
     auth_privkey = raw_input('input private key for ' + utxo_data[auth_utxo][
         'address'] + ' :')
-    if utxo_data[auth_utxo]['address'] != btc.privtoaddr(
-            auth_privkey, jm.get_p2pk_vbyte()):
+    if utxo_data[auth_utxo]['address'] != btc.privtoaddr(auth_privkey):
         log.info('ERROR: privkey does not match auth utxo')
         return
 
@@ -263,7 +262,7 @@ def build_objects(argv=None):
 
         def get_key_from_addr(self, addr):
             log.debug('getting privkey of ' + addr)
-            if btc.privtoaddr(auth_privkey, jm.get_p2pk_vbyte()) != addr:
+            if btc.privtoaddr(auth_privkey) != addr:
                 raise RuntimeError('privkey doesnt match given address')
             return auth_privkey
 

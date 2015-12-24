@@ -26,7 +26,7 @@ class txIRC_Client(irc.IRCClient, object):
     lineRate is a class variable in the superclass used to limit
     messages / second.  heartbeat is what you'd think
     """
-    lineRate = 1
+    lineRate = 0.5
     heartbeatinterval = 60
 
     # specific to txIRC_Client
@@ -57,13 +57,18 @@ class txIRC_Client(irc.IRCClient, object):
         if name == 'irc_market':
             return self.block_instance.irc_market
         else:
-            log.error('__getattr__ - can\'t find: {name}', name=name)
+            # log.error('__getattr__ - can\'t find: {name}', name=name)
             raise AttributeError
 
     def irc_unknown(self, prefix, command, params):
-        # todo: this includes irc_PONG which we can use for health
-        self.log.debug('irc_unknown: {prefix}, {command}, {params}',
-                       prefix=prefix, command=command, params=params)
+        pass
+        # todo: figure out if any of these unknown callbacks matter
+        # self.log.debug('irc_unknown: {prefix}, {command}, {params}',
+        #                prefix=prefix, command=command, params=params)
+
+    def irc_PONG(self, *args, **kwargs):
+        # todo: pong getting called getattr() style. use for health
+        pass
 
     # --------------------------------------------------
     # stochastic line delay simulation and

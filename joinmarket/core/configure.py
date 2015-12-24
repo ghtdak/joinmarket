@@ -6,8 +6,6 @@ import sys
 from ConfigParser import SafeConfigParser, NoOptionError
 from twisted.logger import Logger, textFileLogObserver, globalLogPublisher
 
-import bitcoin as btc
-
 globalLogPublisher.addObserver(
         textFileLogObserver(sys.stdout, timeFormat='%Y-%m-%d %H:%M:%S.%f'))
 
@@ -117,6 +115,7 @@ def get_p2pk_vbyte():
 
 
 def validate_address(addr):
+    from . import jmbtc as btc
     try:
         ver = btc.get_version_byte(addr)
     except AssertionError:
@@ -131,5 +130,5 @@ DUST_THRESHOLD = 2730
 JM_VERSION = 2
 
 __all__ = ('config', 'get_network', 'maker_timeout_sec',
-           'get_config_irc_channel', 'get_p2pk_vbyte', 'validate_address',
+           'get_config_irc_channel', 'validate_address',
            'DUST_THRESHOLD')

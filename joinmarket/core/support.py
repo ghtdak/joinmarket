@@ -165,7 +165,7 @@ def random_nick(nick_len=9):
     ircnick = ''.join([i for sl in zip(rnd_consonants, rnd_vowels) for i in sl])
     ircnick = ircnick.capitalize()
     # not using debug because it might not know the logfile name at this point
-    print('Generated random nickname: ' + ircnick)
+    log.debug('Generated random nickname: {ircnic}', ircnic=ircnick)
     return ircnick
     # Other ideas for random nickname generation:
     # - weight randomness by frequency of letter appearance

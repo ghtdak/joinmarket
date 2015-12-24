@@ -1,5 +1,6 @@
 from __future__ import absolute_import, print_function
 
+from collections import defaultdict
 import json
 import os
 import time
@@ -9,11 +10,11 @@ from getpass import getpass
 from configparser import NoSectionError
 from twisted.logger import Logger
 
-import bitcoin as btc
+from . import jmbtc as btc
 from .abstracts import AbstractWallet
 from .blockchaininterface import BitcoinCoreInterface, bc_interface
 from .configure import config
-from .configure import get_network, get_p2pk_vbyte
+from .configure import get_network
 from .jsonrpc import JsonRpcError
 from .slowaes import decryptData
 from .support import system_shutdown
@@ -63,12 +64,10 @@ class LessAbstractWallet(AbstractWallet):
                      for i in inputs])
 
     def get_balance_by_mixdepth(self):
-        mix_balance = {}
-        for m in range(self.max_mix_depth):
-            mix_balance[m] = 0
+        mix_balance = defaultdict(int)
         for mixdepth, utxos in self.get_utxos_by_mixdepth().iteritems():
-            mix_balance[mixdepth] = sum([addrval['value']
-                                         for addrval in utxos.values()])
+            for addrval in utxos.values():
+                mix_balance[mixdepth] += addrval['value']
         return mix_balance
 
 
@@ -176,7 +175,7 @@ class Wallet(LessAbstractWallet):
                 privkey = btc.encode_privkey(privkey, 'hex_compressed')
                 if epk_m['mixdepth'] not in self.imported_privkeys:
                     self.imported_privkeys[epk_m['mixdepth']] = []
-                self.addr_cache[btc.privtoaddr(privkey, get_p2pk_vbyte())] = (
+                self.addr_cache[btc.privtoaddr(privkey)] = (
                     epk_m['mixdepth'], -1,
                     len(self.imported_privkeys[epk_m['mixdepth']]))
                 self.imported_privkeys[epk_m['mixdepth']].append(privkey)
@@ -203,8 +202,7 @@ class Wallet(LessAbstractWallet):
             forchange], i))
 
     def get_addr(self, mixing_depth, forchange, i):
-        return btc.privtoaddr(
-            self.get_key(mixing_depth, forchange, i), get_p2pk_vbyte())
+        return btc.privtoaddr(self.get_key(mixing_depth, forchange, i))
 
     def get_new_addr(self, mixing_depth, forchange):
         index = self.index[mixing_depth]
@@ -258,7 +256,7 @@ class Wallet(LessAbstractWallet):
     def add_new_utxos(self, tx, txid):
         added_utxos = {}
         for index, outs in enumerate(tx['outs']):
-            addr = btc.script_to_address(outs['script'], get_p2pk_vbyte())
+            addr = btc.script_to_address(outs['script'])
             if addr not in self.addr_cache:
                 continue
             addrdict = {'address': addr, 'value': outs['value']}
@@ -275,13 +273,9 @@ class Wallet(LessAbstractWallet):
         """
         returns a list of utxos sorted by different mix levels
         """
-        mix_utxo_list = {}
-        for m in range(self.max_mix_depth):
-            mix_utxo_list[m] = {}
+        mix_utxo_list = defaultdict(dict)
         for utxo, addrvalue in self.unspent.iteritems():
             mixdepth = self.addr_cache[addrvalue['address']][0]
-            if mixdepth not in mix_utxo_list:
-                mix_utxo_list[mixdepth] = {}
             mix_utxo_list[mixdepth][utxo] = addrvalue
         # log.debug('get_utxos_by_mixdepth = \n{}'.format(mix_utxo_list))
         return mix_utxo_list
@@ -326,8 +320,7 @@ class Wallet(LessAbstractWallet):
 
         for privkey_list in self.imported_privkeys.values():
             for privkey in privkey_list:
-                imported_addr = btc.privtoaddr(
-                    privkey, get_p2pk_vbyte())
+                imported_addr = btc.privtoaddr(privkey)
                 wallet_addr_list.append(imported_addr)
         imported_addr_list = bc_interface.rpc(
                 'getaddressesbyaccount', [wallet_name])

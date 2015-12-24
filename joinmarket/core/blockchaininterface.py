@@ -15,19 +15,19 @@ import collections
 import binascii
 from twisted.web import server as twisted_server
 from twisted.web import resource as twisted_resource
-from twisted.internet import defer, task, reactor
+from twisted.internet import defer, reactor
 from twisted.internet.protocol import DatagramProtocol
 from twisted.logger import Logger
 
 import treq
 from txzmq import ZmqEndpoint, ZmqFactory, ZmqSubConnection
 
-import bitcoin as btc
+from . import jmbtc as btc
 from .abstracts import BlockchainInterface
 
 from .jsonrpc import JsonRpcConnectionError, JsonRpc
 from .support import chunks, system_shutdown
-from .configure import config, get_p2pk_vbyte, get_network
+from .configure import config, get_network
 
 
 log = Logger()
@@ -95,7 +95,7 @@ class BlockrInterface(BlockchainInterface):
             tx_output_set = set([(sv['script'], sv['value']) for sv in trw.txd[
                 'outs']])
             output_addresses = [
-                btc.script_to_address(scrval[0], get_p2pk_vbyte())
+                btc.script_to_address(scrval[0])
                 for scrval in tx_output_set
             ]
 
@@ -458,7 +458,7 @@ class BitcoinCoreInterface(BlockchainInterface):
 
         one_addr_imported = False
         for outs in trw.txd['outs']:
-            addr = btc.script_to_address(outs['script'], get_p2pk_vbyte())
+            addr = btc.script_to_address(outs['script'])
             if self.rpc('getaccount', [addr]) != '':
                 one_addr_imported = True
                 break
@@ -554,23 +554,28 @@ class RegtestBitcoinCoreInterface(BitcoinCoreInterface):
 
     def __init__(self, jsonRpc):
         super(RegtestBitcoinCoreInterface, self).__init__(jsonRpc, 'regtest')
+        self.confirmTimer = None
+
+    def notify(self):
+        # only one confirm timer at a time
+        if self.confirmTimer is None:
+            self.confirmTimer = reactor.callLater(
+                    15, self.tick_forward_chain, 1)
 
     def pushtx(self, txhex):
         self.log.debug('regtest pushtx: {ltx}', ltx=len(txhex))
         ret = super(RegtestBitcoinCoreInterface, self).pushtx(txhex)
 
-        # todo: there's no way to stop this without keeping a ref
-
-        reactor.callLater(15, self.tick_forward_chain, 1)
+        self.notify()
 
         return ret
 
     def tick_forward_chain(self, n):
         """
-        Special method for regtest only;
+        generate() for regtest only;
         instruct to mine n blocks.
         """
-        self.log.debug('tick_forward_chain: n', n=n)
+        self.confirmTimer = None
         self.rpc('generate', [n], immediate=True)
 
     def grab_coins(self, receiving_addr, amt=50):
@@ -597,6 +602,7 @@ class RegtestBitcoinCoreInterface(BitcoinCoreInterface):
             raise Exception("Failed to broadcast transaction")
         # confirm
         self.tick_forward_chain(1)
+        # self.notify()
         return txid
 
     def get_received_by_addr(self, addresses, query_params):

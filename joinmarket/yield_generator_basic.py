@@ -173,8 +173,7 @@ def build_objects(argv=None):
 
     wallet.sync_wallet()
 
-    bbm = wallet.get_balance_by_mixdepth()
-    print('balance by mixdepth', bbm)
+    log.debug('\n {nickname}, {argv}', nickname=nickname, argv=argv)
 
     log.debug('starting yield generator')
 

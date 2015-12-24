@@ -7,7 +7,7 @@ import os
 import sys
 from optparse import OptionParser
 
-import bitcoin as btc
+from joinmarket.core import jmbtc as btc
 import joinmarket.core as jm
 
 # structure for cj market wallet
@@ -129,8 +129,8 @@ def build_objects(argv=None):
                     used = ('used' if k < wallet.index[m][forchange] else
                             ' new')
                     privkey = btc.encode_privkey(
-                        wallet.get_key(m, forchange, k), 'wif_compressed',
-                        jm.get_p2pk_vbyte()) if options.showprivkey else ''
+                        wallet.get_key(m, forchange, k),
+                            'wif_compressed',) if options.showprivkey else ''
                     if (method == 'displayall' or balance > 0 or
                             (used == ' new' and forchange == 0)):
                         cus_print(
@@ -140,7 +140,7 @@ def build_objects(argv=None):
             if m in wallet.imported_privkeys:
                 cus_print(' import addresses')
                 for privkey in wallet.imported_privkeys[m]:
-                    addr = btc.privtoaddr(privkey, jm.get_p2pk_vbyte())
+                    addr = btc.privtoaddr(privkey)
                     balance = 0.0
                     for addrvalue in wallet.unspent.values():
                         if addr == addrvalue['address']:
@@ -148,8 +148,8 @@ def build_objects(argv=None):
                     used = (' used' if balance > 0.0 else 'empty')
                     balance_depth += balance
                     wip_privkey = btc.encode_privkey(
-                        privkey, 'wif_compressed',
-                        jm.get_p2pk_vbyte()) if options.showprivkey else ''
+                            privkey,
+                            'wif_compressed') if options.showprivkey else ''
                     cus_print(' ' * 13 + '%-35s%s %.8f btc %s' % (
                         addr, used, balance / 1e8, wip_privkey))
             total_balance += balance_depth

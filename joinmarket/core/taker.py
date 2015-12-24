@@ -12,10 +12,10 @@ from math import exp
 from twisted.internet import defer, reactor
 from twisted.logger import Logger
 
-import bitcoin as btc
+from . import jmbtc as btc
 from .abstracts import CoinJoinerPeer, TransactionWatcher
 from .blockchaininterface import bc_interface
-from .configure import get_p2pk_vbyte, maker_timeout_sec
+from .configure import maker_timeout_sec
 from .enc_wrapper import init_keypair, as_init_encryption, init_pubkey
 from .support import calc_cj_fee
 
@@ -165,7 +165,7 @@ class CoinJoinTX(TransactionWatcher):
                        nick=nick, totalin=total_input, cjamount=self.cj_amount,
                        txfee=order['txfee'], realcjfee=real_cjfee)
 
-        cj_addr = btc.pubtoaddr(cj_pub, get_p2pk_vbyte())
+        cj_addr = btc.pubtoaddr(cj_pub)
         self.outputs.append({'address': cj_addr, 'value': self.cj_amount})
         self.cjfee_total += real_cjfee
         self.maker_txfee_contributions += order['txfee']
@@ -314,9 +314,11 @@ class CoinJoinTX(TransactionWatcher):
         new_txid=btc.txhash(tx)
         self.log.debug('push txid: {txid}, {sz}',
                        txid=new_txid, sz=len(tx))
+
         # TODO send to a random maker or push myself
         # TODO need to check whether the other party sent it
         # self.msgchan.push_tx(self.active_orders.keys()[0], txhex)
+
         self.txid = bc_interface.pushtx(tx)
         if self.txid is None:
             self.log.warn('pushtx failed: {txid}', txid=new_txid)
@@ -336,6 +338,10 @@ class CoinJoinTX(TransactionWatcher):
         self.d_phase1.callback(self)
 
     class Watchdog(object):
+        """
+        This class is really overkill for what could be a simple timer.
+        Its legacy relates to a separate timer thread in the original.
+        """
 
         def __init__(self, cjtx):
             self.cjtx = cjtx
@@ -767,7 +773,7 @@ def donation_address(cjtx):
     c = btc.sha256(btc.multiply(reusable_donation_pubkey, sign_k))
     sender_pubkey = btc.add_pubkeys(reusable_donation_pubkey,
                                     btc.multiply(btc.G, c))
-    sender_address = btc.pubtoaddr(sender_pubkey, get_p2pk_vbyte())
+    sender_address = btc.pubtoaddr(sender_pubkey)
     log.debug('sending coins to ' + sender_address)
     return sender_address
 

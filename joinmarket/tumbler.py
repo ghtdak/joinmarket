@@ -239,6 +239,9 @@ class Tumbler(jm.Taker):
 
     @defer.inlineCallbacks
     def init_tx(self, tx, balance, sweep):
+        log.debug('balance by mixdepth: {bbm}',
+                  bbm=self.wallet.get_balance_by_mixdepth())
+
         destaddr = None
         if tx['destination'] == 'internal':
             destaddr = self.wallet.get_receive_addr(tx['srcmixdepth'] + 1)
@@ -535,11 +538,10 @@ def build_objects(argv=None):
     mmd = options.mixdepthsrc + options.mixdepthcount
     wallet = jm.Wallet(wallet_file, max_mix_depth=mmd)
 
+    log.debug('\n {nickname}, {argv}', nickname=nickname, argv=argv)
+
     wallet.sync_wallet()
     wallet.nickname = nickname  # logging support
-
-    log.debug('balancd by mixdepth: {bbm}',
-              bbm=wallet.get_balance_by_mixdepth())
 
     log.debug('starting tumbler')
     Tumbler(block_instance, wallet, tx_list, options)

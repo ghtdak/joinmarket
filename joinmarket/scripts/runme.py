@@ -15,9 +15,7 @@ from joinmarket.core.test.commontest import make_wallets
 from joinmarket.yield_generator_basic import build_objects as btc_gen_build
 from joinmarket.sendpayment import build_objects as sendpay_build
 
-import bitcoin as btc
-
-import joinmarket.core as jm
+from joinmarket.core import jmbtc
 
 log = Logger()
 """
@@ -54,8 +52,7 @@ def main():
 
     # run a single sendpayment call with wallet2
     amt = n * 100000000  # in satoshis
-    dest_address = btc.privkey_to_address(os.urandom(32),
-                                          jm.get_p2pk_vbyte())
+    dest_address = jmbtc.privkey_to_address(os.urandom(32))
 
     argv = ['sendpayment.py', '--yes', '-N', '1', wallets[1]['seed'],
             str(amt), dest_address]

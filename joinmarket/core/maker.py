@@ -6,10 +6,10 @@ import base64
 from twisted.internet import defer, reactor
 from twisted.logger import Logger
 
-import bitcoin as btc
+from . import jmbtc as btc
 from .abstracts import TransactionWatcher, CoinJoinerPeer
 from .blockchaininterface import bc_interface
-from .configure import DUST_THRESHOLD, get_p2pk_vbyte
+from .configure import DUST_THRESHOLD
 from .enc_wrapper import init_keypair, as_init_encryption, init_pubkey
 from .support import calc_cj_fee, debug_dump_object
 from .txirc import BlockInstance
@@ -188,8 +188,7 @@ class CoinJoinOrder(TransactionWatcher):
         if None in input_utxo_data:
             return False, 'some utxos already spent or not confirmed yet'
         input_addresses = [u['address'] for u in input_utxo_data]
-        if btc.pubtoaddr(self.i_utxo_pubkey,
-                         get_p2pk_vbyte()) not in input_addresses:
+        if btc.pubtoaddr(self.i_utxo_pubkey) not in input_addresses:
             return False, "authenticating bitcoin address is not contained"
 
         my_utxo_set = set(self.utxos.keys())
@@ -211,7 +210,7 @@ class CoinJoinOrder(TransactionWatcher):
         times_seen_cj_addr = 0
         times_seen_change_addr = 0
         for outs in txd['outs']:
-            addr = btc.script_to_address(outs['script'], get_p2pk_vbyte())
+            addr = btc.script_to_address(outs['script'])
             if addr == self.cj_addr:
                 times_seen_cj_addr += 1
                 if outs['value'] != self.cj_amount:
@@ -442,7 +441,7 @@ class Maker(CoinJoinerPeer):
     def on_tx_confirmed(self, cjorder, confirmations, txid):
         to_announce = []
         for i, out in enumerate(cjorder.txd['outs']):
-            addr = btc.script_to_address(out['script'], get_p2pk_vbyte())
+            addr = btc.script_to_address(out['script'])
             if addr == cjorder.change_addr:
                 neworder = {'oid': self.get_next_oid(),
                             'ordertype': 'absorder',
