@@ -132,7 +132,6 @@ class YieldGenerator(jm.Maker):
                  sum([av['value'] for av in cjorder.utxos.values()]),
                  cjorder.real_cjfee, cjorder.real_cjfee - cjorder.txfee,
                  round(confirm_time / 60.0, 2), ''])
-        # todo: was calling on_tx_unconfirmed
         return self.on_tx_unconfirmed(cjorder, txid, None)
 
 
@@ -150,8 +149,6 @@ def build_objects(argv=None):
     nickname = jm.random_nick()
 
     block_instance = jm.BlockInstance(nickname, realname=realname)
-
-    # todo: for testing... remove me!!
 
     if isinstance(jm.bc_interface, jm.BlockrInterface):
         c = ('\nYou are running a yield generator by polling the blockr.io '

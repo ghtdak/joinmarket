@@ -33,9 +33,7 @@ class txIRC_Client(irc.IRCClient, object):
     jmStallDuration = 120
 
     def __init__(self, block_instance):
-        # todo: everything should be connected to block_instance
         self.block_instance = block_instance
-        self.block_instance.set_tx_irc_client(self)
 
         # superclass static over-rides
         self.nickname = self.block_instance.nickname
@@ -67,7 +65,7 @@ class txIRC_Client(irc.IRCClient, object):
         #                prefix=prefix, command=command, params=params)
 
     def irc_PONG(self, *args, **kwargs):
-        # todo: pong getting called getattr() style. use for health
+        # todo: pong called getattr() style. use for health
         pass
 
     # --------------------------------------------------
@@ -293,18 +291,10 @@ class IRC_Market(CommSuper):
         ns = self.__module__ + '@' + self.block_instance.nickname
         self.log = Logger(namespace=ns)
 
-        # todo: remove this
-        # self.userrealname = (username, realname)
-        # if password and len(password) == 0:
-        #     password = None
-        # self.given_password = password
-
         # todo: things like errno need to be documented
         self.errno = 0
 
-        # todo: channel should use block_instance
         self.channel = self.block_instance.channel
-        # self.channel = get_config_irc_channel()
 
         # todo: rename this.  too confusing
         self.from_to = None
@@ -423,7 +413,6 @@ class IRC_Market(CommSuper):
         self.__privmsg(nick, 'auth', message)
 
     def send_tx(self, nick_list, txhex):
-        # todo: rateLimit handles excessive messages.  NO SLEEPING!!!
         txb64 = base64.b64encode(txhex.decode('hex'))
         for nick in nick_list:
             self.__privmsg(nick, 'tx', txb64)
@@ -441,16 +430,15 @@ class IRC_Market(CommSuper):
         order_keys = ['oid', 'minsize', 'maxsize', 'txfee', 'cjfee']
         # header = 'PRIVMSG ' + (nick if nick else self.channel) + ' :'
         send_to = nick if nick else self.channel
-        header = ''  # todo: HACK!! fix this
         orderlines = []
         for i, order in enumerate(orderlist):
             orderparams = (COMMAND_PREFIX + order['ordertype'] +
                            ' ' + ' '.join([str(order[k]) for k in order_keys]))
             orderlines.append(orderparams)
-            line = header + ''.join(orderlines) + ' ~'
+            line = ''.join(orderlines) + ' ~'
             if len(line) > MAX_PRIVMSG_LEN or i == len(orderlist) - 1:
                 if i < len(orderlist) - 1:
-                    line = header + ''.join(orderlines[:-1]) + ' ~'
+                    line = ''.join(orderlines[:-1]) + ' ~'
                 self.send(send_to, line)
                 orderlines = [orderlines[-1]]
 
@@ -467,7 +455,6 @@ class IRC_Market(CommSuper):
         self.__privmsg(nick, 'ioauth', authmsg)
 
     def send_sigs(self, nick, sig_list):
-        # todo: message rate is handled at the irc client level. solved.
         for s in sig_list:
             self.__privmsg(nick, 'sig', s)
 
@@ -640,8 +627,8 @@ class IRC_Market(CommSuper):
         try:
 
             nick = get_irc_nick(sent_from)
-            # todo: kludge - we need this elsewhere. rearchitect!!
 
+            # todo: kludge - we need this elsewhere. rearchitect!!
             self.from_to = (nick, sent_to)
 
             if sent_to == self.block_instance.nickname:
@@ -683,8 +670,8 @@ class IRC_Market(CommSuper):
                         parsed += ' ' + decrypted
                     else:
                         parsed = self.built_privmsg[nick][1]
+
                     # wipe the message buffer waiting for the next one
-                    # todo: kinda tricky here.  rearchitect!!
                     del self.built_privmsg[nick]
 
                     # self.log.debug("<<privmsg:", nick=nick, parsed=parsed)
@@ -711,7 +698,7 @@ class IRC_Market(CommSuper):
 # -----------------------------------------------------
 
 
-class LogBotFactory(protocol.ClientFactory):
+class TxIRCFactory(protocol.ClientFactory):
     def __init__(self, block_instance):
         self.block_instance = block_instance
         self.channel = self.block_instance.channel
@@ -719,6 +706,7 @@ class LogBotFactory(protocol.ClientFactory):
     def buildProtocol(self, addr):
         p = txIRC_Client(self.block_instance)
         p.factory = self
+        self.block_instance.set_tx_irc_client(p)
         return p
 
     # todo: connection info in IRC_Market.  Need reconnect policy
@@ -735,7 +723,7 @@ ght_cred = {'nickname': 'anutxhg', 'password': '', 'hostname': 'localhost'}
 
 
 def tor_cyber():
-    factory = LogBotFactory('#joinmarket-pit', ght_cred)
+    factory = TxIRCFactory('#joinmarket-pit', ght_cred)
 
     ctx = ClientContextFactory()
 
@@ -748,7 +736,7 @@ def tor_cyber():
 
 
 def ssl_cyber():
-    factory = LogBotFactory('#joinmarket-pit', ght_cred)
+    factory = TxIRCFactory('#joinmarket-pit', ght_cred)
 
     ctx = ClientContextFactory()
     # ctx = CertificateOptions(verify=False)
@@ -757,19 +745,19 @@ def ssl_cyber():
 
 
 def home_nosec():
-    factory = LogBotFactory('#anarchy', ght_cred)
+    factory = TxIRCFactory('#anarchy', ght_cred)
 
     return reactor.connectTCP('192.168.1.200', 6667, factory)
 
 
 def localhost_nosec():
-    factory = LogBotFactory('#anarchy', ght_cred)
+    factory = TxIRCFactory('#anarchy', ght_cred)
 
     return reactor.connectTCP('localhost', 6667, factory)
 
 
 class BlockInstance(object):
-    # todo: we need to do the instance collection thing
+    # all BlockInstance objects.  Used for shutdown / monitoring
     instances = set()
 
     def __init__(self, nickname=None,
@@ -825,7 +813,7 @@ class BlockInstance(object):
         is likely going to be some activity even if our objects have all died.
         :return:
         """
-        # todo: in the real world this isn't a good policy
+        # todo: stalled only useful for test
         self.log.debug('stalled: quitting irc')
         self.tx_irc_client.quit('I\'m melting...')
         BlockInstance.instances.remove(self)
@@ -838,7 +826,7 @@ class BlockInstance(object):
             raise Exception('irc already built')
 
         try:
-            factory = LogBotFactory(self)
+            factory = TxIRCFactory(self)
 
             self.log.debug('build_irc: {host}, {port}, {channel}',
                            host=self.host, port=self.port,

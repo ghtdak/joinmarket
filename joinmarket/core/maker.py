@@ -18,7 +18,6 @@ from .wallet import Wallet
 
 class CoinJoinOrder(TransactionWatcher):
 
-    # todo: way too much stuff going on in init
     def __init__(self, maker, nick, oid, cj_amount, taker_pk):
         super(CoinJoinOrder, self).__init__(maker)
 

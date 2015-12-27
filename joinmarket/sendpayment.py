@@ -43,8 +43,6 @@ class SendPayment(jm.Taker):
     def on_welcome(self):
         log.debug('on_welcome')
         super(SendPayment, self).on_welcome()
-        # todo: self.waittime seemed too short. ???
-        # reactor.callLater(self.waittime, self.create_tx)
         reactor.callLater(self.waittime, self.create_tx)
 
     def create_tx(self):

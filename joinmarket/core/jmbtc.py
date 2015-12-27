@@ -32,6 +32,24 @@ def pubtoaddr(pubkey):
     """
     return pubkey_to_address(pubkey)
 
+class InsufficientFunds(Exception):
+    pass
+
+def select(unspent, value):
+    """
+    pybitcointools just throws an Exception... ugh
+    :param unspent:
+    :param value:
+    :return:
+    """
+    try:
+        return btc.select(unspent, value)
+    except Exception as e:
+        if str(e) == 'Not enough funds':
+            raise InsufficientFunds()
+        else:
+            raise e
+
 serialize = btc.serialize
 
 sign = btc.sign
@@ -97,8 +115,6 @@ deterministic_generate_k = btc.deterministic_generate_k
 multiply = btc.multiply
 
 add_pubkeys = btc.add_pubkeys
-
-select = btc.select
 
 bip32_master_key = btc.bip32_master_key
 

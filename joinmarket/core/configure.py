@@ -89,7 +89,7 @@ except NoOptionError:
 
 def get_config_irc_channel():
     channel = '#' + config.get("MESSAGING", "channel")
-    # todo: this isn't right, at least from the testing I was doing
+    # todo: what is the intent of the -test option?  irrelevant with miniircd?
     # if get_network() == 'testnet':
     #     channel += '-test'
     return channel
@@ -124,7 +124,7 @@ def validate_address(addr):
         return False, 'Wrong address version. Testnet/mainnet confused?'
     return True, 'address validated'
 
-# todo: this should be in config
+# todo: DUST_THRESHOLD should be in config
 DUST_THRESHOLD = 2730
 
 JM_VERSION = 2

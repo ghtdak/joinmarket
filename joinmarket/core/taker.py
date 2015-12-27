@@ -73,8 +73,6 @@ class CoinJoinTX(TransactionWatcher):
         self.utxo_tx = None
 
         # state variables
-        # todo: is self.txid used anywhere?
-        self.txid = None
         self.cjfee_total = 0
         self.maker_txfee_contributions = 0
         self.nonrespondants = list(self.active_orders.keys())
@@ -186,14 +184,13 @@ class CoinJoinTX(TransactionWatcher):
         my_change_value = (
             my_total_in - self.cj_amount - self.cjfee_total - my_txfee)
 
-        fmt = ('fee breakdown totalin={totalin} my_txfee={my_txfee} '
-               'makers_txfee={makers_txfee} cjfee_total={cjfee_total} => '
-               'changevalue={changevalue}')
-        self.log.debug(
-                totalin=my_total_in, my_txfee=my_txfee,
-                makers_txfee=self.maker_txfee_contributions,
-                cjfee_total=self.cjfee_total,
-                changevalue=my_change_value)
+        self.log.debug('fee breakdown totalin={totalin} my_txfee={my_txfee} '
+                       'makers_txfee={makers_txfee} cjfee_total={cjfee_total} '
+                       '=> changevalue={changevalue}',
+                       totalin=my_total_in, my_txfee=my_txfee,
+                       makers_txfee=self.maker_txfee_contributions,
+                       cjfee_total=self.cjfee_total,
+                       changevalue=my_change_value)
 
         if self.my_change_addr is None:
             if my_change_value != 0 and abs(my_change_value) != 1:
@@ -214,6 +211,7 @@ class CoinJoinTX(TransactionWatcher):
         tx = btc.mktx(self.utxo_tx, self.outputs)
         self.msgchan.send_tx(self.active_orders.keys(), tx)
 
+        # todo: exceedingly dangerous.  self.txd being set is used in recover
         self.txd = btc.deserialize(tx)
         for index, ins in enumerate(self.txd['ins']):
             utxo = ins['outpoint']['hash'] + ':' + str(ins['outpoint']['index'])
@@ -319,8 +317,8 @@ class CoinJoinTX(TransactionWatcher):
         # TODO need to check whether the other party sent it
         # self.msgchan.push_tx(self.active_orders.keys()[0], txhex)
 
-        self.txid = bc_interface.pushtx(tx)
-        if self.txid is None:
+        txid = bc_interface.pushtx(tx)
+        if txid is None:
             self.log.warn('pushtx failed: {txid}', txid=new_txid)
 
     def self_sign_and_push(self):
@@ -333,6 +331,28 @@ class CoinJoinTX(TransactionWatcher):
     def watchdog_timeout(self):
         self.log.debug('nonresponding makers: {nonrespondents}',
                        nonrespondents=self.nonrespondants)
+
+        # todo: need handle self.txd none recover case
+
+        # if self.latest_tx is None:
+        #     # nonresponding to !fill, recover by finding another maker
+        #     log.debug('nonresponse to !fill')
+        #     for nr in self.nonrespondants:
+        #         del self.active_orders[nr]
+        #     new_orders, new_makers_fee = self.choose_orders_recover(
+        #             self.cj_amount, len(self.nonrespondants),
+        #             self.nonrespondants,
+        #             self.active_orders.keys())
+        #     for nick, order in new_orders.iteritems():
+        #         self.active_orders[nick] = order
+        #     self.nonrespondants = list(new_orders.keys())
+        #     log.debug(('new active_orders = {} \nnew nonrespondants = '
+        #                '{}').format(
+        #             pprint.pformat(self.active_orders),
+        #             pprint.pformat(self.nonrespondants)))
+        #
+        #     self.msgchan.fill_orders(new_orders, self.cj_amount,
+        #                              self.kp.hex_pk())
 
         # was finishcallback
         self.d_phase1.callback(self)
@@ -664,7 +684,8 @@ class Taker(OrderbookWatch):
                             order[0]['ordertype']))
 
             my_txfee = max(total_txfee - sumtxfee_contribution, 0)
-            cjamount = (total_input_value - my_txfee - sumabsfee) / (1 + sumrelfee)
+            cjamount = (total_input_value -
+                        my_txfee - sumabsfee) / (1 + sumrelfee)
             cjamount = int(cjamount.quantize(Decimal(1)))
             return cjamount, int(sumabsfee + sumrelfee * cjamount)
 
@@ -697,7 +718,7 @@ class Taker(OrderbookWatch):
         available_orders = sorted(available_orders, key=feekey)
         chosen_orders = []
 
-        # todo: static analysis bug
+        # todo: static analysis cj_amount could be unset
         cj_amount = 0
         while len(chosen_orders) < n:
             if len(available_orders) < n - len(chosen_orders):

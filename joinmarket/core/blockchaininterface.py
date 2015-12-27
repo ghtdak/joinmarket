@@ -87,7 +87,7 @@ class BlockrInterface(BlockchainInterface):
         # calls managed by Twisted using the miracle of generators.  The
         # illusion of blocking
 
-        # todo: a bit of a high wire act.  Need to look closely here!!
+        # todo: Blockr async needs testing and rearchitecture!!
 
         @defer.inlineCallbacks
         def AsyncWebSucker():
@@ -343,9 +343,8 @@ class MultiCast(DatagramProtocol):
             bc_interface.process_raw_tx(txd, txid)
 
         elif path.startswith('/alertnotify?'):
-            # todo: I got rid of the core_alert thing... rearchitect!!
             core_alert = urllib.unquote(path[len(pages[1]):])
-            log.debug('Got an alert!\nMessage=' + core_alert)
+            log.warn('Bitcoin alert!: {core_alert}', core_alert=core_alert)
 
 
 # noinspection PyMissingConstructor

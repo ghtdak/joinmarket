@@ -70,6 +70,13 @@ class LessAbstractWallet(AbstractWallet):
                 mix_balance[mixdepth] += addrval['value']
         return mix_balance
 
+    def get_btc_mixdepth_list(self):
+        mix_balance = self.get_balance_by_mixdepth()
+        r = [0.0] * self.max_mix_depth
+        for k, v in mix_balance.iteritems():
+            r[k] += v / 1e8
+        return r
+
 
 class Wallet(LessAbstractWallet):
 
@@ -210,6 +217,7 @@ class Wallet(LessAbstractWallet):
         self.addr_cache[addr] = (mixing_depth, forchange, index[forchange])
         index[forchange] += 1
         # self.update_cache_index()
+        # todo: checing interface type indicates a general is-a problem
         if isinstance(bc_interface, BitcoinCoreInterface):
             # do not import in the middle of sync_wallet()
             if self.wallet_synced:
@@ -340,8 +348,6 @@ class Wallet(LessAbstractWallet):
         # its a hashset) and allows using issubset() here and setdiff() for
         # finding which addresses need importing
 
-        # TODO also check the fastest way to build up python lists, i suspect
-        #  using += is slow
         used_addr_list = [tx['address']
                           for tx in txs if tx['category'] == 'receive']
 

@@ -185,7 +185,6 @@ class JsonRpc(object):
 
     def call(self, method, params, immediate=False):
 
-        # todo: call stack monitoring
         # tb_stack_dd[tuple(traceback.extract_stack())] += 1
 
         currentId = self.queryId

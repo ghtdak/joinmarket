@@ -40,27 +40,8 @@ reactor.callWhenRunning(keyboard_signal_handler)
 
 # log.startLogging(sys.stdout)
 
-# todo: I'm not sure I understand exactly why this is or isn't needed
-# logging.getLogger('twisted').addHandler(logging.NullHandler())
-#
-# logFormatter = logging.Formatter(
-#     "%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
-# log = logging.getLogger('joinmarket')
-# log.setLevel(logging.DEBUG)
-#
-# consoleHandler = logging.StreamHandler(stream=sys.stdout)
-# consoleHandler.setFormatter(logFormatter)
-# log.addHandler(consoleHandler)
-
 log.info('logger started')
 
-
-# def get_log():
-#     """
-#     provides joinmarket logging instance
-#     :return: log instance
-#     """
-#     return log
 
 def loggerMath():
     """

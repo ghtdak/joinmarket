@@ -1,12 +1,14 @@
 from __future__ import absolute_import, print_function
 
 import copy
+import pprint
 import sys
 from optparse import OptionParser
 
 from twisted.internet import defer, reactor
 from twisted.logger import Logger
 
+from joinmarket.core import jmbtc as btc
 import joinmarket.core as jm
 
 log = Logger()
@@ -150,6 +152,10 @@ class Tumbler(jm.Taker):
     @defer.inlineCallbacks
     def create_tx(self, tx, sweep, balance, destaddr):
         while True:
+            self.log.debug('create_tx: sweep: {sweep}, balance: {balance}, '
+                           'destaddr: {destaddr}, tx below...',
+                           sweep=sweep, balance=balance, destaddr=destaddr)
+            print(pprint.pformat(tx))
             orders = None
             cj_amount = 0
             change_addr = None
@@ -181,6 +187,7 @@ class Tumbler(jm.Taker):
                         continue
                     break
             else:
+                self.log.debug('not sweeping')
                 if tx['amount_fraction'] == 0:
                     cj_amount = int(
                             balance * self.options.donateamount / 100.0)
@@ -195,7 +202,8 @@ class Tumbler(jm.Taker):
                 change_addr = self.wallet.get_change_addr(tx[
                     'srcmixdepth'])
 
-                self.log.debug('coinjoining ', cj_amount=cj_amount)
+                self.log.debug('coinjoining: {cj_amount} ',
+                               cj_amount=cj_amount)
 
                 orders, total_cj_fee = yield self.tumbler_choose_orders(
                         cj_amount, tx['makercount'])
@@ -205,10 +213,14 @@ class Tumbler(jm.Taker):
                 self.log.debug('total amount spent', total_amount=total_amount)
 
                 try:
+                    bbm = self.wallet.get_btc_mixdepth_list()
+                    self.log.debug('select_utxos - amount:{amount} '
+                                   'balance by mixdepth: {bbm}',
+                                   amount=total_amount/1e8, bbm=bbm)
                     utxos = self.wallet.select_utxos(
                             tx['srcmixdepth'], total_amount)
-                except:
-                    self.log.debug('insuffient funds')
+                except btc.InsufficientFunds:
+                    self.log.debug('insufficient funds')
                     raise
 
             cjtx = jm.CoinJoinTX(self, cj_amount, orders, utxos, destaddr,
@@ -217,8 +229,6 @@ class Tumbler(jm.Taker):
             coinjointx = yield cjtx.phase1()
 
             if coinjointx.all_responded:
-                # todo: moved inside CJTX...
-                # jm.bc_interface.add_tx_notify(coinjointx)
 
                 self.wallet.remove_old_utxos(coinjointx.txd)
                 coinjointx.self_sign_and_push()
@@ -233,14 +243,20 @@ class Tumbler(jm.Taker):
                 else:
                     self.log.debug('unconfirmed create_tx', txid=txid)
             else:
-                self.ignored_makers += coinjointx.nonrespondants
+                # todo: need to handle the tx restart.  why did the old
+                # todo: taker recovery code do what it did?
+                if coinjointx.txd is None:
+                    self.log.debug("Ugh, cjtx.txd is None... Nightmare")
+                # todo: Could be this ignored_makers handling is wrong
+                # self.ignored_makers += coinjointx.nonrespondants
                 self.log.debug('coinjointx unsuccessful')
                 # lets do it agaoin
 
     @defer.inlineCallbacks
     def init_tx(self, tx, balance, sweep):
-        log.debug('balance by mixdepth: {bbm}',
-                  bbm=self.wallet.get_balance_by_mixdepth())
+        log.debug('init_tx: balance={balance}, by mixdepth={bbm}',
+                  balance=balance,
+                  bbm=self.wallet.get_btc_mixdepth_list())
 
         destaddr = None
         if tx['destination'] == 'internal':
@@ -258,7 +274,7 @@ class Tumbler(jm.Taker):
         try:
             yield self.create_tx(tx, sweep, balance, destaddr)
         except:
-            self.log.debug('insufficient funds, stopping')
+            self.log.debug('exception, stopping')
             raise
         waitTime = tx['wait'] * 60
         self.log.debug('sleeping for {waitTime}', waitTime=waitTime)
@@ -272,38 +288,46 @@ class Tumbler(jm.Taker):
         orders = sorted(orders)
         if len(orders) == 0:
             self.log.debug('There are no orders at all in the orderbook! '
-                      'Is the bot connecting to the right server?')
+                           'Is the bot connecting to the right server?')
             return
         relorder_fee = float(orders[0])
-        self.log.debug('set relorder fee',relorder_fee=relorder_fee)
+        self.log.info('set relorder fee',relorder_fee=relorder_fee)
         maker_count = sum([tx['makercount'] for tx in self.tx_list])
 
-        # todo: this needs cleanup
-        self.log.debug('status', maker_count=maker_count,
-                       relorder_fee=relorder_fee)
+        self.log.info(
+                'uses {mc} makers, at {rf}% per maker, estimated total cost '
+                '{cost}%', mc=maker_count, rf=relorder_fee*100,
+                cost=round((1 - (1 - relorder_fee)**maker_count) * 100, 3))
 
-        self.log.debug('uses ' + str(maker_count) + ' makers, at ' + str(
-                relorder_fee * 100) + '% per maker, estimated total cost ' + str(
-                round((1 - (1 - relorder_fee)**maker_count) * 100, 3)) + '%')
         self.log.debug('starting the big tumbler loop')
 
         self.balance_by_mixdepth = {}
 
         for i, tx in enumerate(self.tx_list):
             # todo: what happens if it is in there? is that an error?
-            if tx['srcmixdepth'] not in self.balance_by_mixdepth:
-                bbm = self.wallet.get_balance_by_mixdepth()[tx['srcmixdepth']]
-                self.balance_by_mixdepth[tx['srcmixdepth']] = bbm
+            tx_src = tx['srcmixdepth']
+            if tx_src not in self.balance_by_mixdepth:
+                bbm = self.wallet.get_balance_by_mixdepth()[tx_src]
+                self.balance_by_mixdepth[tx_src] = bbm
             sweep = True
             for later_tx in self.tx_list[i + 1:]:
-                if later_tx['srcmixdepth'] == tx['srcmixdepth']:
+                if later_tx['srcmixdepth'] == tx_src:
                     sweep = False
+            # todo: what's the point of current_tx???
             self.current_tx = i
             try:
-                yield self.init_tx(
-                        tx, self.balance_by_mixdepth[tx['srcmixdepth']], sweep)
+                balance = self.balance_by_mixdepth[tx_src]
+                log.debug('big loop: tx_src={tx_src}, balance={balance}',
+                          tx_src=tx_src, balance=balance)
+
+                yield self.init_tx(tx, balance, sweep)
+
+            except btc.InsufficientFunds:
+                self.log.info('insufficient funds... stopping')
+                print('-+' * 40)
+                break
             except:
-                log.debug('exception, probably insufficient funds')
+                self.log.failure('big tumbler loop fail...')
                 print('-+' * 40)
                 break
 
@@ -467,9 +491,9 @@ def build_objects(argv=None):
     for addr in destaddrs:
         addr_valid, errormsg = jm.validate_address(addr)
         if not addr_valid:
-            print('ERROR: Address ' + addr + ' invalid. ' + errormsg)
+            log.warn('ERROR: Address {addr} invalid. {msg}',
+                     addr=addr, msg=errormsg)
             # todo: its throwing me out but still works.  sup?
-            # return
 
     if len(destaddrs) > options.addrcount:
         options.addrcount = len(destaddrs)
@@ -486,26 +510,33 @@ def build_objects(argv=None):
     if not tx_list:
         return
 
-    tx_list2 = copy.deepcopy(tx_list)
-    tx_dict = {}
-    for tx in tx_list2:
-        srcmixdepth = tx['srcmixdepth']
-        tx.pop('srcmixdepth')
-        if srcmixdepth not in tx_dict:
-            tx_dict[srcmixdepth] = []
-        tx_dict[srcmixdepth].append(tx)
-    dbg_tx_list = []
-    for srcmixdepth, txlist in tx_dict.iteritems():
-        dbg_tx_list.append({'srcmixdepth': srcmixdepth, 'tx': txlist})
-    log.debug('tumbler transaction list', tx_dict=tx_dict)
+    log.debug('tx_list')
+    print(pprint.pformat(tx_list))
+
+    # tx_list2 = copy.deepcopy(tx_list)
+    # tx_dict = {}
+    # for tx in tx_list2:
+    #     srcmixdepth = tx['srcmixdepth']
+    #     tx.pop('srcmixdepth')
+    #     if srcmixdepth not in tx_dict:
+    #         tx_dict[srcmixdepth] = []
+    #     tx_dict[srcmixdepth].append(tx)
+
+    # dbg_tx_list = []
+    # for srcmixdepth, txlist in tx_dict.iteritems():
+    #     dbg_tx_list.append({'srcmixdepth': srcmixdepth, 'tx': txlist})
+    # log.debug('tumbler transaction list', tx_dict=tx_dict)
 
     total_wait = sum([tx['wait'] for tx in tx_list])
-    print('creates ' + str(len(tx_list)) + ' transactions in total')
-    print('waits in total for ' + str(len(tx_list)) + ' blocks and ' + str(
-        total_wait) + ' minutes')
+    print('creates {len_tx} transactions in total\n'
+          'waits in total for {len_tx} blocks and {wait} minutes'.format(
+            len_tx=len(tx_list), wait=total_wait))
+
     total_block_and_wait = len(tx_list) * 10 + total_wait
-    print('estimated time taken ' + str(total_block_and_wait) + ' minutes or ' +
-          str(round(total_block_and_wait / 60.0, 2)) + ' hours')
+    print('estimated time taken {wait_min} minutes or {wait_hrs} hours'.format(
+            wait_min=total_block_and_wait,
+            wait_hrs=round(total_block_and_wait / 60.0, 2)))
+
     if options.addrcount <= 1:
         print('=' * 50)
         print('WARNING: You are only using one destination address')
