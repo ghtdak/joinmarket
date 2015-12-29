@@ -530,6 +530,33 @@ def select_greediest(unspent, value):
         return low[0:end]
 
 
+def estimate_tx_size(ins, outs, txtype='p2pkh'):
+    '''Estimate transaction size.
+    Assuming p2pkh:
+    out: 8+1+3+2+20=34, in: 1+32+4+1+1+~73+1+1+33=147,
+    ver:4,seq:4, +2 (len in,out)
+    total ~= 34*len_out + 147*len_in + 10 (sig sizes vary slightly)
+    '''
+    if txtype=='p2pkh':
+        return 10 + ins*147 +34*outs
+    else:
+        raise NotImplementedError("Non p2pkh transaction size estimation "
+                                  "not yet implemented")
+
+
+def estimate_tx_fee(ins, outs, txtype='p2pkh'):
+    '''Returns an estimate of the number of satoshis required
+    for a transaction with the given number of inputs and outputs,
+    based on information from the blockchain interface.
+    '''
+    tx_estimated_bytes = estimate_tx_size(ins, outs, txtype)
+    log.debug("Estimated transaction size: "+str(tx_estimated_bytes))
+    fee_per_kb = bc_interface.estimate_fee_per_kb(
+        config.getint("POLICY","tx_fees"))
+    log.debug("got estimated tx bytes: "+str(tx_estimated_bytes))
+    return int((tx_estimated_bytes * fee_per_kb)/Decimal(1000.0))
+
+
 
 
 __all__ = ('Wallet', 'BitcoinCoreWallet')

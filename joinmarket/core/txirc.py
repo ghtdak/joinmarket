@@ -30,7 +30,7 @@ class txIRC_Client(irc.IRCClient, object):
     heartbeatinterval = 60
 
     # specific to txIRC_Client
-    jmStallDuration = 120
+    jmStallDuration = 1200
 
     def __init__(self, block_instance):
         self.block_instance = block_instance
@@ -324,8 +324,17 @@ class IRC_Market(CommSuper):
         # todo: disconnection policy
 
     def send(self, send_to, msg):
+        """
+        Everything we need to know about sending.  What twisted does is
+        another story.  Recent changes (sendCommand) and how it uses
+        encoding should be investigated.
+        :param send_to:
+        :param msg:
+        :return:
+        """
         self.log.debug('send-> {send_to} {msg}...', send_to=send_to,
                        msg=msg[:80])
+        # todo: use proper twisted IRC support (encoding + sendCommand)
         omsg = 'PRIVMSG %s :' % (send_to,) + msg
         self.block_instance.tx_irc_client.sendLine(omsg.encode('ascii'))
 

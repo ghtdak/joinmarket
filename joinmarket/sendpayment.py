@@ -26,19 +26,29 @@ def check_high_fee(total_fee_pc):
 
 class SendPayment(jm.Taker):
 
-    def __init__(self, block_instance, wallet, destaddr, amount, makercount,
-                 txfee, waittime, mixdepth, answeryes):
+    def __init__(self, block_instance, wallet, destaddr, amount, options):
         super(SendPayment, self).__init__(block_instance)
         self.wallet = wallet
         self.destaddr = destaddr
         self.amount = amount
-        self.makercount = makercount
-        self.txfee = txfee
-        self.waittime = waittime
-        self.mixdepth = mixdepth
-        self.answeryes = answeryes
+
         self.daemon = True
         self.ignored_makers = []
+
+        self.makercount = options.makercount
+        self.txfee = options.txfee
+        self.waittime = options.waittime
+        self.mixdepth = options.mixdepth
+        self.answeryes = options.answeryes
+        self.options = options
+
+        if self.options.pickorders and amount != 0:  # cant use for sweeping
+            self.chooseOrdersFunc = self.pick_order
+        elif options.choosecheapest:
+            self.chooseOrdersFunc = self.cheapest_order_choose
+        else:  # choose randomly (weighted)
+            self.chooseOrdersFunc = self.weighted_order_choose
+
 
     def on_welcome(self):
         log.debug('on_welcome')
@@ -251,8 +261,6 @@ def build_objects(argv=None):
         return
 
 
-    log.debug('starting sendpayment')
-
     if not options.userpcwallet:
         wallet = jm.Wallet(wallet_name, options.mixdepth + 1)
     else:
@@ -261,13 +269,6 @@ def build_objects(argv=None):
 
     taker = SendPayment(block_instance, wallet, destaddr, amount,
                         options.makercount, options.txfee, options.waittime,
-                        options.mixdepth, options.answeryes)
-
-    if options.pickorders and amount != 0:  # cant use for sweeping
-        taker.chooseOrdersFunc = taker.pick_order
-    elif options.choosecheapest:
-        taker.chooseOrdersFunc = taker.cheapest_order_choose
-    else:  # choose randomly (weighted)
-        taker.chooseOrdersFunc = taker.weighted_order_choose
+                        options.mixdepth, options)
 
     return block_instance, taker, wallet

@@ -61,7 +61,8 @@ def generate_tumbler_wallets(num_tumbler):
     log.debug('generate_tumbler_wallets')
     wallets = generate_wallets(num_tumbler, 0.001)
 
-    amt = int(1e8)  # in satoshis
+    # todo: decide on proper testing size
+    amt = int(1e5)  # in satoshis
 
     # send to any old address
     dest_address = [jmbtc.privkey_to_address(os.urandom(32))

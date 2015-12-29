@@ -163,6 +163,8 @@ class CoinJoinerPeer(object):
             # log.debug('{} event not implemented'.format(name))
             return self.do_nothing
         else:
+            self.log.error('CoinJoinerPeer AttributeError: {name}',
+                             name=name)
             raise AttributeError
 
     def do_nothing(self, *args, **kwargs):

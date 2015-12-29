@@ -93,9 +93,9 @@ class Tumbler(jm.Taker):
         self.daemon = True
         self.ignored_makers = []
         self.sweeping = False
-        self.balance_by_mixdepth = {}
-        self.current_tx = None
         self.started = False
+        self.chooseOrdersFunc = self.weighted_order_choose
+
 
     def on_welcome(self):
         """
@@ -120,7 +120,6 @@ class Tumbler(jm.Taker):
         orders, total_cj_fee = None, None
         while True:
 
-            self.chooseOrdersFunc = self.weighted_order_choose
             orders, total_cj_fee = self.choose_orders(
                 self.db, cj_amount, makercount,
                 self.ignored_makers + active_nicks)
@@ -160,6 +159,7 @@ class Tumbler(jm.Taker):
             cj_amount = 0
             change_addr = None
             if sweep:
+                # todo: add informational output back in
                 self.log.debug('sweeping')
                 utxos = self.wallet.get_utxos_by_mixdepth()[
                     tx['srcmixdepth']]
@@ -214,13 +214,25 @@ class Tumbler(jm.Taker):
 
                 try:
                     bbm = self.wallet.get_btc_mixdepth_list()
-                    self.log.debug('select_utxos - amount:{amount} '
-                                   'balance by mixdepth: {bbm}',
-                                   amount=total_amount/1e8, bbm=bbm)
+
+                    fees = 2 * self.options.txfee * tx['makercount']
+
+                    self.log.debug('select_utxos - amount:{amount}, '
+                                   'fees:{fees} balance by mixdepth: {bbm}',
+                                   amount=total_amount/1e8, fees=fees, bbm=bbm)
+
                     utxos = self.wallet.select_utxos(
-                            tx['srcmixdepth'], total_amount)
+                            tx['srcmixdepth'], total_amount + fees)
                 except btc.InsufficientFunds:
-                    self.log.debug('insufficient funds')
+                    log.debug("Failed to select total amount + twice txfee "
+                              "from wallet; Now select total amount.")
+                    try:
+                        utxos = self.wallet.select_utxos(
+                                tx['srcmixdepth'], total_amount)
+                    except btc.InsufficientFunds:
+                        self.log.debug('well, insufficient funds anyways')
+                        raise
+                except:
                     raise
 
             cjtx = jm.CoinJoinTX(self, cj_amount, orders, utxos, destaddr,
@@ -301,24 +313,28 @@ class Tumbler(jm.Taker):
 
         self.log.debug('starting the big tumbler loop')
 
-        self.balance_by_mixdepth = {}
+        mixdepth_balance = {}
 
         for i, tx in enumerate(self.tx_list):
-            # todo: what happens if it is in there? is that an error?
-            tx_src = tx['srcmixdepth']
-            if tx_src not in self.balance_by_mixdepth:
-                bbm = self.wallet.get_balance_by_mixdepth()[tx_src]
-                self.balance_by_mixdepth[tx_src] = bbm
+
+            bbm = self.wallet.get_balance_by_mixdepth()
+
+            tx_depth = tx['srcmixdepth']
+            if tx_depth not in mixdepth_balance:
+                mixdepth_balance[tx_depth] = bbm[tx_depth]
+
+            """
+            looks like this is asking if the current depth exists anywhere
+            in the remaining list
+            """
             sweep = True
             for later_tx in self.tx_list[i + 1:]:
-                if later_tx['srcmixdepth'] == tx_src:
+                if later_tx['srcmixdepth'] == tx_depth:
                     sweep = False
-            # todo: what's the point of current_tx???
-            self.current_tx = i
             try:
-                balance = self.balance_by_mixdepth[tx_src]
+                balance = mixdepth_balance[tx_depth]
                 log.debug('big loop: tx_src={tx_src}, balance={balance}',
-                          tx_src=tx_src, balance=balance)
+                          tx_src=tx_depth, balance=balance)
 
                 yield self.init_tx(tx, balance, sweep)
 
